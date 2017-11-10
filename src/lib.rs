@@ -30,7 +30,7 @@ mod con;
 mod httpc;
 mod call;
 pub use httpc::*;
-pub use call::*;
+pub use call::CallBuilder;
 // pub use dns_cache::*;
 
 

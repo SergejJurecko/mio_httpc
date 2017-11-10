@@ -1,16 +1,16 @@
-use mio::{Token,Ready,PollOpt,Poll};
-use httparse::{self, Response as ParseResp};
-use http::{Version,Request,Response};
-use http::response::Builder as RespBuilder;
+use mio::{Token,Poll};
+// use httparse::{self, Response as ParseResp};
+use http::{Response};
+// use http::response::Builder as RespBuilder;
 use dns_cache::DnsCache;
 use con::Con;
 use ::Result;
 use tls_api::{TlsConnector};
 use std::collections::VecDeque;
-use call::Call;
+use call::{Call,CallBuilder};
 use fnv::FnvHashMap as HashMap;
 
-pub enum ConReturn {
+pub enum CallReturn {
     /// (Response, BodyChunk)
     /// HTTP Response. BodyChunk will be empty if ubuf is present
     /// and large enough. Otherwise ubuf is filled with any possible data is
@@ -29,11 +29,11 @@ pub enum ConReturn {
     Nothing,
 }
 
-impl ConReturn {
+impl CallReturn {
     fn is_terminal(&self) -> bool {
         match *self {
-            ConReturn::Error(::Error::HeadersOverlimit(_)) => false,
-            ConReturn::Error(_) => true,
+            CallReturn::Error(::Error::HeadersOverlimit(_)) => false,
+            CallReturn::Error(_) => true,
             _ => false,
         }
     }
@@ -90,10 +90,12 @@ impl Httpc {
     //     self.free_bufs.push_front(buf);
     // }
 
-    pub fn call<C:TlsConnector>(&mut self, req: Request<Vec<u8>>,tk: Token, poll: &Poll) -> Result<()> {
-        let con = Con::new::<C>(tk, req, &mut self.cache, poll)?;
-        let call = Call::new(tk, con, self.get_buf());
-        self.calls.insert(tk.0, call);
+    pub(crate) fn call<C:TlsConnector>(&mut self, mut b: CallBuilder, poll: &Poll) -> Result<()> {
+        let id = b.tk.0;
+        let req = b.req.take().unwrap();
+        let con = Con::new::<C>(b.tk, req, &mut self.cache, poll)?;
+        let call = Call::new(b, con, self.get_buf());
+        self.calls.insert(id, call);
         Ok(())
     }
 
@@ -114,10 +116,19 @@ impl Httpc {
         }
     }
 
-    pub fn event<C:TlsConnector>(&mut self, poll: &Poll, tk: Token) {
+    pub fn event<C:TlsConnector>(&mut self, poll: &Poll, tk: Token) -> CallReturn {
         if let Some(c) = self.calls.get_mut(&tk.0) {
-            c.event::<C>(poll);
+            match c.event::<C>(poll) {
+                Ok(true) => {
+                }
+                Ok(false) => {
+                }
+                Err(e) => {
+                   return CallReturn::Error(e); 
+                }
+            }
         }
+        CallReturn::InvalidToken
     }
 
     // pub fn read_body(&mut self, tk: Token, ubuf: Option<&mut [u8]>) -> ConReturn {

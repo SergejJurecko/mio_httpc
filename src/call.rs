@@ -4,10 +4,60 @@ use std::io::ErrorKind as IoErrorKind;
 use tls_api::{TlsConnector};
 use httparse::{self, Response as ParseResp};
 use http::response::Builder as RespBuilder;
-use http::{Version,Response};
+use http::{self,Request,Version,Response};
+use ::Httpc;
+use std::str::FromStr;
+use std::time::{Duration,Instant};
+
+/// Start configure call.
+pub struct CallBuilder {
+    pub(crate) tk: Token,
+    pub(crate) req: Option<Request<Vec<u8>>>,
+    dur: Duration,
+    max_body: Option<usize>,
+    stream_response: bool,
+}
+
+impl CallBuilder {
+    /// mio token is identifier for call in Httpc
+    pub fn new(tk: Token, req: Request<Vec<u8>>) -> CallBuilder {
+        CallBuilder {
+            tk,
+            stream_response: false,
+            max_body: Some(1024*1024*10),
+            dur: Duration::from_millis(30000),
+            req: Some(req),
+        }
+    }
+
+    /// Consume and execute
+    pub fn call<C:TlsConnector>(self, httpc: &mut Httpc, poll: &Poll) -> ::Result<()> {
+        httpc.call::<C>(self, poll)
+    }
+
+    /// http::Response and Body will be streamed to client as it is received.
+    /// max_body is ignored in this case.
+    pub fn stream_response(&mut self, b: bool) -> &mut Self {
+        self.stream_response = b;
+        self
+    }
+
+    /// Default 10MB
+    pub fn max_body(&mut self, m: Option<usize>) -> &mut Self {
+        self.max_body = m;
+        self
+    }
+
+    /// Default 30s
+    pub fn timeout(&mut self, d: Duration) -> &mut Self {
+        self.dur = d;
+        self
+    }
+}
 
 pub struct Call {
-    tk: Token,
+    b: CallBuilder,
+    start: Instant,
     con: Con<Vec<u8>>,
     buf: Vec<u8>,
     hdr_sz: usize,
@@ -17,9 +67,10 @@ pub struct Call {
 }
 
 impl Call {
-    pub(crate) fn new(tk: Token, con: Con<Vec<u8>>, buf: Vec<u8>) -> Call {
+    pub(crate) fn new(b: CallBuilder, con: Con<Vec<u8>>, buf: Vec<u8>) -> Call {
         Call {
-            tk,
+            start: Instant::now(),
+            b,
             con,
             buf,
             on_body: false,
@@ -117,7 +168,15 @@ impl Call {
                                     b.version(Version::HTTP_11);
                                 }
                             }
-                            self.resp = Some(b.body(Vec::new())?);
+                            let resp = b.body(Vec::new())?;
+                            if let Some(ref clh) = resp.headers().get(http::header::CONTENT_LENGTH) {
+                                if let Ok(clhs) = clh.to_str() {
+                                    if let Ok(bsz) = usize::from_str(clhs) {
+                                        self.body_sz = bsz;
+                                    }
+                                }
+                            }
+                            self.resp = Some(resp);
                         }
                         Ok(httparse::Status::Partial) => {
                         }
@@ -125,7 +184,7 @@ impl Call {
                             return Err(From::from(e));
                         }
                     }
-                } else if self.buf.len() == self.body_sz + self.hdr_sz {
+                } else if self.buf.len() >= self.body_sz + self.hdr_sz {
                     return Ok(true);
                 }
             }
