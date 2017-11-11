@@ -22,20 +22,20 @@ impl DnsCache {
         }
     }
 
-    pub fn find(&mut self, url: &str) -> Option<IpAddr> {
+    pub fn find(&mut self, host: &str) -> Option<IpAddr> {
         let now = Instant::now();
         if too_old(now, self.last_check) {
             self.cleanup(now);
         }
-        if let Some(&(_, v)) =  self.hm.get(url) {
+        if let Some(&(_, v)) =  self.hm.get(host) {
             return Some(v);
         }
         None
     }
 
-    pub fn save(&mut self, url: &str, ip: IpAddr) {
+    pub fn save(&mut self, host: &str, ip: IpAddr) {
         let now = Instant::now();
-        self.hm.insert(String::from(url), (now, ip));
+        self.hm.insert(String::from(host), (now, ip));
         self.cleanup(now);
     }
 

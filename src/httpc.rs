@@ -1,4 +1,4 @@
-use mio::{Token,Poll};
+use mio::{Token,Poll,Event};
 // use httparse::{self, Response as ParseResp};
 use http::{Response};
 // use http::response::Builder as RespBuilder;
@@ -90,10 +90,10 @@ impl Httpc {
     //     self.free_bufs.push_front(buf);
     // }
 
-    pub(crate) fn call<C:TlsConnector>(&mut self, mut b: CallBuilder, poll: &Poll) -> Result<()> {
+    pub(crate) fn call<C:TlsConnector>(&mut self, b: CallBuilder, poll: &Poll) -> Result<()> {
         let id = b.tk.0;
-        let req = b.req.take().unwrap();
-        let con = Con::new::<C>(b.tk, req, &mut self.cache, poll)?;
+        // let req = b.req.take().unwrap();
+        let con = Con::new::<C,Vec<u8>>(b.tk, &b.req, &mut self.cache, poll)?;
         let call = Call::new(b, con, self.get_buf());
         self.calls.insert(id, call);
         Ok(())
@@ -116,9 +116,16 @@ impl Httpc {
         }
     }
 
-    pub fn event<C:TlsConnector>(&mut self, poll: &Poll, tk: Token) -> CallReturn {
-        if let Some(c) = self.calls.get_mut(&tk.0) {
-            match c.event::<C>(poll) {
+    /// If stream_response=true for call, body will be written to b
+    /// if it is set. b will be increased in size if required.
+    pub fn event<C:TlsConnector>(&mut self, poll: &Poll, ev: &Event, b: Option<&mut Vec<u8>>) -> CallReturn {
+        if let Some(c) = self.calls.get_mut(&ev.token().0) {
+            let mut cp = ::call::CallParam {
+                poll,
+                ev,
+                dns: &mut self.cache,
+            };
+            match c.event::<C>(&mut cp, b) {
                 Ok(true) => {
                 }
                 Ok(false) => {

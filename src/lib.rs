@@ -8,6 +8,7 @@ extern crate libc;
 extern crate fnv;
 extern crate time;
 extern crate http;
+extern crate itoa;
 #[macro_use(quick_error)]
 extern crate quick_error;
 #[cfg(test)]
@@ -31,7 +32,18 @@ mod httpc;
 mod call;
 pub use httpc::*;
 pub use call::CallBuilder;
-// pub use dns_cache::*;
+
+// TODO:
+// - post (with automatic content-length header)
+// - streaming post
+// - correct Ready::readable() / Ready::writable() switching
+// - host header, connection header, user-agent header
+// - hide tls-api, configure through compile options
+// - dns retries
+// - timeouts
+// - pipelining?
+// - websockets
+// - http2
 
 
 // use url::ParseError as UrlParseError;
@@ -109,6 +121,7 @@ quick_error! {
 mod tests {
     #[test]
     fn it_works() {
-        assert_eq!(2 + 2, 4);
+        // assert_eq!(2 + 2, 4);
+        let mut v:Vec<u8> = vec![1,2,3,4,5];
     }
 }

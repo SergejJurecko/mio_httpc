@@ -9,11 +9,14 @@ use mio::{Token,Ready,PollOpt,Poll};
 use std::net::{SocketAddr, IpAddr};
 use std::str::FromStr;
 use http::{Request,Uri};
-use std::io::Read;
+use std::io::{Read,Write};
+use ::call::CallParam;
 
-pub struct Con<T> {
+pub(crate) struct Con {
     pub token: Token,
-    pub req: Request<T>,
+    // pub req: Request<T>,
+    pub nuses: usize,
+    pub ready: Ready,
     sock: Option<TcpStream>,
     tls: Option<TlsStream<TcpStream>>,
     _dns: Option<Dns>,
@@ -37,11 +40,11 @@ fn url_port(url: &Uri) -> Result<u16> {
     }
 }
 
-fn connect<C: TlsConnector>(addr: SocketAddr) -> Result<(Option<TcpStream>,Option<TlsStream<TcpStream>>)> {
+fn connect<C: TlsConnector>(addr: SocketAddr, host: &str) -> Result<(Option<TcpStream>,Option<TlsStream<TcpStream>>)> {
     let tcp = TcpStream::connect(&addr)?;
     if addr.port() == 443 {
         let connector: C = C::builder()?.build()?;
-        if let Ok(t) = connector.connect("google.com", tcp) {
+        if let Ok(t) = connector.connect(host, tcp) {
             return Ok((None,Some(t)));
         } else {
             return Err(::Error::TlsHandshake);
@@ -50,19 +53,19 @@ fn connect<C: TlsConnector>(addr: SocketAddr) -> Result<(Option<TcpStream>,Optio
     return Ok((Some(tcp),None));
 }
 
-impl<T> Con<T> {
-    pub fn new<C:TlsConnector>(token: Token, req: Request<T>, cache: &mut DnsCache, poll: &Poll) -> Result<Con<T>> {
+impl Con {
+    pub fn new<C:TlsConnector,T>(token: Token, req: &Request<T>, cache: &mut DnsCache, poll: &Poll) -> Result<Con> {
         let port = url_port(req.uri())?;
         let mut sock = None;
         let mut tls = None;
-        let mut rdy = Ready::writable();
+        let mut rdy = Ready::writable() | Ready::writable();
         if let Some(host) = req.uri().host() {
             if let Some(ip) = cache.find(host) {
-                let r = connect::<C>(SocketAddr::new(ip,port))?;
+                let r = connect::<C>(SocketAddr::new(ip,port), host)?;
                 sock = r.0;
                 tls = r.1;
             } else if let Ok(ip) = IpAddr::from_str(host) {
-                let r = connect::<C>(SocketAddr::new(ip,port))?;
+                let r = connect::<C>(SocketAddr::new(ip,port), host)?;
                 sock = r.0;
                 tls = r.1;
             }
@@ -79,8 +82,9 @@ impl<T> Con<T> {
             Some(r)
         } else { None };
         let res = Con {
+            ready: Ready::empty(),
+            nuses: 0,
             token,
-            req,
             sock,
             _dns: dns,
             dns_sock,
@@ -90,32 +94,71 @@ impl<T> Con<T> {
         Ok(res)
     }
 
-    pub fn signalled<'a, C:TlsConnector>(&mut self, poll: &Poll, buf: &'a mut [u8]) -> Result<usize> {
-        if let Some(ref mut tcp) = self.sock {
-            return Ok(tcp.read(buf)?);
-        } else if let Some(ref mut tls) = self.tls {
-            return Ok(tls.read(buf)?);
-        } else if self.dns_sock.is_some() {
+    pub(crate) fn signalled<'a,C:TlsConnector,T>(&mut self, cp: &mut CallParam, req: &Request<T>) -> Result<()> {
+        if self.dns_sock.is_some() {
             let udp = self.dns_sock.take().unwrap();
-            // let mut buf: [u8;512] = unsafe { ::std::mem::uninitialized() };
-            if let Ok(sz) = udp.recv(buf) {
+            let mut buf: [u8;512] = unsafe { ::std::mem::uninitialized() };
+            if let Ok(sz) = udp.recv(&mut buf[..]) {
                 if let Some(ip) = dns::dns_parse(&buf[..sz]) {
-                    let port = url_port(self.req.uri())?;
+                    let host = req.uri().host().unwrap();
+                    cp.dns.save(host, ip);
+                    let port = url_port(req.uri())?;
                     // self.sock = Some(TcpStream::connect(&SocketAddr::new(ip,port))?);
-                    let r = connect::<C>(SocketAddr::new(ip,port))?;
+                    let r = connect::<C>(SocketAddr::new(ip,port), host)?;
                     self.sock = r.0;
                     self.tls = r.1;
-                    self.register(poll, self.token, Ready::writable(), PollOpt::edge())?;
-                    return Ok(0);
+                    self.register(cp.poll, self.token, Ready::writable() | Ready::writable(), PollOpt::edge())?;
+                    return Ok(());
                 }
             }
             self.dns_sock = Some(udp);
+        } else {
+            self.ready |= cp.ev.readiness();
+            // if let Some(ref mut tcp) = self.sock {
+            //     return Ok(tcp.read(buf)?);
+            // } else if let Some(ref mut tls) = self.tls {
+            //     return Ok(tls.read(buf)?);
+            // }
         }
-        Ok(0)
+        Ok(())
     }
 }
 
-impl<T> Evented for Con<T> {
+impl Read for Con {
+    fn read(&mut self, buf: &mut [u8]) -> ::std::io::Result<usize> {
+        if let Some(ref mut tcp) = self.sock {
+            tcp.read(buf)
+        } else if let Some(ref mut tls) = self.tls {
+            tls.read(buf)
+        } else {
+            Err(::std::io::Error::new(::std::io::ErrorKind::NotConnected,"No socket"))
+        }
+    }
+}
+
+impl Write for Con {
+    fn write(&mut self, buf: &[u8]) -> ::std::io::Result<usize> {
+        if let Some(ref mut tcp) = self.sock {
+            tcp.write(buf)
+        } else if let Some(ref mut tls) = self.tls {
+            tls.write(buf)
+        } else {
+            Err(::std::io::Error::new(::std::io::ErrorKind::NotConnected,"No socket"))
+        }
+    }
+
+    fn flush(&mut self) -> ::std::io::Result<()> {
+        if let Some(ref mut tcp) = self.sock {
+            tcp.flush()
+        } else if let Some(ref mut tls) = self.tls {
+            tls.flush()
+        } else {
+            Err(::std::io::Error::new(::std::io::ErrorKind::NotConnected,"No socket"))
+        }
+    }
+}
+
+impl Evented for Con {
     fn register(
         &self, 
         poll: &Poll, 
