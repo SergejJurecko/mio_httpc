@@ -42,6 +42,7 @@ fn url_port(url: &Uri) -> Result<u16> {
 
 fn connect<C: TlsConnector>(addr: SocketAddr, host: &str) -> Result<(Option<TcpStream>,Option<TlsStream<TcpStream>>)> {
     let tcp = TcpStream::connect(&addr)?;
+    tcp.set_nodelay(true)?;
     if addr.port() == 443 {
         let connector: C = C::builder()?.build()?;
         if let Ok(t) = connector.connect(host, tcp) {

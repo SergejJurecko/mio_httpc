@@ -10,7 +10,7 @@ use ::Httpc;
 use std::str::FromStr;
 use std::time::{Duration,Instant};
 use dns_cache::DnsCache;
-use std::io::Read;
+use std::io::{Read,Write};
 
 pub(crate) struct CallParam<'a> {
     pub poll: &'a Poll,
@@ -26,7 +26,7 @@ pub struct CallBuilder {
     max_body: Option<usize>,
     stream_response: bool,
     // TODO: Enum with None, StreamedPlain, StreamChunked
-    stream_req_body: bool,
+    // stream_req_body: bool,
 }
 
 impl CallBuilder {
@@ -47,7 +47,7 @@ impl CallBuilder {
         CallBuilder {
             tk,
             stream_response: false,
-            stream_req_body: false,
+            // stream_req_body: false,
             max_body: Some(1024*1024*10),
             dur: Duration::from_millis(30000),
             req,
@@ -59,13 +59,13 @@ impl CallBuilder {
         httpc.call::<C>(self, poll)
     }
 
-    /// If post/put and no body in supplied http::Request
-    /// it will assume body will be received client side.
-    /// Content-length header must be set manually.
-    pub fn stream_req_body(&mut self, b: bool) -> &mut Self {
-        self.stream_req_body = b;
-        self
-    }
+    //// If post/put and no body in supplied http::Request
+    //// it will assume body will be received client side.
+    //// Content-length header must be set manually.
+    // pub fn stream_req_body(&mut self, b: bool) -> &mut Self {
+    //     self.stream_req_body = b;
+    //     self
+    // }
 
     /// http::Response will be returned as soon as it is received
     /// and body will be streamed to client as it is received.
@@ -88,8 +88,10 @@ impl CallBuilder {
     }
 }
 
+#[derive(PartialEq)]
 enum Dir {
-    Sending,
+    SendingHdr(usize),
+    SendingBody(usize),
     Receiving,
 }
 
@@ -107,7 +109,7 @@ pub(crate) struct Call {
 impl Call {
     pub(crate) fn new(b: CallBuilder, con: Con, buf: Vec<u8>) -> Call {
         Call {
-            dir: Dir::Sending,
+            dir: Dir::SendingHdr(0),
             start: Instant::now(),
             b,
             con,
@@ -142,39 +144,160 @@ impl Call {
         }
         orig_len
     }
+    
+    fn fill_send_req(&mut self, buf: &mut Vec<u8>) {
+        buf.extend(self.b.req.method().as_str().as_bytes());
+        buf.extend(b" ");
+        buf.extend(self.b.req.uri().path().as_bytes());
+        if let Some(q) = self.b.req.uri().query() {
+            buf.extend(b"?");
+            buf.extend(q.as_bytes());
+        }
+        buf.extend(b" HTTP/1.1\r\n");
+        for (k,v) in self.b.req.headers().iter() {
+            buf.extend(k.as_str().as_bytes());
+            buf.extend(b": ");
+            buf.extend(v.as_bytes());
+            buf.extend(b"\r\n");
+        }
+        let cl = self.b.req.headers().get(CONTENT_LENGTH);
+        if None == cl {
+            let mut ar = [0u8;15];
+            self.body_sz = self.b.req.body().len();
+            if let Ok(_) = ::itoa::write(&mut ar[..], self.body_sz) {
+                buf.extend(CONTENT_LENGTH.as_str().as_bytes());
+                buf.extend(b": ");
+                buf.extend(&ar[..]);
+                buf.extend(b"\r\n");
+            }
+        } else if let Some(cl) = cl {
+            if let Ok(cl1) = cl.to_str() {
+                self.body_sz = usize::from_str(cl1).unwrap();
+            }
+        }
+        if None == self.b.req.headers().get(USER_AGENT) {
+            buf.extend(USER_AGENT.as_str().as_bytes());
+            buf.extend(b": ");
+            buf.extend((env!("CARGO_PKG_NAME")).as_bytes());
+            buf.extend(b" ");
+            buf.extend((env!("CARGO_PKG_VERSION")).as_bytes());
+            buf.extend(b"\r\n");
+        }
+        buf.extend(b"\r\n");
+    }
 
     pub fn event<C:TlsConnector>(&mut self, cp: &mut CallParam, b: Option<&mut Vec<u8>>) -> ::Result<bool> {
-        if self.hdr_sz == 0 || !self.b.stream_response || b.is_none() {
-            let mut buf = ::std::mem::replace(&mut self.buf, Vec::new());
-            let ret = self.event1::<C>(cp, &mut buf);
-            self.buf = buf;
-            // ::std::mem::replace(&mut self.buf, Vec::new());
-            ret
-        } else {
-            let mut b = b.unwrap();
-            if self.buf.len() > self.hdr_sz {
-                (&mut b).extend(&self.buf[self.hdr_sz..]);
-                self.buf.truncate(self.hdr_sz);
+        match self.dir {
+            Dir::Receiving => {
+                if self.hdr_sz == 0 || !self.b.stream_response || b.is_none() {
+                    let mut buf = ::std::mem::replace(&mut self.buf, Vec::new());
+                    let ret = self.event_rec::<C>(cp, &mut buf);
+                    self.buf = buf;
+                    ret
+                } else {
+                    let mut b = b.unwrap();
+                    if self.buf.len() > self.hdr_sz {
+                        (&mut b).extend(&self.buf[self.hdr_sz..]);
+                        self.buf.truncate(self.hdr_sz);
+                    }
+                    self.event_rec::<C>(cp, b)
+                }
             }
-            self.event1::<C>(cp, b)
+            Dir::SendingHdr(pos) => {
+                let mut buf = ::std::mem::replace(&mut self.buf, Vec::new());
+                if self.hdr_sz == 0 {
+                    self.make_space(&mut buf);
+                    self.fill_send_req(&mut buf);
+                }
+                let hdr_sz = self.hdr_sz;
+                let ret = self.event_send::<C>(cp, 0, &buf[pos..hdr_sz]);
+                self.buf = buf;
+                if let Dir::SendingBody(_) = self.dir {
+                    // go again
+                    return self.event::<C>(cp, b);
+                }
+                ret
+            }
+            Dir::SendingBody(_pos) if b.is_some() => {
+                let b = b.unwrap();
+                self.event_send::<C>(cp, 0, &b[..])
+            }
+            Dir::SendingBody(pos) if self.b.req.body().len() > 0 => {
+                self.event_send::<C>(cp, pos, &[])
+            }
+            _ => {
+                Ok(true)
+            }
         }
     }
 
-    fn event1<C:TlsConnector>(&mut self, cp: &mut CallParam, b: &mut Vec<u8>) -> ::Result<bool> {
-        let mut orig_len = self.make_space(b);
-        // let mut resp:Option<Response<Vec<u8>>> = None;
-        let mut read_ret;
-        let mut entire_sz = 0;
+    fn event_send<C:TlsConnector>(&mut self, cp: &mut CallParam, in_pos: usize, b: &[u8]) -> ::Result<bool> {
+        self.con.signalled::<C,Vec<u8>>(cp, &self.b.req)?;
+        if !self.con.ready.is_writable() {
+            return Ok(true);
+        }
+        let mut io_ret;
         loop {
-            self.con.signalled::<C,Vec<u8>>(cp, &self.b.req)?;
-            read_ret = self.con.read(b);
-
-            match &read_ret {
+            if b.len() > 0 {
+                io_ret = self.con.write(&b[in_pos..]);
+            } else {
+                io_ret = self.con.write(&self.b.req.body()[in_pos..]);
+            }
+            match &io_ret {
                 &Err(ref ie) => {
                     if ie.kind() == IoErrorKind::Interrupted {
                         continue;
                     } else if ie.kind() == IoErrorKind::WouldBlock {
                         self.con.ready.remove(Ready::writable());
+                        return Ok(true);
+                    }
+                }
+                &Ok(sz) if sz > 0 => {
+                    if let Dir::SendingHdr(pos) = self.dir {
+                        if self.hdr_sz == pos+sz {
+                            if self.body_sz > 0 {
+                                self.dir = Dir::SendingBody(0);
+                            } else {
+                                self.hdr_sz = 0;
+                                self.dir = Dir::Receiving;
+                            }
+                        } else {
+                            self.dir = Dir::SendingHdr(pos+sz);
+                        }
+                        return Ok(false);
+                    } else if let Dir::SendingBody(pos) = self.dir {
+                        if self.body_sz == pos+sz {
+                            self.hdr_sz = 0;
+                            self.dir = Dir::Receiving;
+                            return Ok(true);
+                        }
+                        self.dir = Dir::SendingBody(pos+sz);
+                        return Ok(false);
+                    }
+                }
+                _ => {
+                    return Ok(false);
+                }
+            }
+        }
+    }
+
+    fn event_rec<C:TlsConnector>(&mut self, cp: &mut CallParam, b: &mut Vec<u8>) -> ::Result<bool> {
+        let mut orig_len = self.make_space(b);
+        let mut io_ret;
+        let mut entire_sz = 0;
+        self.con.signalled::<C,Vec<u8>>(cp, &self.b.req)?;
+        if !self.con.ready.is_readable() {
+            return Ok(true);
+        }
+        loop {
+            io_ret = self.con.read(b);
+            match &io_ret {
+                &Err(ref ie) => {
+                    if ie.kind() == IoErrorKind::Interrupted {
+                        continue;
+                    } else if ie.kind() == IoErrorKind::WouldBlock {
+                        self.con.ready.remove(Ready::readable());
                         if entire_sz == 0 {
                             return Ok(false);
                         }
@@ -182,8 +305,8 @@ impl Call {
                     }
                 }
                 &Ok(sz) if sz > 0 => {
+                    entire_sz += sz;
                     if b.len() == orig_len+sz {
-                        entire_sz += sz;
                         orig_len = self.make_space(b);
                         continue;
                     }
@@ -194,9 +317,9 @@ impl Call {
             break;
         }
         if entire_sz > 0 {
-            read_ret = Ok(entire_sz);
+            io_ret = Ok(entire_sz);
         }
-        match read_ret {
+        match io_ret {
             Ok(0) => {
                 return Err(::Error::Closed);
             }
