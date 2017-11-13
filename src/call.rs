@@ -4,13 +4,14 @@ use std::io::ErrorKind as IoErrorKind;
 use tls_api::{TlsConnector};
 use httparse::{self, Response as ParseResp};
 use http::response::Builder as RespBuilder;
-use http::{self,Request,Version,Response,Method};
+use http::{self,Request,Version,Response};
 use http::header::*;
 use ::Httpc;
 use std::str::FromStr;
 use std::time::{Duration,Instant};
 use dns_cache::DnsCache;
 use std::io::{Read,Write};
+use ::httpc::EventResult;
 
 pub(crate) struct CallParam<'a> {
     pub poll: &'a Poll,
@@ -97,7 +98,7 @@ enum Dir {
 
 pub(crate) struct Call {
     b: CallBuilder,
-    start: Instant,
+    _start: Instant,
     con: Con,
     buf: Vec<u8>,
     hdr_sz: usize,
@@ -110,7 +111,7 @@ impl Call {
     pub(crate) fn new(b: CallBuilder, con: Con, buf: Vec<u8>) -> Call {
         Call {
             dir: Dir::SendingHdr(0),
-            start: Instant::now(),
+            _start: Instant::now(),
             b,
             con,
             buf,
@@ -183,10 +184,21 @@ impl Call {
             buf.extend((env!("CARGO_PKG_VERSION")).as_bytes());
             buf.extend(b"\r\n");
         }
+        if None == self.b.req.headers().get(CONNECTION) {
+            buf.extend(CONNECTION.as_str().as_bytes());
+            buf.extend(b": keep-alive\r\n");
+        }
+        if None == self.b.req.headers().get(HOST) {
+            if let Some(h) = self.b.req.uri().host() {
+                buf.extend(HOST.as_str().as_bytes());
+                buf.extend(b": ");
+                buf.extend(h.as_bytes());
+            }
+        }
         buf.extend(b"\r\n");
     }
 
-    pub fn event<C:TlsConnector>(&mut self, cp: &mut CallParam, b: Option<&mut Vec<u8>>) -> ::Result<bool> {
+    pub fn event<C:TlsConnector>(&mut self, cp: &mut CallParam, b: Option<&mut Vec<u8>>) -> ::Result<EventResult> {
         match self.dir {
             Dir::Receiving => {
                 if self.hdr_sz == 0 || !self.b.stream_response || b.is_none() {
@@ -226,15 +238,15 @@ impl Call {
                 self.event_send::<C>(cp, pos, &[])
             }
             _ => {
-                Ok(true)
+                Ok(EventResult::WaitReqBody)
             }
         }
     }
 
-    fn event_send<C:TlsConnector>(&mut self, cp: &mut CallParam, in_pos: usize, b: &[u8]) -> ::Result<bool> {
+    fn event_send<C:TlsConnector>(&mut self, cp: &mut CallParam, in_pos: usize, b: &[u8]) -> ::Result<EventResult> {
         self.con.signalled::<C,Vec<u8>>(cp, &self.b.req)?;
         if !self.con.ready.is_writable() {
-            return Ok(true);
+            return Ok(EventResult::Nothing);
         }
         let mut io_ret;
         loop {
@@ -249,7 +261,7 @@ impl Call {
                         continue;
                     } else if ie.kind() == IoErrorKind::WouldBlock {
                         self.con.ready.remove(Ready::writable());
-                        return Ok(true);
+                        return Ok(EventResult::Nothing);
                     }
                 }
                 &Ok(sz) if sz > 0 => {
@@ -259,36 +271,38 @@ impl Call {
                                 self.dir = Dir::SendingBody(0);
                             } else {
                                 self.hdr_sz = 0;
+                                self.body_sz = 0;
                                 self.dir = Dir::Receiving;
                             }
                         } else {
                             self.dir = Dir::SendingHdr(pos+sz);
                         }
-                        return Ok(false);
+                        return Ok(EventResult::Nothing);
                     } else if let Dir::SendingBody(pos) = self.dir {
                         if self.body_sz == pos+sz {
                             self.hdr_sz = 0;
+                            self.body_sz = 0;
                             self.dir = Dir::Receiving;
-                            return Ok(true);
+                            return Ok(EventResult::Nothing);
                         }
                         self.dir = Dir::SendingBody(pos+sz);
-                        return Ok(false);
+                        return Ok(EventResult::SentBody(pos+sz));
                     }
                 }
                 _ => {
-                    return Ok(false);
+                    return Err(::Error::Closed);
                 }
             }
         }
     }
 
-    fn event_rec<C:TlsConnector>(&mut self, cp: &mut CallParam, b: &mut Vec<u8>) -> ::Result<bool> {
+    fn event_rec<C:TlsConnector>(&mut self, cp: &mut CallParam, b: &mut Vec<u8>) -> ::Result<EventResult> {
         let mut orig_len = self.make_space(b);
         let mut io_ret;
         let mut entire_sz = 0;
         self.con.signalled::<C,Vec<u8>>(cp, &self.b.req)?;
         if !self.con.ready.is_readable() {
-            return Ok(true);
+            return Ok(EventResult::Nothing);
         }
         loop {
             io_ret = self.con.read(b);
@@ -299,7 +313,7 @@ impl Call {
                     } else if ie.kind() == IoErrorKind::WouldBlock {
                         self.con.ready.remove(Ready::readable());
                         if entire_sz == 0 {
-                            return Ok(false);
+                            return Ok(EventResult::Nothing);
                         }
                         break;
                     }

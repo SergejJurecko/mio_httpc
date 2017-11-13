@@ -6,7 +6,7 @@ extern crate mio;
 extern crate byteorder;
 extern crate libc;
 extern crate fnv;
-extern crate time;
+// extern crate time;
 extern crate http;
 extern crate itoa;
 #[macro_use(quick_error)]
@@ -34,14 +34,11 @@ pub use httpc::*;
 pub use call::CallBuilder;
 
 // TODO:
-// - post (with automatic content-length header)
-// - streaming post
-// - correct Ready::readable() / Ready::writable() switching
-// - host header, connection header, user-agent header
+// - client api with events
+// - con pool. tk must not be client side provided...client id and token are different
 // - hide tls-api, configure through compile options
 // - dns retries
 // - timeouts
-// - pipelining?
 // - websockets
 // - http2
 

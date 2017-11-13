@@ -10,30 +10,28 @@ use std::collections::VecDeque;
 use call::{Call,CallBuilder};
 use fnv::FnvHashMap as HashMap;
 
-pub enum CallReturn {
-    /// (Response, BodyChunk)
+pub enum EventResult {
     /// HTTP Response. BodyChunk will be empty if ubuf is present
     /// and large enough. Otherwise ubuf is filled with any possible data is
     /// in chunk.
-    Response(Response<Vec<u8>>, usize),
+    Response(Response<Vec<u8>>),
     /// All errors except HeadersOverlimit are terminal and connection is closed.
     Error(::Error),
-    /// (bytes_read, call_again)
-    Body(usize, bool),
-    /// (buf,call_again)
-    /// If no user supplied buffer, a chunk of body is returned in a buffer.
-    /// Once you do not need it you should return it with Httpc::reuse.
-    BodyChunk(Vec<u8>, bool),
+    /// How many bytes of body has been sent.
+    SentBody(usize),
+    /// Waiting for body to be provided for sending.
+    WaitReqBody,
     // No call exists for token.
     InvalidToken,
+    // Nothing yet to return.
     Nothing,
 }
 
-impl CallReturn {
+impl EventResult {
     fn is_terminal(&self) -> bool {
         match *self {
-            CallReturn::Error(::Error::HeadersOverlimit(_)) => false,
-            CallReturn::Error(_) => true,
+            EventResult::Error(::Error::HeadersOverlimit(_)) => false,
+            EventResult::Error(_) => true,
             _ => false,
         }
     }
@@ -118,7 +116,7 @@ impl Httpc {
 
     /// If stream_response=true for call, body will be written to b
     /// if it is set. b will be increased in size if required.
-    pub fn event<C:TlsConnector>(&mut self, poll: &Poll, ev: &Event, b: Option<&mut Vec<u8>>) -> CallReturn {
+    pub fn event<C:TlsConnector>(&mut self, poll: &Poll, ev: &Event, b: Option<&mut Vec<u8>>) -> EventResult {
         if let Some(c) = self.calls.get_mut(&ev.token().0) {
             let mut cp = ::call::CallParam {
                 poll,
@@ -126,16 +124,15 @@ impl Httpc {
                 dns: &mut self.cache,
             };
             match c.event::<C>(&mut cp, b) {
-                Ok(true) => {
-                }
-                Ok(false) => {
+                Ok(er) => {
+                    return er;
                 }
                 Err(e) => {
-                   return CallReturn::Error(e); 
+                   return EventResult::Error(e); 
                 }
             }
         }
-        CallReturn::InvalidToken
+        EventResult::InvalidToken
     }
 
     // pub fn read_body(&mut self, tk: Token, ubuf: Option<&mut [u8]>) -> ConReturn {

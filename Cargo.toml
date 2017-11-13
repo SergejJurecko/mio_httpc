@@ -1,5 +1,5 @@
 [package]
-name = "httpc"
+name = "mio_httpc"
 version = "0.1.0"
 authors = ["sergej jurecko <sergej.jurecko@gmail.com>"]
 
@@ -11,10 +11,10 @@ quick-error = "1"
 byteorder = "1"
 libc = "0.2"
 fnv = "1"
-time = "0.1"
+# time = "0.1"
 rand = "0.3"
 http = "0.1"
-tls-api = {git = "https://github.com/SergejJurecko/rust-tls-api.git"}
+tls-api = "0.1"
 itoa = "0.3"
 
 [target.'cfg(target_os = "macos")'.dependencies]
