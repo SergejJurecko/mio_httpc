@@ -17,24 +17,19 @@ pub enum EventResult {
     Response(Response<Vec<u8>>),
     /// All errors except HeadersOverlimit are terminal and connection is closed.
     Error(::Error),
-    /// How many bytes of body has been sent.
+    /// How many bytes of body have been sent.
     SentBody(usize),
+    /// How many bytes were received.
+    ReceivedBody(usize),
+    /// Request is done body has been returned in user provided buffer or
+    /// there is no response body.
+    Done,
+    /// Request is done with body.
+    DoneWithBody(Vec<u8>),
     /// Waiting for body to be provided for sending.
     WaitReqBody,
-    // No call exists for token.
-    InvalidToken,
     // Nothing yet to return.
     Nothing,
-}
-
-impl EventResult {
-    fn is_terminal(&self) -> bool {
-        match *self {
-            EventResult::Error(::Error::HeadersOverlimit(_)) => false,
-            EventResult::Error(_) => true,
-            _ => false,
-        }
-    }
 }
 
 pub struct Httpc {
@@ -74,19 +69,10 @@ impl Httpc {
     }
 
     /// Reuse a response buffer for subsequent calls.
-    // pub fn reuse(&mut self, mut buf: Vec<u8>) {
-    //     let mut cap = buf.capacity();
-    //     if cap < self.max_hdrs {
-    //         buf.reserve(self.max_hdrs - cap);
-    //         cap = buf.capacity();
-    //     }
-    //     if cap < buf.len() {
-    //         unsafe {
-    //             buf.set_len(cap);
-    //         }
-    //     }
-    //     self.free_bufs.push_front(buf);
-    // }
+    pub fn reuse(&mut self, mut buf: Vec<u8>) {
+        buf.truncate(0);
+        self.free_bufs.push_front(buf);
+    }
 
     pub(crate) fn call<C:TlsConnector>(&mut self, b: CallBuilder, poll: &Poll) -> Result<()> {
         let id = b.tk.0;
@@ -108,7 +94,7 @@ impl Httpc {
         if let Some(buf)  = self.free_bufs.pop_front() {
             buf
         } else {
-            let mut b = Vec::with_capacity(self.max_hdrs);
+            let b = Vec::with_capacity(self.max_hdrs);
             // unsafe { b.set_len(self.max_hdrs); }
             b
         }
@@ -117,248 +103,42 @@ impl Httpc {
     /// If stream_response=true for call, body will be written to b
     /// if it is set. b will be increased in size if required.
     pub fn event<C:TlsConnector>(&mut self, poll: &Poll, ev: &Event, b: Option<&mut Vec<u8>>) -> EventResult {
-        if let Some(c) = self.calls.get_mut(&ev.token().0) {
+        let cret = if let Some(c) = self.calls.get_mut(&ev.token().0) {
             let mut cp = ::call::CallParam {
                 poll,
                 ev,
                 dns: &mut self.cache,
             };
-            match c.event::<C>(&mut cp, b) {
-                Ok(er) => {
-                    return er;
-                }
-                Err(e) => {
-                   return EventResult::Error(e); 
-                }
+            c.event::<C>(&mut cp, b)
+        } else {
+            return EventResult::Error(::Error::InvalidToken);
+        };
+        match cret {
+            Ok(EventResult::Done) => {
+                self.call_over(ev);
+                return EventResult::Done;
+            }
+            Ok(EventResult::DoneWithBody(body)) => {
+                self.call_over(ev);
+                return EventResult::DoneWithBody(body);
+            }
+            Ok(er) => {
+                return er;
+            }
+            Err(e) => {
+                self.call_over(ev);
+                return EventResult::Error(e); 
             }
         }
-        EventResult::InvalidToken
     }
 
-    // pub fn read_body(&mut self, tk: Token, ubuf: Option<&mut [u8]>) -> ConReturn {
-    //     if !(tk.0 >= self.tk_offset && tk.0 <= self.tk_offset + self.cons.len()) {
-    //         return ConReturn::InvalidToken;
-    //     }
-    //     let mut ret = ConReturn::Nothing;
-    //     let id = tk.0 - self.tk_offset;
-    //     let con = self.cons[id].take();
-    //     if con.is_none() {
-    //         ret = ConReturn::Error(::Error::InvalidToken);
-    //     }
-    //     let mut con = con.unwrap();
-    //     if !con.resp_returned {
-    //         ret = ConReturn::Error(::Error::NoBody);
-    //     }
-    //     let buf = con.buf.take();
-    //     if buf.is_none() {
-    //         ret = ConReturn::Error(::Error::NoBody);
-    //     }
-
-    //     match ret {
-    //         ConReturn::Nothing if ubuf.is_some() => {
-    //             let ubuf = ubuf.unwrap();
-    //             let mut buf = buf.unwrap();
-    //             if ubuf.len() < con.buf_used {
-    //                 ret = ConReturn::Error(::Error::TooSmall);
-    //             } else {
-    //                 let again = ubuf.len() == con.buf_used;
-    //                 (&mut ubuf[..con.buf_used]).copy_from_slice(&buf[..con.buf_used]);
-    //                 ret = ConReturn::Body(buf.len(), true);
-    //                 self.free_bufs.push_front(buf);
-    //                 con.buf_used = 0;
-    //             }
-    //         }
-    //         ConReturn::Nothing => {
-    //             let mut buf = buf.unwrap();
-    //             // let mut again = con.buf_used == buf.len();
-    //             unsafe {
-    //                 buf.set_len(con.buf_used);
-    //             }
-    //             con.buf_used = 0;
-    //             ret = ConReturn::BodyChunk(buf,false);
-    //         }
-    //         _ => {}
-    //     }
-    //     self.cons[id] = Some(con);
-    //     ret
-    // }
-
-
-    // pub fn event<C:TlsConnector>(&mut self, poll: &Poll, tk: Token, ubuf: Option<&mut [u8]>) -> ConReturn {
-    //     if !(tk.0 >= self.tk_offset && tk.0 <= self.tk_offset + self.cons.len()) {
-    //         return ConReturn::InvalidToken;
-    //     }
-    //     let id = tk.0 - self.tk_offset;
-    //     let con = self.cons[id].take();
-    //     if con.is_none() {
-    //         return ConReturn::InvalidToken;
-    //     }
-    //     let mut con = con.unwrap();
-    //     let mut buf = con.hdr_buf.take();
-    //     if buf.is_none() {
-    //         let mut buf = self.get_buf();
-    //         // con.hdr_buf_used = 0;
-    //     }
-    //     let mut ret = ConReturn::Nothing;
-    //     let mut hdr_sz = 0;
-    //     let mut ubuf_used = false;
-    //     let mut ubuf_len = 0;
-    //     let mut empty = [];
-    //     let ubuf = if ubuf.is_some() {
-    //         ubuf.unwrap()
-    //     } else {
-    //         &mut empty
-    //     };
-    //     let mut res;
-    //     loop {
-    //         res = if !con.on_body || ubuf.len() == 0 {
-    //             con.con.signalled::<C>(poll, &mut buf[con.buf_used..])
-    //         } else {
-    //             ubuf_len = ubuf.len();
-    //             ubuf_used = true;
-    //             con.con.signalled::<C>(poll, ubuf)
-    //         };
-    //         match &res {
-    //             &Err(ref e) => {
-    //                 match e {
-    //                     &::Error::Io(ref ie) => {
-    //                         if ie.kind() == IoErrorKind::Interrupted {
-    //                             continue;
-    //                         }
-    //                     }
-    //                     _ => {}
-    //                 }
-    //             }
-    //             _ => {}
-    //         }
-    //         break;
-    //     }
-    //     match res {
-    //         Ok(0) => {
-    //             ret = ConReturn::Error(::Error::Closed);
-    //         }
-    //         Ok(rec_sz) => {
-    //             if !con.resp_returned {
-    //                 let mut headers = [httparse::EMPTY_HEADER; 16];
-    //                 let mut presp = ParseResp::new(&mut headers);
-    //                 let used = presp.parse(&buf);
-    //                 match used {
-    //                     Ok(httparse::Status::Complete(hdr_sz1)) => {
-    //                         con.buf_used += rec_sz;
-    //                         hdr_sz = hdr_sz1;
-    //                         con.resp_returned = true;
-    //                         let mut b = RespBuilder::new();
-    //                         for h in presp.headers.iter() {
-    //                             b.header(h.name, h.value);
-    //                         }
-    //                         if let Some(status) = presp.code {
-    //                             b.status(status);
-    //                         }
-    //                         if let Some(v) = presp.version {
-    //                             if v == 0 {
-    //                                 b.version(Version::HTTP_10);
-    //                             } else if v == 1 {
-    //                                 b.version(Version::HTTP_11);
-    //                             }
-    //                         }
-    //                         let be = b.body(Vec::new());
-    //                         if let Ok(r) = be {
-    //                             ret = ConReturn::Response(r, con.buf_used - hdr_sz)
-    //                         } else if let Err(e) = be {
-    //                             ret = ConReturn::Error(From::from(e));
-    //                         }
-    //                     }
-    //                     Ok(httparse::Status::Partial) => {
-    //                         con.buf_used += rec_sz;
-    //                     }
-    //                     Err(e) => {
-    //                         ret = ConReturn::Error(From::from(e));
-    //                         con.buf_used = 0;
-    //                     }
-    //                 }
-    //             } else {
-    //                 con.buf_used = rec_sz;
-    //                 // ret = ConReturn::Body(buf);
-    //             }
-    //         }
-    //         Err(e) => {
-    //             let is_wblock = match &e {
-    //                 &::Error::Io(ref ie) => {
-    //                     if ie.kind() == IoErrorKind::WouldBlock {
-    //                         true
-    //                     } else {
-    //                         false
-    //                     }
-    //                 }
-    //                 _ => false,
-    //             };
-    //             if is_wblock {
-    //                 ret = ConReturn::Nothing;
-    //             } else {
-    //                 ret = ConReturn::Error(e);
-    //                 con.buf_used = 0;
-    //             }
-    //         }
-    //     }
-    //     if ret.is_terminal() {
-    //         self.free_bufs.push_front(buf);
-    //         self.cons[id] = None;
-    //     } else {
-    //         if con.buf_used > 0 && con.resp_returned {
-    //             if ubuf_used {
-    //                 self.free_bufs.push_front(buf);
-    //                 let used = con.buf_used;
-    //                 con.buf_used = 0;
-    //                 ret = ConReturn::Body(used, used == ubuf_len);
-    //             } else {
-    //                 unsafe { buf.set_len(con.buf_used); }
-    //                 con.buf_used = 0;
-    //                 let more = buf.len() == buf.capacity();
-    //                 ret = ConReturn::BodyChunk(buf, more);
-    //             }
-    //         } else if con.buf_used == 0 {
-    //             // con.buf = None;
-    //             self.free_bufs.push_front(buf);
-    //         } else if !con.resp_returned && con.buf_used == buf.len() {
-    //             // incomplete headers
-    //             if con.buf_used < self.max_hdrs {
-    //                 // we can expand buffer
-    //                 buf.reserve(self.max_hdrs - con.buf_used);
-    //                 // We must go again because sockets are edge triggered
-    //                 con.buf = Some(buf);
-    //                 self.cons[id] = Some(con);
-    //                 if ubuf.len() > 0 {
-    //                     return self.event::<C>(poll, tk, Some(ubuf));
-    //                 } else {
-    //                     return self.event::<C>(poll, tk, None);
-    //                 }
-    //             } else {
-    //                 // User must decide.
-    //                 ret = ConReturn::Error(::Error::HeadersOverlimit(self.max_hdrs));
-    //                 con.buf = Some(buf);
-    //             }
-    //         } else if hdr_sz > 0 && hdr_sz < con.buf_used {
-    //             unsafe {
-    //                 let src:*const u8 = buf.as_ptr().offset(hdr_sz as isize);
-    //                 let dst:*mut u8 = //if ubuf.len() == 0 {
-    //                     buf.as_mut_ptr();
-    //                 // } else {
-    //                 //     ubuf.as_mut_ptr()
-    //                 // };
-    //                 ::std::ptr::copy_nonoverlapping(src, dst, con.buf_used-hdr_sz);
-    //                 // buf.set_len(con.buf_used - hdr_sz);
-    //                 con.buf_used -= hdr_sz;
-    //             }
-    //         } else if hdr_sz > 0 {
-    //             // Got headers but no body
-    //             con.buf_used = 0;
-    //             self.free_bufs.push_front(buf);
-    //         } else {
-    //             con.buf = Some(buf);
-    //         }
-    //         self.cons[id] = Some(con);
-    //     }
-    //     ret
-    // }
+    fn call_over(&mut self, ev: &Event) {
+        if let Some(call) = self.calls.remove(&ev.token().0) {
+            let (_con,cb) = call.stop();
+            if cb.capacity() > 0 {
+                self.reuse(cb);
+            }
+        }
+    }
 }
 

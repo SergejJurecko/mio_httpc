@@ -34,7 +34,6 @@ pub use httpc::*;
 pub use call::CallBuilder;
 
 // TODO:
-// - client api with events
 // - con pool. tk must not be client side provided...client id and token are different
 // - hide tls-api, configure through compile options
 // - dns retries
@@ -78,23 +77,17 @@ quick_error! {
             description(err.description())
             from()
         }
-
-        /// Returned headers are larger then Httpc::max_hdrs_len. You can increase it
-        /// and call Httpc::event again or abandon with Httpc::call_close. 
-        HeadersOverlimit(sz: usize) {
-            display("Response headers are oversized max={}", sz)
+        InvalidToken {
+            display("No call for token")
+        }
+        ResponseTooBig {
+            display("Response over max_response limit")
         }
         Closed {
             display("Connection closed")
         }
         InvalidToken {
             display("MIO token is invalid")
-        }
-        TooSmall {
-            display("Supplied buffer not big enough")
-        }
-        NoBody {
-            display("Can not read body when body not received yet")
         }
         NoHost {
             display("No host found in request")

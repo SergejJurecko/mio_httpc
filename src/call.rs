@@ -4,7 +4,7 @@ use std::io::ErrorKind as IoErrorKind;
 use tls_api::{TlsConnector};
 use httparse::{self, Response as ParseResp};
 use http::response::Builder as RespBuilder;
-use http::{self,Request,Version,Response};
+use http::{self,Request,Version};
 use http::header::*;
 use ::Httpc;
 use std::str::FromStr;
@@ -24,32 +24,24 @@ pub struct CallBuilder {
     pub(crate) tk: Token,
     pub(crate) req: Request<Vec<u8>>,
     dur: Duration,
-    max_body: Option<usize>,
-    stream_response: bool,
+    max_response: usize,
+    // stream_response: bool,
     // TODO: Enum with None, StreamedPlain, StreamChunked
     // stream_req_body: bool,
 }
 
 impl CallBuilder {
     /// mio token is identifier for call in Httpc
+    /// If req contains body it will be used.
+    /// If req contains no body, but has content-length set,
+    /// it will wait for send body to be provided
+    /// through Httpc::event calls. 
     pub fn new(tk: Token, req: Request<Vec<u8>>) -> CallBuilder {
-        // if req.body().len() > 0 {
-        //     if None == req.headers().get(CONTENT_LENGTH) {
-        //         let mut ar = [0u8;15];
-        //         if let Ok(_) = ::itoa::write(&mut ar[..], req.body().len()) {
-        //             req.headers_mut().insert(CONTENT_LENGTH,
-        //                 HeaderValue::from_bytes(&ar).unwrap());
-        //         }
-        //     }
-        // }
-        // if None == req.headers().get(USER_AGENT) {
-        //     req.headers_mut().insert(CONTENT_LENGTH,HeaderValue::from_static(""));
-        // }
         CallBuilder {
             tk,
-            stream_response: false,
+            // stream_response: false,
             // stream_req_body: false,
-            max_body: Some(1024*1024*10),
+            max_response: 1024*1024*10,
             dur: Duration::from_millis(30000),
             req,
         }
@@ -68,17 +60,21 @@ impl CallBuilder {
     //     self
     // }
 
-    /// http::Response will be returned as soon as it is received
-    /// and body will be streamed to client as it is received.
-    /// max_body is ignored in this case.
-    pub fn stream_response(&mut self, b: bool) -> &mut Self {
-        self.stream_response = b;
-        self
-    }
+    // /// http::Response will be returned as soon as it is received
+    // /// and body will be streamed to client as it is received.
+    // /// max_body is ignored in this case.
+    // pub fn stream_response(&mut self, b: bool) -> &mut Self {
+    //     self.stream_response = b;
+    //     self
+    // }
 
     /// Default 10MB
-    pub fn max_body(&mut self, m: Option<usize>) -> &mut Self {
-        self.max_body = m;
+    /// This will limit how big the internal Vec<u8> can grow.
+    /// HTTP response headers are always stored in internal buffer.
+    /// HTTP response body is stored in internal buffer if no external
+    /// buffer is provided.
+    pub fn max_response(&mut self, m: usize) -> &mut Self {
+        self.max_response = m;
         self
     }
 
@@ -93,7 +89,8 @@ impl CallBuilder {
 enum Dir {
     SendingHdr(usize),
     SendingBody(usize),
-    Receiving,
+    Receiving(usize),
+    Done,
 }
 
 pub(crate) struct Call {
@@ -103,7 +100,7 @@ pub(crate) struct Call {
     buf: Vec<u8>,
     hdr_sz: usize,
     body_sz: usize,
-    resp: Option<Response<Vec<u8>>>,
+    // resp: Option<Response<Vec<u8>>>,
     dir: Dir,
 }
 
@@ -117,33 +114,36 @@ impl Call {
             buf,
             hdr_sz: 0,
             body_sz: 0,
-            resp: None,
+            // resp: None,
         }
+    }
+
+    pub fn is_done(&self) -> bool {
+        self.dir == Dir::Done
     }
 
     pub(crate) fn stop(self) -> (Con, Vec<u8>) {
         (self.con, self.buf)
     }
 
-    fn make_space(&mut self, buf: &mut Vec<u8>) -> usize {
+    fn make_space(&mut self, internal: bool, buf: &mut Vec<u8>) -> ::Result<usize> {
         let orig_len = buf.len();
         let spare_capacity = orig_len - buf.capacity();
-        let bytes_needed = if self.body_sz == 0 || self.b.stream_response {
+        let bytes_needed = if self.body_sz == 0 { //|| self.b.stream_response {
             4096 * 2
         } else {
             self.hdr_sz + self.body_sz
         };
-        if spare_capacity >= bytes_needed {
-            unsafe {
-                buf.set_len(orig_len + spare_capacity);
-            }
-        } else {
-            buf.reserve_exact(bytes_needed - spare_capacity);
-            unsafe {
-                buf.set_len(bytes_needed - spare_capacity);
-            }
+        if internal && orig_len + bytes_needed > self.b.max_response {
+            return Err(::Error::ResponseTooBig);
         }
-        orig_len
+        if spare_capacity < bytes_needed {
+            buf.reserve_exact(bytes_needed - spare_capacity);
+        }
+        unsafe {
+            buf.set_len(orig_len + bytes_needed);
+        }
+        Ok(orig_len)
     }
     
     fn fill_send_req(&mut self, buf: &mut Vec<u8>) {
@@ -198,27 +198,49 @@ impl Call {
         buf.extend(b"\r\n");
     }
 
-    pub fn event<C:TlsConnector>(&mut self, cp: &mut CallParam, b: Option<&mut Vec<u8>>) -> ::Result<EventResult> {
+    pub fn event<C:TlsConnector>(&mut self, 
+            cp: &mut CallParam, 
+            b: Option<&mut Vec<u8>>) -> ::Result<EventResult> {
         match self.dir {
-            Dir::Receiving => {
-                if self.hdr_sz == 0 || !self.b.stream_response || b.is_none() {
+            Dir::Done => {
+                return Ok(EventResult::Done);
+            }
+            Dir::Receiving(rec_pos) => {
+                if self.hdr_sz == 0 || b.is_none() {
                     let mut buf = ::std::mem::replace(&mut self.buf, Vec::new());
-                    let ret = self.event_rec::<C>(cp, &mut buf);
+                    // Have we already received everything?
+                    // Move body data to beginning of buffer
+                    // and return with body.
+                    if rec_pos >= self.body_sz {
+                        unsafe {
+                            let src:*const u8 = buf.as_ptr().offset(self.hdr_sz as isize);
+                            let dst:*mut u8 = buf.as_mut_ptr();
+                            ::std::ptr::copy(src, dst, self.body_sz);
+                        }
+                        return Ok(EventResult::DoneWithBody(buf));
+                    }
+                    let ret = self.event_rec::<C>(cp, true, &mut buf);
                     self.buf = buf;
                     ret
                 } else {
                     let mut b = b.unwrap();
+                    // Can we copy anything from internal buffer to 
+                    // a client provided one?
                     if self.buf.len() > self.hdr_sz {
                         (&mut b).extend(&self.buf[self.hdr_sz..]);
+                        if rec_pos >= self.body_sz {
+                            self.dir = Dir::Done;
+                            return Ok(EventResult::ReceivedBody(self.buf.len() - self.hdr_sz));
+                        }
                         self.buf.truncate(self.hdr_sz);
                     }
-                    self.event_rec::<C>(cp, b)
+                    self.event_rec::<C>(cp, false, b)
                 }
             }
             Dir::SendingHdr(pos) => {
                 let mut buf = ::std::mem::replace(&mut self.buf, Vec::new());
                 if self.hdr_sz == 0 {
-                    self.make_space(&mut buf);
+                    self.make_space(false, &mut buf)?;
                     self.fill_send_req(&mut buf);
                 }
                 let hdr_sz = self.hdr_sz;
@@ -230,12 +252,12 @@ impl Call {
                 }
                 ret
             }
+            Dir::SendingBody(pos) if self.b.req.body().len() > 0 => {
+                self.event_send::<C>(cp, pos, &[])
+            }
             Dir::SendingBody(_pos) if b.is_some() => {
                 let b = b.unwrap();
                 self.event_send::<C>(cp, 0, &b[..])
-            }
-            Dir::SendingBody(pos) if self.b.req.body().len() > 0 => {
-                self.event_send::<C>(cp, pos, &[])
             }
             _ => {
                 Ok(EventResult::WaitReqBody)
@@ -243,7 +265,10 @@ impl Call {
         }
     }
 
-    fn event_send<C:TlsConnector>(&mut self, cp: &mut CallParam, in_pos: usize, b: &[u8]) -> ::Result<EventResult> {
+    fn event_send<C:TlsConnector>(&mut self, 
+            cp: &mut CallParam, 
+            in_pos: usize, 
+            b: &[u8]) -> ::Result<EventResult> {
         self.con.signalled::<C,Vec<u8>>(cp, &self.b.req)?;
         if !self.con.ready.is_writable() {
             return Ok(EventResult::Nothing);
@@ -272,7 +297,7 @@ impl Call {
                             } else {
                                 self.hdr_sz = 0;
                                 self.body_sz = 0;
-                                self.dir = Dir::Receiving;
+                                self.dir = Dir::Receiving(0);
                             }
                         } else {
                             self.dir = Dir::SendingHdr(pos+sz);
@@ -282,7 +307,7 @@ impl Call {
                         if self.body_sz == pos+sz {
                             self.hdr_sz = 0;
                             self.body_sz = 0;
-                            self.dir = Dir::Receiving;
+                            self.dir = Dir::Receiving(0);
                             return Ok(EventResult::Nothing);
                         }
                         self.dir = Dir::SendingBody(pos+sz);
@@ -296,8 +321,11 @@ impl Call {
         }
     }
 
-    fn event_rec<C:TlsConnector>(&mut self, cp: &mut CallParam, b: &mut Vec<u8>) -> ::Result<EventResult> {
-        let mut orig_len = self.make_space(b);
+    fn event_rec<C:TlsConnector>(&mut self, 
+            cp: &mut CallParam, 
+            internal: bool, 
+            buf: &mut Vec<u8>) -> ::Result<EventResult> {
+        let mut orig_len = self.make_space(internal, buf)?;
         let mut io_ret;
         let mut entire_sz = 0;
         self.con.signalled::<C,Vec<u8>>(cp, &self.b.req)?;
@@ -305,7 +333,7 @@ impl Call {
             return Ok(EventResult::Nothing);
         }
         loop {
-            io_ret = self.con.read(b);
+            io_ret = self.con.read(&mut buf[orig_len..]);
             match &io_ret {
                 &Err(ref ie) => {
                     if ie.kind() == IoErrorKind::Interrupted {
@@ -320,11 +348,11 @@ impl Call {
                 }
                 &Ok(sz) if sz > 0 => {
                     entire_sz += sz;
-                    if b.len() == orig_len+sz {
-                        orig_len = self.make_space(b);
+                    if buf.len() == orig_len+sz {
+                        orig_len = self.make_space(internal, buf)?;
                         continue;
                     }
-                    b.truncate(orig_len+sz);
+                    buf.truncate(orig_len+sz);
                 }
                 _ => {}
             }
@@ -337,11 +365,12 @@ impl Call {
             Ok(0) => {
                 return Err(::Error::Closed);
             }
-            Ok(_) => {
+            Ok(bytes_rec) => {
                 if self.hdr_sz == 0 {
                     let mut headers = [httparse::EMPTY_HEADER; 16];
                     let mut presp = ParseResp::new(&mut headers);
-                    match presp.parse(b) {
+                    let buflen = buf.len();
+                    match presp.parse(buf) {
                         Ok(httparse::Status::Complete(hdr_sz)) => {
                             self.hdr_sz = hdr_sz;
                             let mut b = RespBuilder::new();
@@ -366,25 +395,40 @@ impl Call {
                                     }
                                 }
                             }
-                            self.resp = Some(resp);
+                            if self.body_sz == 0 {
+                                self.dir == Dir::Done;
+                            } else {
+                                self.dir = Dir::Receiving(buflen - self.hdr_sz);
+                            }
+                            return Ok(EventResult::Response(resp));
                         }
                         Ok(httparse::Status::Partial) => {
+                            return Ok(EventResult::Nothing);
                         }
                         Err(e) => {
                             return Err(From::from(e));
                         }
                     }
-                } else if b.len() >= self.body_sz + self.hdr_sz && self.body_sz > 0 {
-                    return Ok(true);
                 } else {
-                    return Ok(false);
+                    let pos = if let Dir::Receiving(pos) = self.dir {
+                        pos
+                    } else { 0 };
+                    
+                    if pos + bytes_rec >= self.body_sz {
+                        self.dir = Dir::Done;
+                    } else {
+                        self.dir = Dir::Receiving(pos + bytes_rec);
+                    }
+                    return Ok(EventResult::ReceivedBody(pos + bytes_rec));
+                    // return Ok(true);
                 }
+                //  else {
+                //     return Ok(false);
+                // }
             }
             Err(e) => {
                 return Err(From::from(e));
             }
         }
-
-        Ok(false)
     }
 }
