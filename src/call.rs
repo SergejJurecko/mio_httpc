@@ -25,9 +25,6 @@ pub struct CallBuilder {
     pub(crate) req: Request<Vec<u8>>,
     dur: Duration,
     max_response: usize,
-    // stream_response: bool,
-    // TODO: Enum with None, StreamedPlain, StreamChunked
-    // stream_req_body: bool,
 }
 
 impl CallBuilder {
@@ -51,22 +48,6 @@ impl CallBuilder {
     pub fn call<C:TlsConnector>(self, httpc: &mut Httpc, poll: &Poll) -> ::Result<()> {
         httpc.call::<C>(self, poll)
     }
-
-    //// If post/put and no body in supplied http::Request
-    //// it will assume body will be received client side.
-    //// Content-length header must be set manually.
-    // pub fn stream_req_body(&mut self, b: bool) -> &mut Self {
-    //     self.stream_req_body = b;
-    //     self
-    // }
-
-    // /// http::Response will be returned as soon as it is received
-    // /// and body will be streamed to client as it is received.
-    // /// max_body is ignored in this case.
-    // pub fn stream_response(&mut self, b: bool) -> &mut Self {
-    //     self.stream_response = b;
-    //     self
-    // }
 
     /// Default 10MB
     /// This will limit how big the internal Vec<u8> can grow.
@@ -128,12 +109,28 @@ impl Call {
 
     fn make_space(&mut self, internal: bool, buf: &mut Vec<u8>) -> ::Result<usize> {
         let orig_len = buf.len();
-        let spare_capacity = orig_len - buf.capacity();
-        let bytes_needed = if self.body_sz == 0 { //|| self.b.stream_response {
-            4096 * 2
-        } else {
-            self.hdr_sz + self.body_sz
+        let orig_capacity = buf.capacity();
+        let spare_capacity = orig_capacity - orig_len;
+
+        let bytes_needed = if self.body_sz == 0 { // Internal buffer pre HTTP headers
+            if orig_len == 0 {
+                // buf capacity is always at least 2*4096
+                orig_capacity
+            } else {
+                (orig_len * 2).min(self.b.max_response)
+            }
+        } else if internal { // Internal buffer on body
+            (orig_len * 2).min(self.b.max_response)
+        } else { // External buffer
+            if orig_len == 0 {
+                // We do not know if external buffer is reading by chunk
+                // or will receive entire body.
+                self.body_sz.min(2*4096)
+            } else {
+                self.body_sz.min(orig_len*2)
+            }
         };
+
         if internal && orig_len + bytes_needed > self.b.max_response {
             return Err(::Error::ResponseTooBig);
         }
@@ -145,7 +142,7 @@ impl Call {
         }
         Ok(orig_len)
     }
-    
+
     fn fill_send_req(&mut self, buf: &mut Vec<u8>) {
         buf.extend(self.b.req.method().as_str().as_bytes());
         buf.extend(b" ");
@@ -215,7 +212,7 @@ impl Call {
                     self.fill_send_req(&mut buf);
                 }
                 let hdr_sz = self.hdr_sz;
-                let ret = self.event_send1::<C>(cp, 0, &buf[pos..hdr_sz]);
+                let ret = self.event_send_do::<C>(cp, 0, &buf[pos..hdr_sz]);
                 self.buf = buf;
                 if let Dir::SendingBody(_) = self.dir {
                     // go again
@@ -224,11 +221,11 @@ impl Call {
                 ret
             }
             Dir::SendingBody(pos) if self.b.req.body().len() > 0 => {
-                self.event_send1::<C>(cp, pos, &[])
+                self.event_send_do::<C>(cp, pos, &[])
             }
             Dir::SendingBody(_pos) if b.is_some() => {
                 let b = b.unwrap();
-                self.event_send1::<C>(cp, 0, &b[..])
+                self.event_send_do::<C>(cp, 0, &b[..])
             }
             _ => {
                 Ok(SendState::WaitReqBody)
@@ -257,7 +254,7 @@ impl Call {
                         }
                         return Ok(RecvState::DoneWithBody(buf));
                     }
-                    let ret = self.event_rec1::<C>(cp, true, &mut buf);
+                    let ret = self.event_rec_do::<C>(cp, true, &mut buf);
                     self.buf = buf;
                     ret
                 } else {
@@ -272,7 +269,7 @@ impl Call {
                         }
                         self.buf.truncate(self.hdr_sz);
                     }
-                    self.event_rec1::<C>(cp, false, b)
+                    self.event_rec_do::<C>(cp, false, b)
                 }
             }
             _ => {
@@ -281,7 +278,7 @@ impl Call {
         }
     }
 
-    fn event_send1<C:TlsConnector>(&mut self, 
+    fn event_send_do<C:TlsConnector>(&mut self, 
             cp: &mut CallParam, 
             in_pos: usize, 
             b: &[u8]) -> ::Result<SendState> {
@@ -337,7 +334,7 @@ impl Call {
         }
     }
 
-    fn event_rec1<C:TlsConnector>(&mut self, 
+    fn event_rec_do<C:TlsConnector>(&mut self, 
             cp: &mut CallParam, 
             internal: bool, 
             buf: &mut Vec<u8>) -> ::Result<RecvState> {
@@ -416,7 +413,7 @@ impl Call {
                             } else {
                                 self.dir = Dir::Receiving(buflen - self.hdr_sz);
                             }
-                            return Ok(RecvState::Response(resp));
+                            return Ok(RecvState::Response(resp, self.body_sz));
                         }
                         Ok(httparse::Status::Partial) => {
                             return Ok(RecvState::Nothing);

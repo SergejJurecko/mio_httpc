@@ -39,8 +39,20 @@ pub use call::CallBuilder;
 // - dns retries
 // - timeouts
 // - websockets
+// - chunked response
 // - http2
 
+// use std::str::FromStr;
+// pub fn content_length<T>(resp: &http::Response<T>) -> usize {
+//     if let Some(ref clh) = resp.headers().get(http::header::CONTENT_LENGTH) {
+//         if let Ok(clhs) = clh.to_str() {
+//             if let Ok(bsz) = usize::from_str(clhs) {
+//                 return bsz;
+//             }
+//         }
+//     }
+//     0
+// }
 
 // use url::ParseError as UrlParseError;
 
