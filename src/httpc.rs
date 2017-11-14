@@ -10,24 +10,36 @@ use std::collections::VecDeque;
 use call::{Call,CallBuilder};
 use fnv::FnvHashMap as HashMap;
 
-pub enum EventResult {
-    /// HTTP Response. BodyChunk will be empty if ubuf is present
-    /// and large enough. Otherwise ubuf is filled with any possible data is
-    /// in chunk.
-    Response(Response<Vec<u8>>),
-    /// All errors except HeadersOverlimit are terminal and connection is closed.
+pub enum SendState {
+    /// Unrecoverable error has occured and call is finished.
     Error(::Error),
     /// How many bytes of body have been sent.
     SentBody(usize),
-    /// How many bytes were received.
-    ReceivedBody(usize),
+    /// Waiting for body to be provided for sending.
+    WaitReqBody,
+    /// Call has switched to receiving state.
+    Receiving,
     /// Request is done body has been returned in user provided buffer or
     /// there is no response body.
     Done,
+    // Nothing yet to return.
+    Nothing,
+}
+
+pub enum RecvState {
+    /// Unrecoverable error has occured and call is finished.
+    Error(::Error),
+    /// HTTP Response. If there is a body it will follow, otherwise call is done.
+    Response(Response<Vec<u8>>),
+    /// How many bytes were received.
+    ReceivedBody(usize),
     /// Request is done with body.
     DoneWithBody(Vec<u8>),
-    /// Waiting for body to be provided for sending.
-    WaitReqBody,
+    /// We are not done sending request yet.
+    Sending,
+    /// Request is done body has been returned in user provided buffer or
+    /// there is no response body.
+    Done,
     // Nothing yet to return.
     Nothing,
 }
@@ -99,41 +111,78 @@ impl Httpc {
             b
         }
     }
+    pub fn event<C:TlsConnector>(&mut self, poll: &Poll, ev: &Event) -> Option<u32> {
+        Some(1)
+    }
 
-    /// If stream_response=true for call, body will be written to b
-    /// if it is set. b will be increased in size if required.
-    pub fn event<C:TlsConnector>(&mut self, poll: &Poll, ev: &Event, b: Option<&mut Vec<u8>>) -> EventResult {
+    /// If POST/PUT it will be either taken from buf, from Request provided to CallBuilder
+    /// or will return SendState::WaitReqBody.
+    /// buf slice is assumed to have taken previous SendState::SentBody(usize) into account
+    /// and starts from part of buffer that has not been sent yet.
+    pub fn call_send<C:TlsConnector>(&mut self, poll: &Poll, ev: &Event, buf: Option<&[u8]>) -> SendState {
+        let id = ev.token().0;
         let cret = if let Some(c) = self.calls.get_mut(&ev.token().0) {
             let mut cp = ::call::CallParam {
                 poll,
                 ev,
                 dns: &mut self.cache,
             };
-            c.event::<C>(&mut cp, b)
+            c.event_send::<C>(&mut cp, buf)
         } else {
-            return EventResult::Error(::Error::InvalidToken);
+            return SendState::Error(::Error::InvalidToken);
         };
         match cret {
-            Ok(EventResult::Done) => {
-                self.call_over(ev);
-                return EventResult::Done;
-            }
-            Ok(EventResult::DoneWithBody(body)) => {
-                self.call_over(ev);
-                return EventResult::DoneWithBody(body);
+            Ok(SendState::Done) => {
+                self.call_over(id);
+                return SendState::Done;
             }
             Ok(er) => {
                 return er;
             }
             Err(e) => {
-                self.call_over(ev);
-                return EventResult::Error(e); 
+                self.call_over(id);
+                return SendState::Error(e); 
             }
         }
     }
 
-    fn call_over(&mut self, ev: &Event) {
-        if let Some(call) = self.calls.remove(&ev.token().0) {
+    /// If no buf provided, response body (if any) is stored in an internal buffer.
+    /// If buf provided after some body has been received, it will be copied to it.
+    /// Buf will be expanded if required.
+    /// If body is only stored in internal buffer it will be limited to CallBuilder::max_response.
+    pub fn call_recv<C:TlsConnector>(&mut self, poll: &Poll, ev: &Event, buf: Option<&mut Vec<u8>>) -> RecvState {
+        let id = ev.token().0;
+        let cret = if let Some(c) = self.calls.get_mut(&ev.token().0) {
+            let mut cp = ::call::CallParam {
+                poll,
+                ev,
+                dns: &mut self.cache,
+            };
+            c.event_recv::<C>(&mut cp, buf)
+        } else {
+            return RecvState::Error(::Error::InvalidToken);
+        };
+        match cret {
+            Ok(RecvState::Done) => {
+                self.call_over(id);
+                return RecvState::Done;
+            }
+            Ok(RecvState::DoneWithBody(body)) => {
+                self.call_over(id);
+                return RecvState::DoneWithBody(body);
+            }
+            Ok(er) => {
+                return er;
+            }
+            Err(e) => {
+                self.call_over(id);
+                return RecvState::Error(e); 
+            }
+        }
+    }
+
+    fn call_over(&mut self, id: usize) {
+        if let Some(call) = self.calls.remove(&id) {
             let (_con,cb) = call.stop();
             if cb.capacity() > 0 {
                 self.reuse(cb);

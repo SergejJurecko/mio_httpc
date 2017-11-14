@@ -86,9 +86,6 @@ quick_error! {
         Closed {
             display("Connection closed")
         }
-        InvalidToken {
-            display("MIO token is invalid")
-        }
         NoHost {
             display("No host found in request")
         }

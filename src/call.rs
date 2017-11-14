@@ -11,7 +11,7 @@ use std::str::FromStr;
 use std::time::{Duration,Instant};
 use dns_cache::DnsCache;
 use std::io::{Read,Write};
-use ::httpc::EventResult;
+use ::httpc::{SendState,RecvState};
 
 pub(crate) struct CallParam<'a> {
     pub poll: &'a Poll,
@@ -118,9 +118,9 @@ impl Call {
         }
     }
 
-    pub fn is_done(&self) -> bool {
-        self.dir == Dir::Done
-    }
+    // pub fn is_done(&self) -> bool {
+    //     self.dir == Dir::Done
+    // }
 
     pub(crate) fn stop(self) -> (Con, Vec<u8>) {
         (self.con, self.buf)
@@ -198,12 +198,50 @@ impl Call {
         buf.extend(b"\r\n");
     }
 
-    pub fn event<C:TlsConnector>(&mut self, 
+    pub fn event_send<C:TlsConnector>(&mut self, 
             cp: &mut CallParam, 
-            b: Option<&mut Vec<u8>>) -> ::Result<EventResult> {
+            b: Option<&[u8]>) -> ::Result<SendState> {
         match self.dir {
             Dir::Done => {
-                return Ok(EventResult::Done);
+                return Ok(SendState::Done);
+            }
+            Dir::Receiving(_) => {
+                return Ok(SendState::Receiving)
+            }
+            Dir::SendingHdr(pos) => {
+                let mut buf = ::std::mem::replace(&mut self.buf, Vec::new());
+                if self.hdr_sz == 0 {
+                    self.make_space(false, &mut buf)?;
+                    self.fill_send_req(&mut buf);
+                }
+                let hdr_sz = self.hdr_sz;
+                let ret = self.event_send1::<C>(cp, 0, &buf[pos..hdr_sz]);
+                self.buf = buf;
+                if let Dir::SendingBody(_) = self.dir {
+                    // go again
+                    return self.event_send::<C>(cp, b);
+                }
+                ret
+            }
+            Dir::SendingBody(pos) if self.b.req.body().len() > 0 => {
+                self.event_send1::<C>(cp, pos, &[])
+            }
+            Dir::SendingBody(_pos) if b.is_some() => {
+                let b = b.unwrap();
+                self.event_send1::<C>(cp, 0, &b[..])
+            }
+            _ => {
+                Ok(SendState::WaitReqBody)
+            }
+        }
+    }
+
+    pub fn event_recv<C:TlsConnector>(&mut self, 
+            cp: &mut CallParam, 
+            b: Option<&mut Vec<u8>>) -> ::Result<RecvState> {
+        match self.dir {
+            Dir::Done => {
+                return Ok(RecvState::Done);
             }
             Dir::Receiving(rec_pos) => {
                 if self.hdr_sz == 0 || b.is_none() {
@@ -217,9 +255,9 @@ impl Call {
                             let dst:*mut u8 = buf.as_mut_ptr();
                             ::std::ptr::copy(src, dst, self.body_sz);
                         }
-                        return Ok(EventResult::DoneWithBody(buf));
+                        return Ok(RecvState::DoneWithBody(buf));
                     }
-                    let ret = self.event_rec::<C>(cp, true, &mut buf);
+                    let ret = self.event_rec1::<C>(cp, true, &mut buf);
                     self.buf = buf;
                     ret
                 } else {
@@ -230,49 +268,27 @@ impl Call {
                         (&mut b).extend(&self.buf[self.hdr_sz..]);
                         if rec_pos >= self.body_sz {
                             self.dir = Dir::Done;
-                            return Ok(EventResult::ReceivedBody(self.buf.len() - self.hdr_sz));
+                            return Ok(RecvState::ReceivedBody(self.buf.len() - self.hdr_sz));
                         }
                         self.buf.truncate(self.hdr_sz);
                     }
-                    self.event_rec::<C>(cp, false, b)
+                    self.event_rec1::<C>(cp, false, b)
                 }
-            }
-            Dir::SendingHdr(pos) => {
-                let mut buf = ::std::mem::replace(&mut self.buf, Vec::new());
-                if self.hdr_sz == 0 {
-                    self.make_space(false, &mut buf)?;
-                    self.fill_send_req(&mut buf);
-                }
-                let hdr_sz = self.hdr_sz;
-                let ret = self.event_send::<C>(cp, 0, &buf[pos..hdr_sz]);
-                self.buf = buf;
-                if let Dir::SendingBody(_) = self.dir {
-                    // go again
-                    return self.event::<C>(cp, b);
-                }
-                ret
-            }
-            Dir::SendingBody(pos) if self.b.req.body().len() > 0 => {
-                self.event_send::<C>(cp, pos, &[])
-            }
-            Dir::SendingBody(_pos) if b.is_some() => {
-                let b = b.unwrap();
-                self.event_send::<C>(cp, 0, &b[..])
             }
             _ => {
-                Ok(EventResult::WaitReqBody)
+                Ok(RecvState::Sending)
             }
         }
     }
 
-    fn event_send<C:TlsConnector>(&mut self, 
+    fn event_send1<C:TlsConnector>(&mut self, 
             cp: &mut CallParam, 
             in_pos: usize, 
-            b: &[u8]) -> ::Result<EventResult> {
+            b: &[u8]) -> ::Result<SendState> {
         self.con.signalled::<C,Vec<u8>>(cp, &self.b.req)?;
-        if !self.con.ready.is_writable() {
-            return Ok(EventResult::Nothing);
-        }
+        // if !self.con.ready.is_writable() {
+        //     return Ok(SendState::Nothing);
+        // }
         let mut io_ret;
         loop {
             if b.len() > 0 {
@@ -286,7 +302,7 @@ impl Call {
                         continue;
                     } else if ie.kind() == IoErrorKind::WouldBlock {
                         self.con.ready.remove(Ready::writable());
-                        return Ok(EventResult::Nothing);
+                        return Ok(SendState::Nothing);
                     }
                 }
                 &Ok(sz) if sz > 0 => {
@@ -302,16 +318,16 @@ impl Call {
                         } else {
                             self.dir = Dir::SendingHdr(pos+sz);
                         }
-                        return Ok(EventResult::Nothing);
+                        return Ok(SendState::Nothing);
                     } else if let Dir::SendingBody(pos) = self.dir {
                         if self.body_sz == pos+sz {
                             self.hdr_sz = 0;
                             self.body_sz = 0;
                             self.dir = Dir::Receiving(0);
-                            return Ok(EventResult::Nothing);
+                            return Ok(SendState::Receiving);
                         }
                         self.dir = Dir::SendingBody(pos+sz);
-                        return Ok(EventResult::SentBody(pos+sz));
+                        return Ok(SendState::SentBody(pos+sz));
                     }
                 }
                 _ => {
@@ -321,17 +337,17 @@ impl Call {
         }
     }
 
-    fn event_rec<C:TlsConnector>(&mut self, 
+    fn event_rec1<C:TlsConnector>(&mut self, 
             cp: &mut CallParam, 
             internal: bool, 
-            buf: &mut Vec<u8>) -> ::Result<EventResult> {
+            buf: &mut Vec<u8>) -> ::Result<RecvState> {
         let mut orig_len = self.make_space(internal, buf)?;
         let mut io_ret;
         let mut entire_sz = 0;
         self.con.signalled::<C,Vec<u8>>(cp, &self.b.req)?;
-        if !self.con.ready.is_readable() {
-            return Ok(EventResult::Nothing);
-        }
+        // if !self.con.ready.is_readable() {
+        //     return Ok(RecvState::Nothing);
+        // }
         loop {
             io_ret = self.con.read(&mut buf[orig_len..]);
             match &io_ret {
@@ -341,7 +357,7 @@ impl Call {
                     } else if ie.kind() == IoErrorKind::WouldBlock {
                         self.con.ready.remove(Ready::readable());
                         if entire_sz == 0 {
-                            return Ok(EventResult::Nothing);
+                            return Ok(RecvState::Nothing);
                         }
                         break;
                     }
@@ -400,10 +416,10 @@ impl Call {
                             } else {
                                 self.dir = Dir::Receiving(buflen - self.hdr_sz);
                             }
-                            return Ok(EventResult::Response(resp));
+                            return Ok(RecvState::Response(resp));
                         }
                         Ok(httparse::Status::Partial) => {
-                            return Ok(EventResult::Nothing);
+                            return Ok(RecvState::Nothing);
                         }
                         Err(e) => {
                             return Err(From::from(e));
@@ -419,12 +435,8 @@ impl Call {
                     } else {
                         self.dir = Dir::Receiving(pos + bytes_rec);
                     }
-                    return Ok(EventResult::ReceivedBody(pos + bytes_rec));
-                    // return Ok(true);
+                    return Ok(RecvState::ReceivedBody(pos + bytes_rec));
                 }
-                //  else {
-                //     return Ok(false);
-                // }
             }
             Err(e) => {
                 return Err(From::from(e));
