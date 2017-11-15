@@ -1,5 +1,5 @@
 use con::Con;
-use mio::{Token,Poll,Event,Ready};
+use mio::{Poll,Event,Ready};
 use std::io::ErrorKind as IoErrorKind;
 use tls_api::{TlsConnector};
 use httparse::{self, Response as ParseResp};
@@ -15,13 +15,13 @@ use ::httpc::{SendState,RecvState};
 
 pub(crate) struct CallParam<'a> {
     pub poll: &'a Poll,
-    pub ev: &'a Event,
     pub dns: &'a mut DnsCache,
+    // pub con: &'a mut Con,
+    pub ev: &'a Event,
 }
 
 /// Start configure call.
 pub struct CallBuilder {
-    pub(crate) tk: Token,
     pub(crate) req: Request<Vec<u8>>,
     dur: Duration,
     max_response: usize,
@@ -33,11 +33,8 @@ impl CallBuilder {
     /// If req contains no body, but has content-length set,
     /// it will wait for send body to be provided
     /// through Httpc::event calls. 
-    pub fn new(tk: Token, req: Request<Vec<u8>>) -> CallBuilder {
+    pub fn new(req: Request<Vec<u8>>) -> CallBuilder {
         CallBuilder {
-            tk,
-            // stream_response: false,
-            // stream_req_body: false,
             max_response: 1024*1024*10,
             dur: Duration::from_millis(30000),
             req,
@@ -45,7 +42,7 @@ impl CallBuilder {
     }
 
     /// Consume and execute
-    pub fn call<C:TlsConnector>(self, httpc: &mut Httpc, poll: &Poll) -> ::Result<()> {
+    pub fn call<C:TlsConnector>(self, httpc: &mut Httpc, poll: &Poll) -> ::Result<::CallId> {
         httpc.call::<C>(self, poll)
     }
 
@@ -77,7 +74,7 @@ enum Dir {
 pub(crate) struct Call {
     b: CallBuilder,
     _start: Instant,
-    con: Con,
+    // con: Con,
     buf: Vec<u8>,
     hdr_sz: usize,
     body_sz: usize,
@@ -86,12 +83,11 @@ pub(crate) struct Call {
 }
 
 impl Call {
-    pub(crate) fn new(b: CallBuilder, con: Con, buf: Vec<u8>) -> Call {
+    pub(crate) fn new(b: CallBuilder, buf: Vec<u8>) -> Call {
         Call {
             dir: Dir::SendingHdr(0),
             _start: Instant::now(),
             b,
-            con,
             buf,
             hdr_sz: 0,
             body_sz: 0,
@@ -103,8 +99,8 @@ impl Call {
     //     self.dir == Dir::Done
     // }
 
-    pub(crate) fn stop(self) -> (Con, Vec<u8>) {
-        (self.con, self.buf)
+    pub(crate) fn stop(self) -> Vec<u8> {
+        self.buf
     }
 
     fn make_space(&mut self, internal: bool, buf: &mut Vec<u8>) -> ::Result<usize> {
@@ -196,6 +192,7 @@ impl Call {
     }
 
     pub fn event_send<C:TlsConnector>(&mut self, 
+            con: &mut Con,
             cp: &mut CallParam, 
             b: Option<&[u8]>) -> ::Result<SendState> {
         match self.dir {
@@ -212,20 +209,20 @@ impl Call {
                     self.fill_send_req(&mut buf);
                 }
                 let hdr_sz = self.hdr_sz;
-                let ret = self.event_send_do::<C>(cp, 0, &buf[pos..hdr_sz]);
+                let ret = self.event_send_do::<C>(con, cp, 0, &buf[pos..hdr_sz]);
                 self.buf = buf;
                 if let Dir::SendingBody(_) = self.dir {
                     // go again
-                    return self.event_send::<C>(cp, b);
+                    return self.event_send::<C>(con, cp, b);
                 }
                 ret
             }
             Dir::SendingBody(pos) if self.b.req.body().len() > 0 => {
-                self.event_send_do::<C>(cp, pos, &[])
+                self.event_send_do::<C>(con, cp, pos, &[])
             }
             Dir::SendingBody(_pos) if b.is_some() => {
                 let b = b.unwrap();
-                self.event_send_do::<C>(cp, 0, &b[..])
+                self.event_send_do::<C>(con, cp, 0, &b[..])
             }
             _ => {
                 Ok(SendState::WaitReqBody)
@@ -234,6 +231,7 @@ impl Call {
     }
 
     pub fn event_recv<C:TlsConnector>(&mut self, 
+            con: &mut Con,
             cp: &mut CallParam, 
             b: Option<&mut Vec<u8>>) -> ::Result<RecvState> {
         match self.dir {
@@ -254,7 +252,7 @@ impl Call {
                         }
                         return Ok(RecvState::DoneWithBody(buf));
                     }
-                    let ret = self.event_rec_do::<C>(cp, true, &mut buf);
+                    let ret = self.event_rec_do::<C>(con, cp, true, &mut buf);
                     self.buf = buf;
                     ret
                 } else {
@@ -269,7 +267,7 @@ impl Call {
                         }
                         self.buf.truncate(self.hdr_sz);
                     }
-                    self.event_rec_do::<C>(cp, false, b)
+                    self.event_rec_do::<C>(con, cp, false, b)
                 }
             }
             _ => {
@@ -279,26 +277,27 @@ impl Call {
     }
 
     fn event_send_do<C:TlsConnector>(&mut self, 
+            con: &mut Con,
             cp: &mut CallParam, 
             in_pos: usize, 
             b: &[u8]) -> ::Result<SendState> {
-        self.con.signalled::<C,Vec<u8>>(cp, &self.b.req)?;
+        con.signalled::<C,Vec<u8>>(cp, &self.b.req)?;
         // if !self.con.ready.is_writable() {
         //     return Ok(SendState::Nothing);
         // }
         let mut io_ret;
         loop {
             if b.len() > 0 {
-                io_ret = self.con.write(&b[in_pos..]);
+                io_ret = con.write(&b[in_pos..]);
             } else {
-                io_ret = self.con.write(&self.b.req.body()[in_pos..]);
+                io_ret = con.write(&self.b.req.body()[in_pos..]);
             }
             match &io_ret {
                 &Err(ref ie) => {
                     if ie.kind() == IoErrorKind::Interrupted {
                         continue;
                     } else if ie.kind() == IoErrorKind::WouldBlock {
-                        self.con.ready.remove(Ready::writable());
+                        con.ready.remove(Ready::writable());
                         return Ok(SendState::Nothing);
                     }
                 }
@@ -335,24 +334,25 @@ impl Call {
     }
 
     fn event_rec_do<C:TlsConnector>(&mut self, 
+            con: &mut Con,
             cp: &mut CallParam, 
             internal: bool, 
             buf: &mut Vec<u8>) -> ::Result<RecvState> {
         let mut orig_len = self.make_space(internal, buf)?;
         let mut io_ret;
         let mut entire_sz = 0;
-        self.con.signalled::<C,Vec<u8>>(cp, &self.b.req)?;
+        con.signalled::<C,Vec<u8>>(cp, &self.b.req)?;
         // if !self.con.ready.is_readable() {
         //     return Ok(RecvState::Nothing);
         // }
         loop {
-            io_ret = self.con.read(&mut buf[orig_len..]);
+            io_ret = con.read(&mut buf[orig_len..]);
             match &io_ret {
                 &Err(ref ie) => {
                     if ie.kind() == IoErrorKind::Interrupted {
                         continue;
                     } else if ie.kind() == IoErrorKind::WouldBlock {
-                        self.con.ready.remove(Ready::readable());
+                        con.ready.remove(Ready::readable());
                         if entire_sz == 0 {
                             return Ok(RecvState::Nothing);
                         }

@@ -12,17 +12,6 @@ use http::{Request,Uri};
 use std::io::{Read,Write};
 use ::call::CallParam;
 
-pub(crate) struct Con {
-    pub token: Token,
-    // pub req: Request<T>,
-    pub nuses: usize,
-    pub ready: Ready,
-    sock: Option<TcpStream>,
-    tls: Option<TlsStream<TcpStream>>,
-    _dns: Option<Dns>,
-    dns_sock: Option<UdpSocket>,
-}
-
 fn url_port(url: &Uri) -> Result<u16> {
     if let Some(p) = url.port() {
         return Ok(p);
@@ -54,6 +43,18 @@ fn connect<C: TlsConnector>(addr: SocketAddr, host: &str) -> Result<(Option<TcpS
     return Ok((Some(tcp),None));
 }
 
+pub struct Con {
+    pub token: Token,
+    // pub req: Request<T>,
+    nuses: usize,
+    pub ready: Ready,
+    sock: Option<TcpStream>,
+    tls: Option<TlsStream<TcpStream>>,
+    _dns: Option<Dns>,
+    dns_sock: Option<UdpSocket>,
+    closed: bool,
+}
+
 impl Con {
     pub fn new<C:TlsConnector,T>(token: Token, req: &Request<T>, cache: &mut DnsCache, poll: &Poll) -> Result<Con> {
         let port = url_port(req.uri())?;
@@ -83,6 +84,7 @@ impl Con {
             Some(r)
         } else { None };
         let res = Con {
+            closed: false,
             ready: Ready::empty(),
             nuses: 0,
             token,
@@ -93,6 +95,27 @@ impl Con {
         };
         res.register(poll, res.token, rdy, PollOpt::edge())?;
         Ok(res)
+    }
+
+    pub fn close(&mut self) {
+        self.sock = None;
+        self.tls = None;
+        self.dns_sock = None;
+        self._dns = None;
+        self.closed = true;
+    }
+
+    #[inline]
+    pub fn closed(&self) -> bool {
+        self.closed
+    }
+    #[inline]
+    pub fn token(&self) -> Token {
+        self.token
+    }
+    #[inline]
+    pub fn set_token(&mut self, tk: Token) {
+        self.token = tk;
     }
 
     pub(crate) fn signalled<'a,C:TlsConnector,T>(&mut self, cp: &mut CallParam, req: &Request<T>) -> Result<()> {

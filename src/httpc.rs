@@ -1,7 +1,5 @@
 use mio::{Token,Poll,Event};
-// use httparse::{self, Response as ParseResp};
 use http::{Response};
-// use http::response::Builder as RespBuilder;
 use dns_cache::DnsCache;
 use con::Con;
 use ::Result;
@@ -9,6 +7,8 @@ use tls_api::{TlsConnector};
 use std::collections::VecDeque;
 use call::{Call,CallBuilder};
 use fnv::FnvHashMap as HashMap;
+use con_table::ConTable;
+use ::CallId;
 
 pub enum SendState {
     /// Unrecoverable error has occured and call is finished.
@@ -47,16 +47,16 @@ pub enum RecvState {
 
 pub struct Httpc {
     cache: DnsCache,
-    calls: HashMap<usize,Call>,
-    // tk_offset: usize,
+    calls: HashMap<u32,Call>,
+    con_offset: usize,
     free_bufs: VecDeque<Vec<u8>>,
-    // max_hdrs: usize,
+    cons: ConTable,
 }
 
 const BUF_SZ:usize = 4096*2;
 
 impl Httpc {
-    pub fn new() -> Httpc {
+    pub fn new(con_offset: usize) -> Httpc {
         // let mut calls = Vec::with_capacity(tk_count);
         // for _ in 0..tk_count {
         //     calls.push(None);
@@ -64,24 +64,11 @@ impl Httpc {
         Httpc {
             cache: DnsCache::new(),
             calls: HashMap::default(),
-            // tk_offset,
+            con_offset,
             free_bufs: VecDeque::new(),
+            cons: ConTable::new(),
         }
     }
-
-    // /// Max size of all response headers.
-    // /// Default is 8K.
-    // pub fn max_hdrs_len(&self) -> usize {
-    //     self.max_hdrs
-    // }
-
-    // /// Will only set if sz >= 4096
-    // pub fn set_max_hdrs_len(&mut self, sz: usize) {
-    //     if sz >= 4096 {
-    //         self.max_hdrs = sz;
-    //     }
-    // }
-
     /// Reuse a response buffer for subsequent calls.
     pub fn reuse(&mut self, mut buf: Vec<u8>) {
         let cap = buf.capacity();
@@ -97,19 +84,23 @@ impl Httpc {
         self.free_bufs.push_front(buf);
     }
 
-    pub(crate) fn call<C:TlsConnector>(&mut self, b: CallBuilder, poll: &Poll) -> Result<()> {
-        let id = b.tk.0;
-        // let req = b.req.take().unwrap();
-        let con = Con::new::<C,Vec<u8>>(b.tk, &b.req, &mut self.cache, poll)?;
-        let call = Call::new(b, con, self.get_buf());
-        self.calls.insert(id, call);
-        Ok(())
+    pub(crate) fn call<C:TlsConnector>(&mut self, b: CallBuilder, poll: &Poll) -> Result<::CallId> {
+        // cons.push_con will set actual mio token
+        let con = Con::new::<C,Vec<u8>>(Token::from(self.con_offset), &b.req, &mut self.cache, poll)?;
+        let call = Call::new(b, self.get_buf());
+        if let Some(con_id) = self.cons.push_con(con) {
+            let id = CallId::new(con_id, 0);
+            self.calls.insert(id.call_id(), call);
+            Ok(id)
+        } else {
+            Err(::Error::NoSpace)
+        }
     }
 
     /// Prematurely finish call. 
-    pub fn call_close(&mut self, id: usize) {
-        if let Some(call) = self.calls.remove(&id) {
-            let (_con, buf) = call.stop();
+    pub fn call_close(&mut self, id: ::CallId) {
+        if let Some(call) = self.calls.remove(&id.call_id()) {
+            let buf = call.stop();
             if buf.capacity() > 0 {
                 self.reuse(buf);
             }
@@ -125,23 +116,34 @@ impl Httpc {
             b
         }
     }
-    pub fn event<C:TlsConnector>(&mut self, poll: &Poll, ev: &Event) -> Option<u32> {
-        Some(1)
+    pub fn event<C:TlsConnector>(&mut self, ev: &Event) -> Option<::CallId> {
+        let mut id = ev.token().0;
+        if id >= self.con_offset && id <= (u16::max_value() as usize) {
+            id -= self.con_offset;
+            if self.cons.get_con(id).is_some() {
+                return Some(::CallId::new(id as u16, 0));
+            }
+        }
+        None
     }
 
     /// If request has body it will be either taken from buf, from Request provided to CallBuilder
     /// or will return SendState::WaitReqBody.
     /// buf slice is assumed to have taken previous SendState::SentBody(usize) into account
     /// and starts from part of buffer that has not been sent yet.
-    pub fn call_send<C:TlsConnector>(&mut self, poll: &Poll, ev: &Event, buf: Option<&[u8]>) -> SendState {
-        let id = ev.token().0;
-        let cret = if let Some(c) = self.calls.get_mut(&ev.token().0) {
+    pub fn call_send<C:TlsConnector>(&mut self, poll: &Poll, ev: &Event, id: ::CallId, buf: Option<&[u8]>) -> SendState {
+        let cret = if let Some(c) = self.calls.get_mut(&id.call_id()) {
+            let con = if let Some(con) = self.cons.get_con(id.con_id() as usize) {
+                con
+            } else {
+                return SendState::Error(::Error::InvalidToken);
+            };
             let mut cp = ::call::CallParam {
                 poll,
-                ev,
                 dns: &mut self.cache,
+                ev,
             };
-            c.event_send::<C>(&mut cp, buf)
+            c.event_send::<C>(con, &mut cp, buf)
         } else {
             return SendState::Error(::Error::InvalidToken);
         };
@@ -165,15 +167,19 @@ impl Httpc {
     /// Buf will be expanded if required. Bytes are always appended. If you want to receive
     /// response entirely in buf, you should reserve capacity for entire body before calling call_recv.
     /// If body is only stored in internal buffer it will be limited to CallBuilder::max_response.
-    pub fn call_recv<C:TlsConnector>(&mut self, poll: &Poll, ev: &Event, buf: Option<&mut Vec<u8>>) -> RecvState {
-        let id = ev.token().0;
-        let cret = if let Some(c) = self.calls.get_mut(&ev.token().0) {
+    pub fn call_recv<C:TlsConnector>(&mut self, poll: &Poll, ev: &Event, id: ::CallId, buf: Option<&mut Vec<u8>>) -> RecvState {
+        let cret = if let Some(c) = self.calls.get_mut(&id.call_id()) {
+            let con = if let Some(con) = self.cons.get_con(id.con_id() as usize) {
+                con
+            } else {
+                return RecvState::Error(::Error::InvalidToken);
+            };
             let mut cp = ::call::CallParam {
                 poll,
                 ev,
                 dns: &mut self.cache,
             };
-            c.event_recv::<C>(&mut cp, buf)
+            c.event_recv::<C>(con, &mut cp, buf)
         } else {
             return RecvState::Error(::Error::InvalidToken);
         };
