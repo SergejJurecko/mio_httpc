@@ -4,9 +4,10 @@ version = "0.1.0"
 authors = ["sergej jurecko <sergej.jurecko@gmail.com>"]
 
 [features]
+# Default does not work.
 default = []
 
-# Only pick one!
+# Must pick one and only one!
 rustls = ["tls-api-rustls"]
 native = ["tls-api-native-tls"]
 openssl = ["tls-api-openssl"]

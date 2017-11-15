@@ -1,3 +1,8 @@
+//! mio_httpc is an async http client that runs on top of mio only.
+//! 
+//! mio_httpc requires you specify one of the TLS implementations using features: rustls, native, openssl.
+//!
+//! Default is noop for everything.
 extern crate rand;
 extern crate httparse;
 extern crate tls_api;
@@ -44,27 +49,6 @@ pub use pub_api::*;
 // - websockets
 // - chunked response
 // - http2
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct CallId(u32);
-
-impl CallId {
-    // (Call:16, Con:16)
-    pub(crate) fn new(con_id: u16, call_id: u16) -> CallId {
-        let con_id = con_id as u32;
-        let call_id = call_id as u32;
-        CallId((call_id << 16) | con_id)
-    }
-
-    pub(crate) fn con_id(&self) -> u16 {
-        (self.0 & 0xFFFF) as u16
-    }
-
-    // pub(crate) fn call_id(&self) -> u32 {
-    //     // self.0 & 0xFFFF_FFFF
-    //     self.0
-    // }
-}
 
 pub type Result<T> = ::std::result::Result<T,Error>;
 

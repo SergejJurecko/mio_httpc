@@ -1,4 +1,5 @@
 
+/// Used when call is in send request state.
 pub enum SendState {
     /// Unrecoverable error has occured and call is finished.
     Error(::Error),
@@ -15,6 +16,7 @@ pub enum SendState {
     Nothing,
 }
 
+/// Used when call is in receive response state.
 pub enum RecvState {
     /// Unrecoverable error has occured and call is finished.
     Error(::Error),
@@ -34,6 +36,23 @@ pub enum RecvState {
     Nothing,
 }
 
+/// Id for calls. Directly tied to mio token but not equal to it.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct CallId(u32);
+
+impl CallId {
+    // (Call:16, Con:16)
+    pub(crate) fn new(con_id: u16, call_id: u16) -> CallId {
+        let con_id = con_id as u32;
+        let call_id = call_id as u32;
+        CallId((call_id << 16) | con_id)
+    }
+
+    pub(crate) fn con_id(&self) -> u16 {
+        (self.0 & 0xFFFF) as u16
+    }
+}
+
 pub use self::pub_httpc::*;
 
 #[cfg(not(any(feature="rustls", feature="native", feature="openssl")))]
@@ -45,6 +64,7 @@ mod pub_httpc {
     use tls_api::{TlsConnector};
     use ::Result;
 
+    /// Used to start a call and get a CallId for it.
     pub struct CallBuilder {
     }
 
@@ -77,6 +97,7 @@ mod pub_httpc {
         }
     }
 
+    /// Send request data, receive response data for CallId.
     pub struct Httpc {
     }
 
@@ -108,6 +129,7 @@ mod pub_httpc {
 
         /// If request has body it will be either taken from buf, from Request provided to CallBuilder
         /// or will return SendState::WaitReqBody.
+        /// 
         /// buf slice is assumed to have taken previous SendState::SentBody(usize) into account
         /// and starts from part of buffer that has not been sent yet.
         pub fn call_send(&mut self, poll: &Poll, ev: &Event, id: ::CallId, buf: Option<&[u8]>) -> ::SendState {
@@ -116,8 +138,10 @@ mod pub_httpc {
 
         /// If no buf provided, response body (if any) is stored in an internal buffer.
         /// If buf provided after some body has been received, it will be copied to it.
+        /// 
         /// Buf will be expanded if required. Bytes are always appended. If you want to receive
         /// response entirely in buf, you should reserve capacity for entire body before calling call_recv.
+        /// 
         /// If body is only stored in internal buffer it will be limited to CallBuilder::max_response.
         pub fn call_recv(&mut self, poll: &Poll, ev: &Event, id: ::CallId, buf: Option<&mut Vec<u8>>) -> ::RecvState {
             ::RecvState::Error(::Error::NoTls)
