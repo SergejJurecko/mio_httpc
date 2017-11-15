@@ -39,7 +39,6 @@ pub use pub_api::*;
 
 // TODO:
 // - con pool
-// - hide tls-api, configure through compile options
 // - dns retries
 // - timeouts
 // - websockets

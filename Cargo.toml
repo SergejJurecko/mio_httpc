@@ -3,6 +3,14 @@ name = "mio_httpc"
 version = "0.1.0"
 authors = ["sergej jurecko <sergej.jurecko@gmail.com>"]
 
+[features]
+default = []
+
+# Only pick one!
+rustls = ["tls-api-rustls"]
+native = ["tls-api-native-tls"]
+openssl = ["tls-api-openssl"]
+
 [dependencies]
 mio = "0.6"
 httparse = "1"
@@ -15,18 +23,10 @@ http = "0.1"
 tls-api = "0.1"
 itoa = "0.3"
 
+# Do not include directly. Use one of the features.
 tls-api-rustls = { version = "0.1.11", optional = true}
 tls-api-native-tls = { version = "0.1.11", optional = true}
 tls-api-openssl = { version = "0.1.11", optional = true}
-
-[features]
-default = []
-
-# Only pick one!
-rustls = ["tls-api-rustls"]
-native = ["tls-api-native-tls"]
-openssl = ["tls-api-openssl"]
-
 
 [target.'cfg(target_os = "macos")'.dependencies]
 core-foundation = "0.4"

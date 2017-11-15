@@ -123,11 +123,6 @@ impl PrivHttpc {
         }
     }
 
-    /// If no buf provided, response body (if any) is stored in an internal buffer.
-    /// If buf provided after some body has been received, it will be copied to it.
-    /// Buf will be expanded if required. Bytes are always appended. If you want to receive
-    /// response entirely in buf, you should reserve capacity for entire body before calling call_recv.
-    /// If body is only stored in internal buffer it will be limited to CallBuilder::max_response.
     pub fn call_recv<C:TlsConnector>(&mut self, poll: &Poll, ev: &Event, id: ::CallId, buf: Option<&mut Vec<u8>>) -> RecvState {
         let cret = if let Some(c) = self.calls.get_mut(&id) {
             let con = if let Some(con) = self.cons.get_con(id.con_id() as usize) {

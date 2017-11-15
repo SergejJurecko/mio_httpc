@@ -52,7 +52,7 @@ mod pub_httpc {
         /// If req contains body it will be used.
         /// 
         /// If req contains no body, but has content-length set,
-        /// it will wait for send body to be provided through Httpc::event calls. 
+        /// it will wait for send body to be provided through Httpc::call_send. 
         pub fn new(req: Request<Vec<u8>>) -> CallBuilder {
             CallBuilder{}
         }

@@ -60,6 +60,3 @@ impl ConTable {
         }
     }
 }
-
-// append new cons
-// when last one closed, shorten vec.
