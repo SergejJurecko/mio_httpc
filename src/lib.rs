@@ -1,12 +1,10 @@
 extern crate rand;
 extern crate httparse;
-// extern crate url;
 extern crate tls_api;
 extern crate mio;
 extern crate byteorder;
 extern crate libc;
 extern crate fnv;
-// extern crate time;
 extern crate http;
 extern crate itoa;
 #[macro_use(quick_error)]
@@ -19,43 +17,34 @@ extern crate core_foundation;
 #[cfg(target_os = "macos")]
 extern crate core_foundation_sys;
 
+// Because of default implementation does nothing we suppress warnings of nothing going on.
+// One of TLS implementation features must be picked.
+#[allow(dead_code,unused_variables)]
 mod con_table;
+#[allow(dead_code,unused_variables)]
 mod dns_cache;
-#[allow(dead_code)]
-#[allow(non_upper_case_globals)]
-#[allow(unused_variables)]
-#[allow(non_snake_case)]
+#[allow(dead_code,unused_variables)]
 mod dns;
 #[allow(dead_code)]
 mod dns_parser;
+#[allow(dead_code,unused_variables)]
 mod con;
+#[allow(dead_code,unused_variables)]
 mod httpc;
+#[allow(dead_code,unused_variables)]
 mod call;
-pub use httpc::*;
-pub use call::CallBuilder;
+#[allow(dead_code,unused_variables)]
+mod pub_api;
+pub use pub_api::*;
 
 // TODO:
-// - con pool. tk must not be client side provided...client id and token are different
+// - con pool
 // - hide tls-api, configure through compile options
 // - dns retries
 // - timeouts
 // - websockets
 // - chunked response
 // - http2
-
-// use std::str::FromStr;
-// pub fn content_length<T>(resp: &http::Response<T>) -> usize {
-//     if let Some(ref clh) = resp.headers().get(http::header::CONTENT_LENGTH) {
-//         if let Ok(clhs) = clh.to_str() {
-//             if let Ok(bsz) = usize::from_str(clhs) {
-//                 return bsz;
-//             }
-//         }
-//     }
-//     0
-// }
-
-// use url::ParseError as UrlParseError;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct CallId(u32);
@@ -111,33 +100,44 @@ quick_error! {
             description(err.description())
             from()
         }
+        /// No call for mio::Token
         InvalidToken {
             display("No call for token")
         }
+        /// Response over max_response limit
         ResponseTooBig {
             display("Response over max_response limit")
         }
+        /// Connection closed.
         Closed {
             display("Connection closed")
         }
+        /// No host found in request
         NoHost {
             display("No host found in request")
         }
+        /// Invalid scheme
         InvalidScheme {
             display("Invalid scheme")
         }
+        /// TLS handshake failed.
         TlsHandshake {
             display("Handshake failed")
         }
+        /// All 0xFFFF slots for connections are full.
         NoSpace {
             display("Concurrent connection limit")
+        }
+        /// You must pick one of the features: native, rustls, openssl
+        NoTls {
+            display("You must pick one of the features: native, rustls, openssl")
         }
         // #[cfg(unix)]
         // Nix(err: nix::Error) {
         //     description(err.description())
         //     from()
         // }
-        Empty {}
+        // Empty {}
     }
 }
 

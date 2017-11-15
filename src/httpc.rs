@@ -1,51 +1,15 @@
 use mio::{Token,Poll,Event};
-use http::{Response};
 use dns_cache::DnsCache;
 use con::Con;
 use ::Result;
 use tls_api::{TlsConnector};
 use std::collections::VecDeque;
-use call::{Call,CallBuilder};
+use call::{Call,PrivCallBuilder};
 use fnv::FnvHashMap as HashMap;
 use con_table::ConTable;
-use ::CallId;
+use ::{SendState,RecvState,CallId};
 
-pub enum SendState {
-    /// Unrecoverable error has occured and call is finished.
-    Error(::Error),
-    /// How many bytes of body have been sent.
-    SentBody(usize),
-    /// Waiting for body to be provided for sending.
-    WaitReqBody,
-    /// Call has switched to receiving state.
-    Receiving,
-    /// Request is done, body has been returned or
-    /// there is no response body.
-    Done,
-    // Nothing yet to return.
-    Nothing,
-}
-
-pub enum RecvState {
-    /// Unrecoverable error has occured and call is finished.
-    Error(::Error),
-    /// HTTP Response and response body size. 
-    /// If there is a body it will follow, otherwise call is done.
-    Response(Response<Vec<u8>>,usize),
-    /// How many bytes were received.
-    ReceivedBody(usize),
-    /// Request is done with body.
-    DoneWithBody(Vec<u8>),
-    /// We are not done sending request yet.
-    Sending,
-    /// Request is done, body has been returned or
-    /// there is no response body.
-    Done,
-    // Nothing yet to return.
-    Nothing,
-}
-
-pub struct Httpc {
+pub struct PrivHttpc {
     cache: DnsCache,
     calls: HashMap<::CallId,Call>,
     con_offset: usize,
@@ -55,13 +19,13 @@ pub struct Httpc {
 
 const BUF_SZ:usize = 4096*2;
 
-impl Httpc {
-    pub fn new(con_offset: usize) -> Httpc {
+impl PrivHttpc {
+    pub fn new(con_offset: usize) -> PrivHttpc {
         // let mut calls = Vec::with_capacity(tk_count);
         // for _ in 0..tk_count {
         //     calls.push(None);
         // }
-        Httpc {
+        PrivHttpc {
             cache: DnsCache::new(),
             calls: HashMap::default(),
             con_offset,
@@ -69,7 +33,7 @@ impl Httpc {
             cons: ConTable::new(),
         }
     }
-    /// Reuse a response buffer for subsequent calls.
+
     pub fn reuse(&mut self, mut buf: Vec<u8>) {
         let cap = buf.capacity();
         if cap > BUF_SZ {
@@ -84,7 +48,7 @@ impl Httpc {
         self.free_bufs.push_front(buf);
     }
 
-    pub(crate) fn call<C:TlsConnector>(&mut self, b: CallBuilder, poll: &Poll) -> Result<::CallId> {
+    pub fn call<C:TlsConnector>(&mut self, b: PrivCallBuilder, poll: &Poll) -> Result<::CallId> {
         // cons.push_con will set actual mio token
         let con = Con::new::<C,Vec<u8>>(Token::from(self.con_offset), &b.req, &mut self.cache, poll)?;
         let call = Call::new(b, self.get_buf());
@@ -128,10 +92,6 @@ impl Httpc {
         None
     }
 
-    /// If request has body it will be either taken from buf, from Request provided to CallBuilder
-    /// or will return SendState::WaitReqBody.
-    /// buf slice is assumed to have taken previous SendState::SentBody(usize) into account
-    /// and starts from part of buffer that has not been sent yet.
     pub fn call_send<C:TlsConnector>(&mut self, poll: &Poll, ev: &Event, id: ::CallId, buf: Option<&[u8]>) -> SendState {
         let cret = if let Some(c) = self.calls.get_mut(&id) {
             let con = if let Some(con) = self.cons.get_con(id.con_id() as usize) {

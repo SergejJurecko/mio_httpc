@@ -1,0 +1,333 @@
+
+pub enum SendState {
+    /// Unrecoverable error has occured and call is finished.
+    Error(::Error),
+    /// How many bytes of body have been sent.
+    SentBody(usize),
+    /// Waiting for body to be provided for sending.
+    WaitReqBody,
+    /// Call has switched to receiving state.
+    Receiving,
+    /// Request is done, body has been returned or
+    /// there is no response body.
+    Done,
+    /// Nothing yet to return.
+    Nothing,
+}
+
+pub enum RecvState {
+    /// Unrecoverable error has occured and call is finished.
+    Error(::Error),
+    /// HTTP Response and response body size. 
+    /// If there is a body it will follow, otherwise call is done.
+    Response(::http::Response<Vec<u8>>,usize),
+    /// How many bytes were received.
+    ReceivedBody(usize),
+    /// Request is done with body.
+    DoneWithBody(Vec<u8>),
+    /// We are not done sending request yet.
+    Sending,
+    /// Request is done, body has been returned or
+    /// there is no response body.
+    Done,
+    /// Nothing yet to return.
+    Nothing,
+}
+
+pub use self::pub_httpc::*;
+
+#[cfg(not(any(feature="rustls", feature="native", feature="openssl")))]
+mod pub_httpc {
+    use std::time::Duration;
+    use http::{Request};
+    use ::call::PrivCallBuilder;
+    use mio::{Poll,Event};
+    use tls_api::{TlsConnector};
+    use ::Result;
+
+    pub struct CallBuilder {
+    }
+
+    impl CallBuilder {
+        /// If req contains body it will be used.
+        /// 
+        /// If req contains no body, but has content-length set,
+        /// it will wait for send body to be provided through Httpc::event calls. 
+        pub fn new(req: Request<Vec<u8>>) -> CallBuilder {
+            CallBuilder{}
+        }
+        /// Consume and execute
+        pub fn call(self, httpc: &mut Httpc, poll: &Poll) -> ::Result<::CallId> {
+            Err(::Error::NoTls)
+        }
+
+        /// Default 10MB.
+        /// 
+        /// This will limit how big the internal Vec<u8> can grow.
+        /// HTTP response headers are always stored in internal buffer.
+        /// HTTP response body is stored in internal buffer if no external
+        /// buffer is provided.
+        pub fn max_response(&mut self, m: usize) -> &mut Self {
+            self
+        }
+
+        /// Default 30s
+        pub fn timeout(&mut self, d: Duration) -> &mut Self {
+            self
+        }
+    }
+
+    pub struct Httpc {
+    }
+
+    impl Httpc {
+        /// Httpc will create connections with mio token in range [con_offset..con_offset+0xFFFF]
+        pub fn new(con_offset: usize) -> Httpc {
+            Httpc {
+            }
+        }
+        pub(crate) fn call<C:TlsConnector>(&mut self, b: PrivCallBuilder, poll: &Poll) -> Result<::CallId> {
+            Err(::Error::NoTls)
+        }
+
+        /// Reuse a response buffer for subsequent calls.
+        pub fn reuse(&mut self, buf: Vec<u8>) {
+        }
+
+        /// Prematurely finish call. 
+        pub fn call_close(&mut self, id: ::CallId) {
+        }
+
+        /// Get CallId for ev if token in configured range for Httpc.
+        /// 
+        /// First you must call call_send until you get a SendState::Receiving
+        /// after that call is in receive state and you must call call_recv.
+        pub fn event(&mut self, ev: &Event) -> Option<::CallId> {
+            None
+        }
+
+        /// If request has body it will be either taken from buf, from Request provided to CallBuilder
+        /// or will return SendState::WaitReqBody.
+        /// buf slice is assumed to have taken previous SendState::SentBody(usize) into account
+        /// and starts from part of buffer that has not been sent yet.
+        pub fn call_send(&mut self, poll: &Poll, ev: &Event, id: ::CallId, buf: Option<&[u8]>) -> ::SendState {
+            ::SendState::Error(::Error::NoTls)
+        }
+
+        /// If no buf provided, response body (if any) is stored in an internal buffer.
+        /// If buf provided after some body has been received, it will be copied to it.
+        /// Buf will be expanded if required. Bytes are always appended. If you want to receive
+        /// response entirely in buf, you should reserve capacity for entire body before calling call_recv.
+        /// If body is only stored in internal buffer it will be limited to CallBuilder::max_response.
+        pub fn call_recv(&mut self, poll: &Poll, ev: &Event, id: ::CallId, buf: Option<&mut Vec<u8>>) -> ::RecvState {
+            ::RecvState::Error(::Error::NoTls)
+        }
+    }
+}
+
+#[cfg(feature = "rustls")]
+mod pub_httpc {
+    extern crate tls_api_rustls;
+    use std::time::Duration;
+    use http::{Request};
+    use ::call::PrivCallBuilder;
+    use mio::{Poll,Event};
+    use tls_api::{TlsConnector};
+    use ::Result;
+
+    pub struct CallBuilder {
+        cb: ::call::PrivCallBuilder,
+    }
+
+    impl CallBuilder {
+        pub fn new(req: Request<Vec<u8>>) -> CallBuilder {
+            CallBuilder {
+                cb: PrivCallBuilder::new(req),
+            }
+        }
+        pub fn call(self, httpc: &mut Httpc, poll: &Poll) -> ::Result<::CallId> {
+            httpc.call::<tls_api_rustls::TlsConnector>(self.cb, poll)
+        }
+        pub fn max_response(&mut self, m: usize) -> &mut Self {
+            self.cb.max_response(m);
+            self
+        }
+        pub fn timeout(&mut self, d: Duration) -> &mut Self {
+            self.cb.timeout(d);
+            self
+        }
+    }
+
+    pub struct Httpc {
+        h: ::httpc::PrivHttpc,
+    }
+
+    impl Httpc {
+        pub fn new(con_offset: usize) -> Httpc {
+            Httpc {
+                h: ::httpc::PrivHttpc::new(con_offset),
+            }
+        }
+        pub(crate) fn call<C:TlsConnector>(&mut self, b: PrivCallBuilder, poll: &Poll) -> Result<::CallId> {
+            self.h.call::<C>(b, poll)
+        }
+        pub fn reuse(&mut self, buf: Vec<u8>) {
+            self.h.reuse(buf);
+        }
+        pub fn call_close(&mut self, id: ::CallId) {
+            self.h.call_close(id);
+        }
+        pub fn event(&mut self, ev: &Event) -> Option<::CallId> {
+            self.h.event::<tls_api_rustls::TlsConnector>(ev)
+        }
+        pub fn call_send(&mut self, poll: &Poll, ev: &Event, id: ::CallId, buf: Option<&[u8]>) -> ::SendState {
+            self.h.call_send::<tls_api_rustls::TlsConnector>(poll, ev, id, buf)
+        }
+        pub fn call_recv(&mut self, poll: &Poll, ev: &Event, id: ::CallId, buf: Option<&mut Vec<u8>>) -> ::RecvState {
+            self.h.call_recv::<tls_api_rustls::TlsConnector>(poll, ev, id, buf)
+        }
+    }
+}
+
+#[cfg(feature = "native")]
+mod pub_httpc {
+    extern crate tls_api_native_tls;
+    use std::time::Duration;
+    use http::{Request};
+    use ::call::PrivCallBuilder;
+    use mio::{Poll,Event};
+    use tls_api::{TlsConnector};
+    use ::Result;
+
+    pub struct CallBuilder {
+        cb: ::call::PrivCallBuilder,
+    }
+
+    impl CallBuilder {
+        pub fn new(req: Request<Vec<u8>>) -> CallBuilder {
+            CallBuilder {
+                cb: PrivCallBuilder::new(req),
+            }
+        }
+        pub fn call(self, httpc: &mut Httpc, poll: &Poll) -> ::Result<::CallId> {
+            httpc.call::<tls_api_native_tls::TlsConnector>(self.cb, poll)
+        }
+
+        pub fn max_response(&mut self, m: usize) -> &mut Self {
+            self.cb.max_response(m);
+            self
+        }
+
+        pub fn timeout(&mut self, d: Duration) -> &mut Self {
+            self.cb.timeout(d);
+            self
+        }
+    }
+
+    pub struct Httpc {
+        h: ::httpc::PrivHttpc,
+    }
+
+    impl Httpc {
+        pub fn new(con_offset: usize) -> Httpc {
+            Httpc {
+                h: ::httpc::PrivHttpc::new(con_offset),
+            }
+        }
+        pub(crate) fn call<C:TlsConnector>(&mut self, b: PrivCallBuilder, poll: &Poll) -> Result<::CallId> {
+            self.h.call::<C>(b, poll)
+        }
+
+        pub fn reuse(&mut self, buf: Vec<u8>) {
+            self.h.reuse(buf);
+        }
+
+        pub fn call_close(&mut self, id: ::CallId) {
+            self.h.call_close(id);
+        }
+
+        pub fn event(&mut self, ev: &Event) -> Option<::CallId> {
+            self.h.event::<tls_api_native_tls::TlsConnector>(ev)
+        }
+
+        pub fn call_send(&mut self, poll: &Poll, ev: &Event, id: ::CallId, buf: Option<&[u8]>) -> ::SendState {
+            self.h.call_send::<tls_api_native_tls::TlsConnector>(poll, ev, id, buf)
+        }
+
+        pub fn call_recv(&mut self, poll: &Poll, ev: &Event, id: ::CallId, buf: Option<&mut Vec<u8>>) -> ::RecvState {
+            self.h.call_recv::<tls_api_native_tls::TlsConnector>(poll, ev, id, buf)
+        }
+    }
+}
+
+#[cfg(feature = "openssl")]
+mod pub_httpc {
+    extern crate tls_api_openssl;
+    use std::time::Duration;
+    use http::{Request};
+    use ::call::PrivCallBuilder;
+    use mio::{Poll,Event};
+    use tls_api::{TlsConnector};
+    use ::Result;
+
+    pub struct CallBuilder {
+        cb: ::call::PrivCallBuilder,
+    }
+
+    impl CallBuilder {
+        pub fn new(req: Request<Vec<u8>>) -> CallBuilder {
+            CallBuilder {
+                cb: PrivCallBuilder::new(req),
+            }
+        }
+
+        pub fn call(self, httpc: &mut Httpc, poll: &Poll) -> ::Result<::CallId> {
+            httpc.call::<tls_api_openssl::TlsConnector>(self.cb, poll)
+        }
+
+        pub fn max_response(&mut self, m: usize) -> &mut Self {
+            self.cb.max_response(m);
+            self
+        }
+
+        pub fn timeout(&mut self, d: Duration) -> &mut Self {
+            self.cb.timeout(d);
+            self
+        }
+    }
+
+    pub struct Httpc {
+        h: ::httpc::PrivHttpc,
+    }
+
+    impl Httpc {
+        pub fn new(con_offset: usize) -> Httpc {
+            Httpc {
+                h: ::httpc::PrivHttpc::new(con_offset),
+            }
+        }
+        pub(crate) fn call<C:TlsConnector>(&mut self, b: PrivCallBuilder, poll: &Poll) -> Result<::CallId> {
+            self.h.call::<C>(b, poll)
+        }
+
+        pub fn reuse(&mut self, buf: Vec<u8>) {
+            self.h.reuse(buf);
+        }
+
+        pub fn call_close(&mut self, id: ::CallId) {
+            self.h.call_close(id);
+        }
+
+        pub fn event(&mut self, ev: &Event) -> Option<::CallId> {
+            self.h.event::<tls_api_openssl::TlsConnector>(ev)
+        }
+
+        pub fn call_send(&mut self, poll: &Poll, ev: &Event, id: ::CallId, buf: Option<&[u8]>) -> ::SendState {
+            self.h.call_send::<tls_api_openssl::TlsConnector>(poll, ev, id, buf)
+        }
+
+        pub fn call_recv(&mut self, poll: &Poll, ev: &Event, id: ::CallId, buf: Option<&mut Vec<u8>>) -> ::RecvState {
+            self.h.call_recv::<tls_api_openssl::TlsConnector>(poll, ev, id, buf)
+        }
+    }
+}

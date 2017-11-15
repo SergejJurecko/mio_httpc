@@ -59,7 +59,7 @@ impl Dns {
         Ok(s6)
     }
 
-    pub fn start_lookup(&self, id: usize,  host: &str) -> io::Result<UdpSocket> {
+    pub fn start_lookup(&self, _id: usize,  host: &str) -> io::Result<UdpSocket> {
         if let Ok(sock) = self.get_socket_v4() {
             if let Ok(_) = self.lookup_on(&sock, 0, host) {
                 return Ok(sock)
@@ -97,9 +97,9 @@ impl Dns {
         Err(last_err)
     }
 
-    pub fn check_result(&mut self) -> Option<(usize,usize,IpAddr)> {
-        None
-    }
+    // pub fn check_result(&mut self) -> Option<(usize,usize,IpAddr)> {
+    //     None
+    // }
 }
 
 #[cfg(target_os = "macos")]
@@ -137,6 +137,8 @@ fn get_google() -> [IpAddr;2] {
     ["8.8.8.8".parse().unwrap(), "8.8.4.4".parse().unwrap()]
 }
 
+#[cfg(unix)]
+#[cfg(not(target_os = "macos"))]
 fn resolv_parse(s: String) -> [IpAddr;2] {
     // let mut out = Vec::with_capacity(2);
     let z = IpAddr::from(Ipv4Addr::new(0,0,0,0));

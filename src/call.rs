@@ -6,12 +6,12 @@ use httparse::{self, Response as ParseResp};
 use http::response::Builder as RespBuilder;
 use http::{self,Request,Version};
 use http::header::*;
-use ::Httpc;
+use ::httpc::PrivHttpc;
 use std::str::FromStr;
 use std::time::{Duration,Instant};
 use dns_cache::DnsCache;
 use std::io::{Read,Write};
-use ::httpc::{SendState,RecvState};
+use ::{SendState,RecvState};
 
 pub(crate) struct CallParam<'a> {
     pub poll: &'a Poll,
@@ -21,20 +21,21 @@ pub(crate) struct CallParam<'a> {
 }
 
 /// Start configure call.
-pub struct CallBuilder {
+pub struct PrivCallBuilder {
     pub(crate) req: Request<Vec<u8>>,
     dur: Duration,
     max_response: usize,
 }
 
-impl CallBuilder {
+#[allow(dead_code)]
+impl PrivCallBuilder {
     /// mio token is identifier for call in Httpc
     /// If req contains body it will be used.
     /// If req contains no body, but has content-length set,
     /// it will wait for send body to be provided
     /// through Httpc::event calls. 
-    pub fn new(req: Request<Vec<u8>>) -> CallBuilder {
-        CallBuilder {
+    pub fn new(req: Request<Vec<u8>>) -> PrivCallBuilder {
+        PrivCallBuilder {
             max_response: 1024*1024*10,
             dur: Duration::from_millis(30000),
             req,
@@ -42,7 +43,7 @@ impl CallBuilder {
     }
 
     /// Consume and execute
-    pub fn call<C:TlsConnector>(self, httpc: &mut Httpc, poll: &Poll) -> ::Result<::CallId> {
+    pub fn call<C:TlsConnector>(self, httpc: &mut PrivHttpc, poll: &Poll) -> ::Result<::CallId> {
         httpc.call::<C>(self, poll)
     }
 
@@ -72,7 +73,7 @@ enum Dir {
 }
 
 pub(crate) struct Call {
-    b: CallBuilder,
+    b: PrivCallBuilder,
     _start: Instant,
     // con: Con,
     buf: Vec<u8>,
@@ -83,7 +84,7 @@ pub(crate) struct Call {
 }
 
 impl Call {
-    pub(crate) fn new(b: CallBuilder, buf: Vec<u8>) -> Call {
+    pub(crate) fn new(b: PrivCallBuilder, buf: Vec<u8>) -> Call {
         Call {
             dir: Dir::SendingHdr(0),
             _start: Instant::now(),

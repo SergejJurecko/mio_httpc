@@ -5,17 +5,28 @@ authors = ["sergej jurecko <sergej.jurecko@gmail.com>"]
 
 [dependencies]
 mio = "0.6"
-# url = "1"
 httparse = "1"
 quick-error = "1"
 byteorder = "1"
 libc = "0.2"
 fnv = "1"
-# time = "0.1"
 rand = "0.3"
 http = "0.1"
 tls-api = "0.1"
 itoa = "0.3"
+
+tls-api-rustls = { version = "0.1.11", optional = true}
+tls-api-native-tls = { version = "0.1.11", optional = true}
+tls-api-openssl = { version = "0.1.11", optional = true}
+
+[features]
+default = []
+
+# Only pick one!
+rustls = ["tls-api-rustls"]
+native = ["tls-api-native-tls"]
+openssl = ["tls-api-openssl"]
+
 
 [target.'cfg(target_os = "macos")'.dependencies]
 core-foundation = "0.4"
