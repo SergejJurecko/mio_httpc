@@ -109,14 +109,6 @@ impl Con {
     pub fn closed(&self) -> bool {
         self.closed
     }
-    #[inline]
-    pub fn token(&self) -> Token {
-        self.token
-    }
-    #[inline]
-    pub fn set_token(&mut self, tk: Token) {
-        self.token = tk;
-    }
 
     pub(crate) fn signalled<'a,C:TlsConnector,T>(&mut self, cp: &mut CallParam, req: &Request<T>) -> Result<()> {
         if self.dns_sock.is_some() {

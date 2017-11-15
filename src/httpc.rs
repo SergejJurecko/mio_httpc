@@ -47,7 +47,7 @@ pub enum RecvState {
 
 pub struct Httpc {
     cache: DnsCache,
-    calls: HashMap<u32,Call>,
+    calls: HashMap<::CallId,Call>,
     con_offset: usize,
     free_bufs: VecDeque<Vec<u8>>,
     cons: ConTable,
@@ -90,7 +90,7 @@ impl Httpc {
         let call = Call::new(b, self.get_buf());
         if let Some(con_id) = self.cons.push_con(con) {
             let id = CallId::new(con_id, 0);
-            self.calls.insert(id.call_id(), call);
+            self.calls.insert(id, call);
             Ok(id)
         } else {
             Err(::Error::NoSpace)
@@ -99,12 +99,13 @@ impl Httpc {
 
     /// Prematurely finish call. 
     pub fn call_close(&mut self, id: ::CallId) {
-        if let Some(call) = self.calls.remove(&id.call_id()) {
+        if let Some(call) = self.calls.remove(&id) {
             let buf = call.stop();
             if buf.capacity() > 0 {
                 self.reuse(buf);
             }
         }
+        self.cons.close_con(id.con_id());
     }
 
     fn get_buf(&mut self) -> Vec<u8> {
@@ -132,7 +133,7 @@ impl Httpc {
     /// buf slice is assumed to have taken previous SendState::SentBody(usize) into account
     /// and starts from part of buffer that has not been sent yet.
     pub fn call_send<C:TlsConnector>(&mut self, poll: &Poll, ev: &Event, id: ::CallId, buf: Option<&[u8]>) -> SendState {
-        let cret = if let Some(c) = self.calls.get_mut(&id.call_id()) {
+        let cret = if let Some(c) = self.calls.get_mut(&id) {
             let con = if let Some(con) = self.cons.get_con(id.con_id() as usize) {
                 con
             } else {
@@ -168,7 +169,7 @@ impl Httpc {
     /// response entirely in buf, you should reserve capacity for entire body before calling call_recv.
     /// If body is only stored in internal buffer it will be limited to CallBuilder::max_response.
     pub fn call_recv<C:TlsConnector>(&mut self, poll: &Poll, ev: &Event, id: ::CallId, buf: Option<&mut Vec<u8>>) -> RecvState {
-        let cret = if let Some(c) = self.calls.get_mut(&id.call_id()) {
+        let cret = if let Some(c) = self.calls.get_mut(&id) {
             let con = if let Some(con) = self.cons.get_con(id.con_id() as usize) {
                 con
             } else {

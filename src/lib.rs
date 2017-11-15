@@ -61,21 +61,21 @@ pub use call::CallBuilder;
 pub struct CallId(u32);
 
 impl CallId {
-    // (counter:32, Call:16, Con:16)
+    // (Call:16, Con:16)
     pub(crate) fn new(con_id: u16, call_id: u16) -> CallId {
         let con_id = con_id as u32;
         let call_id = call_id as u32;
         CallId((call_id << 16) | con_id)
     }
 
-    pub(crate) fn con_id(&self) -> u32 {
-        self.0 & 0xFFFF
+    pub(crate) fn con_id(&self) -> u16 {
+        (self.0 & 0xFFFF) as u16
     }
 
-    pub(crate) fn call_id(&self) -> u32 {
-        // self.0 & 0xFFFF_FFFF
-        self.0
-    }
+    // pub(crate) fn call_id(&self) -> u32 {
+    //     // self.0 & 0xFFFF_FFFF
+    //     self.0
+    // }
 }
 
 pub type Result<T> = ::std::result::Result<T,Error>;
