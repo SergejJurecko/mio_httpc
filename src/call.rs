@@ -188,7 +188,7 @@ impl Call {
                 let hdr_sz = self.hdr_sz;
 
                 let ret = self.event_send_do::<C>(con, cp, 0, &buf[pos..hdr_sz]);
-                println!("Sent: {}",String::from_utf8(buf.clone())?);
+                // println!("Sent: {}",String::from_utf8(buf.clone())?);
                 self.buf = buf;
                 if let Dir::SendingBody(_) = self.dir {
                     self.buf.truncate(0);
@@ -282,10 +282,14 @@ impl Call {
                         return Ok(SendState::Wait);
                     } else if ie.kind() == IoErrorKind::WouldBlock {
                         // con.ready.remove(Ready::writable());
-                        // if con.ready.is_writable() {
-                        //     con.reregister(cp.poll, con.token, Ready::writable(), PollOpt::edge())?;
-                        // }
-                        con.ready.remove(Ready::writable());
+                        if con.reg_for.is_empty() {
+                            con.reg_for = Ready::writable();
+                            con.register(cp.poll, con.token, con.reg_for, PollOpt::edge())?;
+                        } else {
+                            con.reg_for = Ready::writable();
+                            con.reregister(cp.poll, con.token, con.reg_for, PollOpt::edge())?;
+                        }
+                        // con.ready.remove(Ready::writable());
                         return Ok(SendState::Wait);
                     }
                 }
@@ -344,10 +348,13 @@ impl Call {
                     } else if ie.kind() == IoErrorKind::WouldBlock {
                         buf.truncate(orig_len);
                         println!("recv wouldblock");
-                        // if con.ready.is_readable() {
-                            // con.reregister(cp.poll, con.token, Ready::readable(), PollOpt::edge())?;
-                        // }
-                        con.ready.remove(Ready::readable());
+                        if con.reg_for.is_empty() {
+                            con.reg_for = Ready::readable();
+                            con.register(cp.poll, con.token, con.reg_for, PollOpt::edge())?;
+                        } else {
+                            con.reg_for = Ready::readable();
+                            con.reregister(cp.poll, con.token, con.reg_for, PollOpt::edge())?;
+                        }
                         if entire_sz == 0 {
                             return Ok(RecvState::Wait);
                         }
@@ -355,7 +362,6 @@ impl Call {
                     }
                 }
                 &Ok(sz) if sz > 0 => {
-                    println!("received {}",sz);
                     entire_sz += sz;
                     if buf.len() == orig_len+sz {
                         orig_len = self.make_space(internal, buf)?;
@@ -376,7 +382,7 @@ impl Call {
             }
             Ok(bytes_rec) => {
                 if self.hdr_sz == 0 {
-                    let mut headers = [httparse::EMPTY_HEADER; 16];
+                    let mut headers = [httparse::EMPTY_HEADER; 32];
                     let mut presp = ParseResp::new(&mut headers);
                     // println!("Got: {}",String::from_utf8(buf.clone())?);
                     let buflen = buf.len();

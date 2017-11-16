@@ -14,7 +14,7 @@ fn main() {
     // "https://www.rust-lang.org/"
     // http://127.0.0.1:3000
     // https://cdn4.tvim.tv
-    let req = req.uri("http://www.tvim.tv").body(Vec::new()).expect("can not build request");
+    let req = req.uri("https://www.reddit.com").body(Vec::new()).expect("can not build request");
     let call_id = CallBuilder::new(req).call(&mut htp, &poll).expect("Call start failed");
 
     let mut sending = true;
@@ -25,7 +25,7 @@ fn main() {
         poll.poll(&mut events, None).unwrap();
 
         for ev in events.iter() {
-            println!("ev");
+            // println!("ev {}",ev.token().0);
             let cid = htp.event(&ev).expect("Event not from http request");
             assert_eq!(cid, call_id);
 
@@ -49,6 +49,8 @@ fn main() {
             // no else here because when it switches to receiving you should call call_recv immediately
             if !sending {
                 // Loop until receiving RecvState::Wait or an error.
+                // This is so socket is always drained entirely. Otherwise poll will not return
+                // anything. Httpc uses edge triggered sockets.
                 loop {
                     match htp.call_recv(&poll, &ev, cid, Some(&mut recv_vec)) {
                         RecvState::Done => {
@@ -57,9 +59,13 @@ fn main() {
                             break;
                         }
                         RecvState::Response(resp,bsz) => {
+                            println!("Got response {:?}\nbody_sz={} will follow",resp,bsz);
+                            if bsz == 0 {
+                                println!("Finish as content-length is 0");
+                                done = true;
+                                break;
+                            }
                             // recv_vec.reserve(bsz);
-                            println!("Got response {:?} body_sz={} will follow",resp,bsz);
-                            // Call again either to get chunk or be done
                         }
                         RecvState::ReceivedBody(sz) => {
                             println!("Got chunk {} bytes",sz);

@@ -46,10 +46,10 @@ pub use pub_api::*;
 
 // TODO:
 // - con pool
+// - chunked response
 // - dns retries
 // - timeouts
 // - websockets
-// - chunked response
 // - http2
 
 pub type Result<T> = ::std::result::Result<T,Error>;
