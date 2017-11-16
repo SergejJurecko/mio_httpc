@@ -430,7 +430,9 @@ impl Call {
                         pos
                     } else { 0 };
                     
-                    if pos + bytes_rec >= self.body_sz {
+                    // do not set done if internal
+                    // This way next call will be either copied to provided buffer or returned.
+                    if pos + bytes_rec >= self.body_sz && !internal {
                         self.dir = Dir::Done;
                     } else {
                         self.dir = Dir::Receiving(pos + bytes_rec);

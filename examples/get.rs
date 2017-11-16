@@ -14,7 +14,7 @@ fn main() {
     // "https://www.rust-lang.org/"
     // http://127.0.0.1:3000
     // https://cdn4.tvim.tv
-    let req = req.uri("https://www.reddit.com").body(Vec::new()).expect("can not build request");
+    let req = req.uri("https://edition.cnn.com").body(Vec::new()).expect("can not build request");
     let call_id = CallBuilder::new(req).call(&mut htp, &poll).expect("Call start failed");
 
     let mut sending = true;
@@ -52,7 +52,7 @@ fn main() {
                 // This is so socket is always drained entirely. Otherwise poll will not return
                 // anything. Httpc uses edge triggered sockets.
                 loop {
-                    match htp.call_recv(&poll, &ev, cid, Some(&mut recv_vec)) {
+                    match htp.call_recv(&poll, &ev, cid, None) {
                         RecvState::Done => {
                             println!("Done");
                             done = true;
@@ -70,7 +70,10 @@ fn main() {
                         RecvState::ReceivedBody(sz) => {
                             println!("Got chunk {} bytes",sz);
                         }
-                        RecvState::DoneWithBody(_) => {
+                        RecvState::DoneWithBody(rt) => {
+                            if let Ok(s) = String::from_utf8(rt) {
+                                println!("Body: {}",s);
+                            }
                             panic!("We provided vec, should not get body as well!");
                         }
                         RecvState::Error(e) => {
