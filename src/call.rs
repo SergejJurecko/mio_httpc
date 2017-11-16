@@ -188,7 +188,7 @@ impl Call {
                 let hdr_sz = self.hdr_sz;
 
                 let ret = self.event_send_do::<C>(con, cp, 0, &buf[pos..hdr_sz]);
-                // println!("Sent: {}",String::from_utf8(buf.clone())?);
+                println!("Sent: {}",String::from_utf8(buf.clone())?);
                 self.buf = buf;
                 if let Dir::SendingBody(_) = self.dir {
                     self.buf.truncate(0);
@@ -278,10 +278,12 @@ impl Call {
                 &Err(ref ie) => {
                     if ie.kind() == IoErrorKind::Interrupted {
                         continue;
+                    } else if ie.kind() == IoErrorKind::NotConnected {
+                        return Ok(SendState::Wait);
                     } else if ie.kind() == IoErrorKind::WouldBlock {
                         // con.ready.remove(Ready::writable());
                         // if con.ready.is_writable() {
-                            con.reregister(cp.poll, con.token, Ready::writable(), PollOpt::edge())?;
+                        //     con.reregister(cp.poll, con.token, Ready::writable(), PollOpt::edge())?;
                         // }
                         con.ready.remove(Ready::writable());
                         return Ok(SendState::Wait);
@@ -337,13 +339,13 @@ impl Call {
             io_ret = con.read(&mut buf[orig_len..]);
             match &io_ret {
                 &Err(ref ie) => {
-                    println!("recerr={:?}",ie);
                     if ie.kind() == IoErrorKind::Interrupted {
                         continue;
                     } else if ie.kind() == IoErrorKind::WouldBlock {
                         buf.truncate(orig_len);
+                        println!("recv wouldblock");
                         // if con.ready.is_readable() {
-                            con.reregister(cp.poll, con.token, Ready::readable(), PollOpt::edge())?;
+                            // con.reregister(cp.poll, con.token, Ready::readable(), PollOpt::edge())?;
                         // }
                         con.ready.remove(Ready::readable());
                         if entire_sz == 0 {

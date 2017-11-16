@@ -111,16 +111,22 @@ impl Con {
                     let port = url_port(req.uri())?;
                     // self.sock = Some(TcpStream::connect(&SocketAddr::new(ip,port))?);
                     // println!("Got ADDR={}:{}",ip,port);
+                    self.dns_sock = Some(udp);
+                    self.deregister(cp.poll)?;
+                    self.dns_sock = None;
                     self.sock = Some(connect(SocketAddr::new(ip,port))?);
-                    self.register(cp.poll, self.token, Ready::writable() | Ready::writable(), PollOpt::edge())?;
+                    self.ready = Ready::writable() | Ready::writable();
+                    self.register(cp.poll, self.token, self.ready, PollOpt::edge())?;
 
                     return Ok(());
                 }
             }
             self.dns_sock = Some(udp);
         } else {
-            if cp.ev.readiness().is_writable() {
+            if cp.ev.readiness().is_readable() {
+                println!("writable!");
                 if self.sock.is_some() && self.con_port == 443 && self.tls.is_none() && self.mid_tls.is_none() {
+                    println!("START TLS");
                     let connector: C = C::builder()?.build()?;
                     let host = req.uri().host().unwrap();
                     let tcp = self.sock.take().unwrap();
@@ -129,6 +135,7 @@ impl Con {
                 }
             }
             if self.mid_tls.is_some() && cp.ev.readiness().is_readable() {
+                println!("MID TLS");
                 let tls = self.mid_tls.take().unwrap();
                 let r = tls.handshake();
                 self.handshake_resp::<C>(r)?;
@@ -157,11 +164,13 @@ impl Con {
 impl Read for Con {
     fn read(&mut self, buf: &mut [u8]) -> ::std::io::Result<usize> {
         if let Some(ref mut tcp) = self.sock {
+            println!("REad tcp?");
             tcp.read(buf)
         } else if let Some(ref mut tls) = self.tls {
+            println!("read tls");
             tls.read(buf)
         } else {
-            Err(::std::io::Error::new(::std::io::ErrorKind::NotConnected,"No socket"))
+            Err(::std::io::Error::new(::std::io::ErrorKind::WouldBlock,"No socket"))
         }
     }
 }
@@ -169,11 +178,13 @@ impl Read for Con {
 impl Write for Con {
     fn write(&mut self, buf: &[u8]) -> ::std::io::Result<usize> {
         if let Some(ref mut tcp) = self.sock {
+            println!("Write tcp?");
             tcp.write(buf)
         } else if let Some(ref mut tls) = self.tls {
+            println!("write tls");
             tls.write(buf)
         } else {
-            Err(::std::io::Error::new(::std::io::ErrorKind::NotConnected,"No socket"))
+            Err(::std::io::Error::new(::std::io::ErrorKind::WouldBlock,"No socket"))
         }
     }
 
@@ -183,7 +194,7 @@ impl Write for Con {
         } else if let Some(ref mut tls) = self.tls {
             tls.flush()
         } else {
-            Err(::std::io::Error::new(::std::io::ErrorKind::NotConnected,"No socket"))
+            Err(::std::io::Error::new(::std::io::ErrorKind::WouldBlock,"No socket"))
         }
     }
 }
@@ -202,8 +213,11 @@ impl Evented for Con {
             poll.register(tls.get_ref(),token, interest, opts)
         } else if let Some(ref udp) = self.dns_sock {
             poll.register(udp,token, interest, opts)
+        // } else if let Some(ref tls) = self.mid_tls {
+        //     poll.register(tls.get_ref(),token, interest, opts)
         } else {
-            Err(::std::io::Error::new(::std::io::ErrorKind::NotConnected,"No socket"))
+            // Err(::std::io::Error::new(::std::io::ErrorKind::NotConnected,"No socket"))
+            Ok(())
         }
     }
 
@@ -221,7 +235,8 @@ impl Evented for Con {
         } else if let Some(ref udp) = self.dns_sock {
             poll.reregister(udp,token, interest, opts)
         } else {
-            Err(::std::io::Error::new(::std::io::ErrorKind::NotConnected,"No socket"))
+            // Err(::std::io::Error::new(::std::io::ErrorKind::NotConnected,"No socket"))
+            Ok(())
         }
     }
     
@@ -233,7 +248,8 @@ impl Evented for Con {
         } else if let Some(ref udp) = self.dns_sock {
             poll.deregister(udp)
         } else {
-            Err(::std::io::Error::new(::std::io::ErrorKind::NotConnected,"No socket"))
+            // Err(::std::io::Error::new(::std::io::ErrorKind::NotConnected,"No socket"))
+            Ok(())
         }
     }
 }
