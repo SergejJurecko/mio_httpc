@@ -21,10 +21,6 @@ const BUF_SZ:usize = 4096*2;
 
 impl PrivHttpc {
     pub fn new(con_offset: usize) -> PrivHttpc {
-        // let mut calls = Vec::with_capacity(tk_count);
-        // for _ in 0..tk_count {
-        //     calls.push(None);
-        // }
         PrivHttpc {
             cache: DnsCache::new(),
             calls: HashMap::default(),
@@ -61,7 +57,6 @@ impl PrivHttpc {
         }
     }
 
-    /// Prematurely finish call. 
     pub fn call_close(&mut self, id: ::CallId) {
         if let Some(call) = self.calls.remove(&id) {
             let buf = call.stop();
@@ -77,7 +72,6 @@ impl PrivHttpc {
             buf
         } else {
             let b = Vec::with_capacity(BUF_SZ);
-            // unsafe { b.set_len(self.max_hdrs); }
             b
         }
     }

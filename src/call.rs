@@ -1,5 +1,5 @@
 use con::Con;
-use mio::{Poll,Event,Ready};
+use mio::{Poll,Event,Ready,PollOpt,Evented};
 use std::io::ErrorKind as IoErrorKind;
 use tls_api::{TlsConnector};
 use httparse::{self, Response as ParseResp};
@@ -84,7 +84,8 @@ pub(crate) struct Call {
 }
 
 impl Call {
-    pub(crate) fn new(b: PrivCallBuilder, buf: Vec<u8>) -> Call {
+    pub(crate) fn new(b: PrivCallBuilder, mut buf: Vec<u8>) -> Call {
+        buf.truncate(0);
         Call {
             dir: Dir::SendingHdr(0),
             _start: Instant::now(),
@@ -106,36 +107,10 @@ impl Call {
 
     fn make_space(&mut self, internal: bool, buf: &mut Vec<u8>) -> ::Result<usize> {
         let orig_len = buf.len();
-        let orig_capacity = buf.capacity();
-        let spare_capacity = orig_capacity - orig_len;
-
-        let bytes_needed = if self.body_sz == 0 { // Internal buffer pre HTTP headers
-            if orig_len == 0 {
-                // buf capacity is always at least 2*4096
-                orig_capacity
-            } else {
-                (orig_len * 2).min(self.b.max_response)
-            }
-        } else if internal { // Internal buffer on body
-            (orig_len * 2).min(self.b.max_response)
-        } else { // External buffer
-            if orig_len == 0 {
-                // We do not know if external buffer is reading by chunk
-                // or will receive entire body.
-                self.body_sz.min(2*4096)
-            } else {
-                self.body_sz.min(orig_len*2)
-            }
-        };
-
-        if internal && orig_len + bytes_needed > self.b.max_response {
-            return Err(::Error::ResponseTooBig);
-        }
-        if spare_capacity < bytes_needed {
-            buf.reserve_exact(bytes_needed - spare_capacity);
-        }
+        buf.reserve(4096*2);
         unsafe {
-            buf.set_len(orig_len + bytes_needed);
+            let cap = buf.capacity();
+            buf.set_len(cap);
         }
         Ok(orig_len)
     }
@@ -159,10 +134,10 @@ impl Call {
         if None == cl {
             let mut ar = [0u8;15];
             self.body_sz = self.b.req.body().len();
-            if let Ok(_) = ::itoa::write(&mut ar[..], self.body_sz) {
+            if let Ok(sz) = ::itoa::write(&mut ar[..], self.body_sz) {
                 buf.extend(CONTENT_LENGTH.as_str().as_bytes());
                 buf.extend(b": ");
-                buf.extend(&ar[..]);
+                buf.extend(&ar[..sz]);
                 buf.extend(b"\r\n");
             }
         } else if let Some(cl) = cl {
@@ -187,9 +162,11 @@ impl Call {
                 buf.extend(HOST.as_str().as_bytes());
                 buf.extend(b": ");
                 buf.extend(h.as_bytes());
+                buf.extend(b"\r\n");
             }
         }
         buf.extend(b"\r\n");
+        self.hdr_sz = buf.len();
     }
 
     pub fn event_send<C:TlsConnector>(&mut self, 
@@ -206,15 +183,19 @@ impl Call {
             Dir::SendingHdr(pos) => {
                 let mut buf = ::std::mem::replace(&mut self.buf, Vec::new());
                 if self.hdr_sz == 0 {
-                    self.make_space(false, &mut buf)?;
                     self.fill_send_req(&mut buf);
                 }
                 let hdr_sz = self.hdr_sz;
+
                 let ret = self.event_send_do::<C>(con, cp, 0, &buf[pos..hdr_sz]);
+                // println!("Sent: {}",String::from_utf8(buf.clone())?);
                 self.buf = buf;
                 if let Dir::SendingBody(_) = self.dir {
+                    self.buf.truncate(0);
                     // go again
                     return self.event_send::<C>(con, cp, b);
+                } else if let Dir::Receiving(_) = self.dir {
+                    self.buf.truncate(0);
                 }
                 ret
             }
@@ -245,7 +226,7 @@ impl Call {
                     // Have we already received everything?
                     // Move body data to beginning of buffer
                     // and return with body.
-                    if rec_pos >= self.body_sz {
+                    if rec_pos > 0 && rec_pos >= self.body_sz {
                         unsafe {
                             let src:*const u8 = buf.as_ptr().offset(self.hdr_sz as isize);
                             let dst:*mut u8 = buf.as_mut_ptr();
@@ -298,8 +279,12 @@ impl Call {
                     if ie.kind() == IoErrorKind::Interrupted {
                         continue;
                     } else if ie.kind() == IoErrorKind::WouldBlock {
+                        // con.ready.remove(Ready::writable());
+                        // if con.ready.is_writable() {
+                            con.reregister(cp.poll, con.token, Ready::writable(), PollOpt::edge())?;
+                        // }
                         con.ready.remove(Ready::writable());
-                        return Ok(SendState::Nothing);
+                        return Ok(SendState::Wait);
                     }
                 }
                 &Ok(sz) if sz > 0 => {
@@ -307,15 +292,17 @@ impl Call {
                         if self.hdr_sz == pos+sz {
                             if self.body_sz > 0 {
                                 self.dir = Dir::SendingBody(0);
+                                return Ok(SendState::Wait);
                             } else {
                                 self.hdr_sz = 0;
                                 self.body_sz = 0;
                                 self.dir = Dir::Receiving(0);
+                                return Ok(SendState::Receiving);
                             }
                         } else {
                             self.dir = Dir::SendingHdr(pos+sz);
+                            return Ok(SendState::Wait);
                         }
-                        return Ok(SendState::Nothing);
                     } else if let Dir::SendingBody(pos) = self.dir {
                         if self.body_sz == pos+sz {
                             self.hdr_sz = 0;
@@ -347,20 +334,27 @@ impl Call {
         //     return Ok(RecvState::Nothing);
         // }
         loop {
+            println!("buflen={}, orig_len={}", buf.len(), orig_len);
             io_ret = con.read(&mut buf[orig_len..]);
             match &io_ret {
                 &Err(ref ie) => {
+                    println!("recerr={:?}",ie);
                     if ie.kind() == IoErrorKind::Interrupted {
                         continue;
                     } else if ie.kind() == IoErrorKind::WouldBlock {
+                        buf.truncate(orig_len);
+                        // if con.ready.is_readable() {
+                            con.reregister(cp.poll, con.token, Ready::readable(), PollOpt::edge())?;
+                        // }
                         con.ready.remove(Ready::readable());
                         if entire_sz == 0 {
-                            return Ok(RecvState::Nothing);
+                            return Ok(RecvState::Wait);
                         }
                         break;
                     }
                 }
                 &Ok(sz) if sz > 0 => {
+                    // println!("received {}",sz);
                     entire_sz += sz;
                     if buf.len() == orig_len+sz {
                         orig_len = self.make_space(internal, buf)?;
@@ -383,6 +377,7 @@ impl Call {
                 if self.hdr_sz == 0 {
                     let mut headers = [httparse::EMPTY_HEADER; 16];
                     let mut presp = ParseResp::new(&mut headers);
+                    // println!("Got: {}",String::from_utf8(buf.clone())?);
                     let buflen = buf.len();
                     match presp.parse(buf) {
                         Ok(httparse::Status::Complete(hdr_sz)) => {
@@ -417,7 +412,7 @@ impl Call {
                             return Ok(RecvState::Response(resp, self.body_sz));
                         }
                         Ok(httparse::Status::Partial) => {
-                            return Ok(RecvState::Nothing);
+                            return Ok(RecvState::Wait);
                         }
                         Err(e) => {
                             return Err(From::from(e));
@@ -433,7 +428,7 @@ impl Call {
                     } else {
                         self.dir = Dir::Receiving(pos + bytes_rec);
                     }
-                    return Ok(RecvState::ReceivedBody(pos + bytes_rec));
+                    return Ok(RecvState::ReceivedBody(bytes_rec));
                 }
             }
             Err(e) => {

@@ -1,7 +1,6 @@
 use dns::{self,Dns};
 use dns_cache::DnsCache;
-// use url::Url;
-use tls_api::{TlsConnector,TlsStream,TlsConnectorBuilder};
+use tls_api::{TlsConnector,TlsStream,TlsConnectorBuilder,HandshakeError, MidHandshakeTlsStream};
 use ::Result;
 use mio::net::{TcpStream,UdpSocket};
 use mio::event::Evented;
@@ -29,18 +28,10 @@ fn url_port(url: &Uri) -> Result<u16> {
     }
 }
 
-fn connect<C: TlsConnector>(addr: SocketAddr, host: &str) -> Result<(Option<TcpStream>,Option<TlsStream<TcpStream>>)> {
+fn connect(addr: SocketAddr) -> Result<TcpStream> {
     let tcp = TcpStream::connect(&addr)?;
     tcp.set_nodelay(true)?;
-    if addr.port() == 443 {
-        let connector: C = C::builder()?.build()?;
-        if let Ok(t) = connector.connect(host, tcp) {
-            return Ok((None,Some(t)));
-        } else {
-            return Err(::Error::TlsHandshake);
-        }
-    }
-    return Ok((Some(tcp),None));
+    return Ok(tcp);
 }
 
 pub struct Con {
@@ -50,8 +41,10 @@ pub struct Con {
     pub ready: Ready,
     sock: Option<TcpStream>,
     tls: Option<TlsStream<TcpStream>>,
+    mid_tls: Option<MidHandshakeTlsStream<TcpStream>>,
     _dns: Option<Dns>,
     dns_sock: Option<UdpSocket>,
+    con_port: u16,
     closed: bool,
 }
 
@@ -59,21 +52,16 @@ impl Con {
     pub fn new<C:TlsConnector,T>(token: Token, req: &Request<T>, cache: &mut DnsCache, poll: &Poll) -> Result<Con> {
         let port = url_port(req.uri())?;
         let mut sock = None;
-        let mut tls = None;
         let mut rdy = Ready::writable() | Ready::writable();
         if let Some(host) = req.uri().host() {
             if let Some(ip) = cache.find(host) {
-                let r = connect::<C>(SocketAddr::new(ip,port), host)?;
-                sock = r.0;
-                tls = r.1;
+                sock = Some(connect(SocketAddr::new(ip,port))?);
             } else if let Ok(ip) = IpAddr::from_str(host) {
-                let r = connect::<C>(SocketAddr::new(ip,port), host)?;
-                sock = r.0;
-                tls = r.1;
+                sock = Some(connect(SocketAddr::new(ip,port))?);
             }
         }
         let mut dns_sock = None;
-        let dns = if sock.is_none() && tls.is_none() {
+        let dns = if sock.is_none() {
             let r = Dns::new();
             if let Some(host) = req.uri().host() {
                 rdy = Ready::readable();
@@ -84,6 +72,7 @@ impl Con {
             Some(r)
         } else { None };
         let res = Con {
+            con_port: port,
             closed: false,
             ready: Ready::empty(),
             nuses: 0,
@@ -91,7 +80,8 @@ impl Con {
             sock,
             _dns: dns,
             dns_sock,
-            tls,
+            tls: None,
+            mid_tls: None,
         };
         res.register(poll, res.token, rdy, PollOpt::edge())?;
         Ok(res)
@@ -120,21 +110,45 @@ impl Con {
                     cp.dns.save(host, ip);
                     let port = url_port(req.uri())?;
                     // self.sock = Some(TcpStream::connect(&SocketAddr::new(ip,port))?);
-                    let r = connect::<C>(SocketAddr::new(ip,port), host)?;
-                    self.sock = r.0;
-                    self.tls = r.1;
+                    // println!("Got ADDR={}:{}",ip,port);
+                    self.sock = Some(connect(SocketAddr::new(ip,port))?);
                     self.register(cp.poll, self.token, Ready::writable() | Ready::writable(), PollOpt::edge())?;
+
                     return Ok(());
                 }
             }
             self.dns_sock = Some(udp);
         } else {
+            if cp.ev.readiness().is_writable() {
+                if self.sock.is_some() && self.con_port == 443 && self.tls.is_none() && self.mid_tls.is_none() {
+                    let connector: C = C::builder()?.build()?;
+                    let host = req.uri().host().unwrap();
+                    let tcp = self.sock.take().unwrap();
+                    let r = connector.connect(host, tcp);
+                    self.handshake_resp::<C>(r)?;
+                }
+            }
+            if self.mid_tls.is_some() && cp.ev.readiness().is_readable() {
+                let tls = self.mid_tls.take().unwrap();
+                let r = tls.handshake();
+                self.handshake_resp::<C>(r)?;
+            }
             self.ready |= cp.ev.readiness();
-            // if let Some(ref mut tcp) = self.sock {
-            //     return Ok(tcp.read(buf)?);
-            // } else if let Some(ref mut tls) = self.tls {
-            //     return Ok(tls.read(buf)?);
-            // }
+        }
+        Ok(())
+    }
+
+    fn handshake_resp<C:TlsConnector>(&mut self, r: ::std::result::Result<TlsStream<TcpStream>, HandshakeError<TcpStream>>) -> Result<()> {
+        match r {
+            Ok(tls) => {
+                self.tls = Some(tls);
+            }
+            Err(HandshakeError::Interrupted(mid)) => {
+                self.mid_tls = Some(mid);
+            }
+            Err(e) => {
+                return Err(::Error::TlsHandshake);
+            }
         }
         Ok(())
     }

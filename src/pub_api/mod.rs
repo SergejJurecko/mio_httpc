@@ -13,7 +13,7 @@ pub enum SendState {
     /// there is no response body.
     Done,
     /// Nothing yet to return.
-    Nothing,
+    Wait,
 }
 
 /// Used when call is in receive response state.
@@ -33,7 +33,7 @@ pub enum RecvState {
     /// there is no response body.
     Done,
     /// Nothing yet to return.
-    Nothing,
+    Wait,
 }
 
 /// Id for calls. Directly tied to mio token but not equal to it.
