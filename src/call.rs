@@ -334,7 +334,6 @@ impl Call {
         //     return Ok(RecvState::Nothing);
         // }
         loop {
-            println!("buflen={}, orig_len={}", buf.len(), orig_len);
             io_ret = con.read(&mut buf[orig_len..]);
             match &io_ret {
                 &Err(ref ie) => {
@@ -354,7 +353,7 @@ impl Call {
                     }
                 }
                 &Ok(sz) if sz > 0 => {
-                    // println!("received {}",sz);
+                    println!("received {}",sz);
                     entire_sz += sz;
                     if buf.len() == orig_len+sz {
                         orig_len = self.make_space(internal, buf)?;

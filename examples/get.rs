@@ -13,7 +13,7 @@ fn main() {
     // "http://127.0.0.1:26002"
     // "https://www.rust-lang.org/"
     // http://127.0.0.1:3000
-    let req = req.uri("http://www.tvim.tv").body(Vec::new()).expect("can not build request");
+    let req = req.uri("https://www.tvim.tv").body(Vec::new()).expect("can not build request");
     let call_id = CallBuilder::new(req).call(&mut htp, &poll).expect("Call start failed");
 
     let mut sending = true;
