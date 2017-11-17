@@ -2,7 +2,7 @@ extern crate mio_httpc;
 extern crate mio;
 extern crate http;
 
-use mio_httpc::{CallBuilder,Httpc,SendState,RecvState};
+use mio_httpc::{CallBuilder,Httpc,SendState,RecvState,ResponseBody};
 use mio::{Poll,Events};
 use http::Request;
 
@@ -14,7 +14,7 @@ fn main() {
     // "https://www.rust-lang.org/"
     // http://127.0.0.1:3000
     // https://cdn4.tvim.tv
-    let req = req.uri("https://edition.cnn.com").body(Vec::new()).expect("can not build request");
+    let req = req.uri("http://www.teamliquid.net").body(Vec::new()).expect("can not build request");
     let call_id = CallBuilder::new(req).call(&mut htp, &poll).expect("Call start failed");
 
     let mut sending = true;
@@ -52,15 +52,15 @@ fn main() {
                 // This is so socket is always drained entirely. Otherwise poll will not return
                 // anything. Httpc uses edge triggered sockets.
                 loop {
-                    match htp.call_recv(&poll, &ev, cid, None) {
+                    match htp.call_recv(&poll, &ev, cid, Some(&mut recv_vec)) {
                         RecvState::Done => {
                             println!("Done");
                             done = true;
                             break;
                         }
                         RecvState::Response(resp,bsz) => {
-                            println!("Got response {:?}\nbody_sz={} will follow",resp,bsz);
-                            if bsz == 0 {
+                            println!("Got response {:?}\nbody_sz={}",resp,bsz);
+                            if bsz.is_empty() {
                                 println!("Finish as content-length is 0");
                                 done = true;
                                 break;
@@ -70,6 +70,7 @@ fn main() {
                         RecvState::ReceivedBody(sz) => {
                             println!("Got chunk {} bytes",sz);
                         }
+                        // If no Vec<u8> provied to call_recv the final body is returned with this.
                         RecvState::DoneWithBody(rt) => {
                             if let Ok(s) = String::from_utf8(rt) {
                                 println!("Body: {}",s);

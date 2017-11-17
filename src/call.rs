@@ -105,8 +105,9 @@ impl Call {
         self.buf
     }
 
-    fn make_space(&mut self, internal: bool, buf: &mut Vec<u8>) -> ::Result<usize> {
+    fn reserve_space(&mut self, internal: bool, buf: &mut Vec<u8>) -> ::Result<usize> {
         let orig_len = buf.len();
+        // Vec will actually reserve on an exponential scale.
         buf.reserve(4096*2);
         unsafe {
             let cap = buf.capacity();
@@ -332,7 +333,7 @@ impl Call {
             cp: &mut CallParam, 
             internal: bool, 
             buf: &mut Vec<u8>) -> ::Result<RecvState> {
-        let mut orig_len = self.make_space(internal, buf)?;
+        let mut orig_len = self.reserve_space(internal, buf)?;
         let mut io_ret;
         let mut entire_sz = 0;
         con.signalled::<C,Vec<u8>>(cp, &self.b.req)?;
@@ -364,7 +365,7 @@ impl Call {
                 &Ok(sz) if sz > 0 => {
                     entire_sz += sz;
                     if buf.len() == orig_len+sz {
-                        orig_len = self.make_space(internal, buf)?;
+                        orig_len = self.reserve_space(internal, buf)?;
                         continue;
                     }
                     buf.truncate(orig_len+sz);
@@ -411,12 +412,23 @@ impl Call {
                                     }
                                 }
                             }
+                            if let Some(ref clh) = resp.headers().get(http::header::TRANSFER_ENCODING) {
+                                if let Ok(clhs) = clh.to_str() {
+                                    if clhs == "chunked" {
+                                        self.body_sz = usize::max_value();
+                                    }
+                                }
+                            }
                             if self.body_sz == 0 {
                                 self.dir == Dir::Done;
                             } else {
                                 self.dir = Dir::Receiving(buflen - self.hdr_sz);
                             }
-                            return Ok(RecvState::Response(resp, self.body_sz));
+                            if self.body_sz == usize::max_value() {
+                                return Ok(RecvState::Response(resp, ::ResponseBody::Streamed));
+                            } else {
+                                return Ok(RecvState::Response(resp, ::ResponseBody::Sized(self.body_sz)));
+                            }
                         }
                         Ok(httparse::Status::Partial) => {
                             return Ok(RecvState::Wait);

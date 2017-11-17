@@ -16,13 +16,40 @@ pub enum SendState {
     Wait,
 }
 
+#[derive(Debug,Copy,Clone,Eq,PartialEq)]
+pub enum ResponseBody {
+    Sized(usize),
+    Streamed,
+}
+impl ::std::fmt::Display for ResponseBody {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        match *self {
+            ResponseBody::Sized(sz) => {
+                write!(f, "ResponseBody::Sized({})", sz)
+            }
+            ResponseBody::Streamed => {
+                write!(f, "ResponseBody::Streamed")
+            }
+        }
+    }
+}
+
+impl ResponseBody {
+    pub fn is_empty(&self) -> bool {
+        match *self {
+            ResponseBody::Sized(n) if n == 0 => true,
+            _ => false,
+        }
+    }
+}
+
 /// Used when call is in receive response state.
 pub enum RecvState {
     /// Unrecoverable error has occured and call is finished.
     Error(::Error),
     /// HTTP Response and response body size. 
     /// If there is a body it will follow, otherwise call is done.
-    Response(::http::Response<Vec<u8>>,usize),
+    Response(::http::Response<Vec<u8>>,ResponseBody),
     /// How many bytes were received.
     ReceivedBody(usize),
     /// Request is done with body.

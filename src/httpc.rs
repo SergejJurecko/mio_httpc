@@ -134,9 +134,9 @@ impl PrivHttpc {
             return RecvState::Error(::Error::InvalidToken);
         };
         match cret {
-            Ok(RecvState::Response(r,0)) => {
+            Ok(RecvState::Response(r,::ResponseBody::Sized(0))) => {
                 self.call_close(id);
-                return RecvState::Response(r,0);
+                return RecvState::Response(r,::ResponseBody::Sized(0));
             }
             Ok(RecvState::Done) => {
                 self.call_close(id);
