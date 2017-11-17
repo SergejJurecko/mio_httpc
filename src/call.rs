@@ -1,68 +1,16 @@
 use con::Con;
-use mio::{Poll,Event,Ready,PollOpt,Evented};
+use mio::{Ready,PollOpt,Evented};
 use std::io::ErrorKind as IoErrorKind;
 use tls_api::{TlsConnector};
 use httparse::{self, Response as ParseResp};
 use http::response::Builder as RespBuilder;
-use http::{self,Request,Version};
+use http::{self,Version};
 use http::header::*;
-use ::httpc::PrivHttpc;
 use std::str::FromStr;
-use std::time::{Duration,Instant};
-use dns_cache::DnsCache;
+use std::time::{Instant};
 use std::io::{Read,Write};
 use ::{SendState,RecvState};
-
-pub(crate) struct CallParam<'a> {
-    pub poll: &'a Poll,
-    pub dns: &'a mut DnsCache,
-    // pub con: &'a mut Con,
-    pub ev: &'a Event,
-}
-
-/// Start configure call.
-pub struct PrivCallBuilder {
-    pub(crate) req: Request<Vec<u8>>,
-    dur: Duration,
-    max_response: usize,
-}
-
-#[allow(dead_code)]
-impl PrivCallBuilder {
-    /// mio token is identifier for call in Httpc
-    /// If req contains body it will be used.
-    /// If req contains no body, but has content-length set,
-    /// it will wait for send body to be provided
-    /// through Httpc::event calls. 
-    pub fn new(req: Request<Vec<u8>>) -> PrivCallBuilder {
-        PrivCallBuilder {
-            max_response: 1024*1024*10,
-            dur: Duration::from_millis(30000),
-            req,
-        }
-    }
-
-    /// Consume and execute
-    pub fn call<C:TlsConnector>(self, httpc: &mut PrivHttpc, poll: &Poll) -> ::Result<::CallId> {
-        httpc.call::<C>(self, poll)
-    }
-
-    /// Default 10MB
-    /// This will limit how big the internal Vec<u8> can grow.
-    /// HTTP response headers are always stored in internal buffer.
-    /// HTTP response body is stored in internal buffer if no external
-    /// buffer is provided.
-    pub fn max_response(&mut self, m: usize) -> &mut Self {
-        self.max_response = m;
-        self
-    }
-
-    /// Default 30s
-    pub fn timeout(&mut self, d: Duration) -> &mut Self {
-        self.dur = d;
-        self
-    }
-}
+use ::types::*;
 
 #[derive(PartialEq)]
 enum Dir {
@@ -72,7 +20,7 @@ enum Dir {
     Done,
 }
 
-pub(crate) struct Call {
+pub struct Call {
     b: PrivCallBuilder,
     _start: Instant,
     // con: Con,
@@ -81,10 +29,11 @@ pub(crate) struct Call {
     body_sz: usize,
     // resp: Option<Response<Vec<u8>>>,
     dir: Dir,
+    chunked: ChunkIndex, 
 }
 
 impl Call {
-    pub(crate) fn new(b: PrivCallBuilder, mut buf: Vec<u8>) -> Call {
+    pub fn new(b: PrivCallBuilder, mut buf: Vec<u8>) -> Call {
         buf.truncate(0);
         Call {
             dir: Dir::SendingHdr(0),
@@ -93,6 +42,7 @@ impl Call {
             buf,
             hdr_sz: 0,
             body_sz: 0,
+            chunked: ChunkIndex::new(),
             // resp: None,
         }
     }
@@ -101,7 +51,7 @@ impl Call {
     //     self.dir == Dir::Done
     // }
 
-    pub(crate) fn stop(self) -> Vec<u8> {
+    pub fn stop(self) -> Vec<u8> {
         self.buf
     }
 
@@ -222,7 +172,7 @@ impl Call {
                 return Ok(RecvState::Done);
             }
             Dir::Receiving(rec_pos) => {
-                if self.hdr_sz == 0 || b.is_none() {
+                if self.hdr_sz == 0 || b.is_none() || self.b.chunked_parse {
                     let mut buf = ::std::mem::replace(&mut self.buf, Vec::new());
                     // Have we already received everything?
                     // Move body data to beginning of buffer
@@ -237,6 +187,8 @@ impl Call {
                     }
                     let ret = self.event_rec_do::<C>(con, cp, true, &mut buf);
                     self.buf = buf;
+                    if self.b.chunked_parse && b.is_some() {
+                    }
                     ret
                 } else {
                     let mut b = b.unwrap();
@@ -348,7 +300,6 @@ impl Call {
                         continue;
                     } else if ie.kind() == IoErrorKind::WouldBlock {
                         buf.truncate(orig_len);
-                        println!("recv wouldblock");
                         if con.reg_for.is_empty() {
                             con.reg_for = Ready::readable();
                             con.register(cp.poll, con.token, con.reg_for, PollOpt::edge())?;
@@ -416,8 +367,17 @@ impl Call {
                                 if let Ok(clhs) = clh.to_str() {
                                     if clhs == "chunked" {
                                         self.body_sz = usize::max_value();
+                                        if self.b.chunked_parse {
+                                            self.chunked.enable();
+                                        }
+                                    } else {
+                                        self.b.chunked_parse = false;
                                     }
+                                } else {
+                                    self.b.chunked_parse = false;
                                 }
+                            } else {
+                                self.b.chunked_parse = false;
                             }
                             if self.body_sz == 0 {
                                 self.dir == Dir::Done;

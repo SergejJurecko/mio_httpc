@@ -4,7 +4,8 @@ use con::Con;
 use ::Result;
 use tls_api::{TlsConnector};
 use std::collections::VecDeque;
-use call::{Call,PrivCallBuilder};
+use call::{Call};
+use types::*;
 use fnv::FnvHashMap as HashMap;
 use con_table::ConTable;
 use ::{SendState,RecvState,CallId};
@@ -93,7 +94,7 @@ impl PrivHttpc {
             } else {
                 return SendState::Error(::Error::InvalidToken);
             };
-            let mut cp = ::call::CallParam {
+            let mut cp = ::types::CallParam {
                 poll,
                 dns: &mut self.cache,
                 ev,
@@ -124,7 +125,7 @@ impl PrivHttpc {
             } else {
                 return RecvState::Error(::Error::InvalidToken);
             };
-            let mut cp = ::call::CallParam {
+            let mut cp = ::types::CallParam {
                 poll,
                 ev,
                 dns: &mut self.cache,

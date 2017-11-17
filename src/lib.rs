@@ -1,3 +1,5 @@
+#![recursion_limit="128"] // because of quick_error
+
 //! mio_httpc is an async http client that runs on top of mio only. 
 //! 
 //! No call will block, not even for DNS resolution as it is implemented internally to avoid blocking.
@@ -14,6 +16,7 @@ extern crate libc;
 extern crate fnv;
 extern crate http;
 extern crate itoa;
+extern crate btoi;
 #[macro_use(quick_error)]
 extern crate quick_error;
 #[cfg(test)]
@@ -42,6 +45,8 @@ mod httpc;
 mod call;
 #[allow(dead_code,unused_variables)]
 mod pub_api;
+mod types;
+
 pub use pub_api::*;
 
 // TODO:
@@ -116,6 +121,10 @@ quick_error! {
         /// You must pick one of the features: native, rustls, openssl
         NoTls {
             display("You must pick one of the features: native, rustls, openssl")
+        }
+        /// Eror while parsing chunked stream
+        ChunkedParse {
+            display("Error parsing chunked transfer")
         }
         // #[cfg(unix)]
         // Nix(err: nix::Error) {

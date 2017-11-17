@@ -9,7 +9,7 @@ use std::net::{SocketAddr, IpAddr};
 use std::str::FromStr;
 use http::{Request,Uri};
 use std::io::{Read,Write};
-use ::call::CallParam;
+use ::types::CallParam;
 
 fn url_port(url: &Uri) -> Result<u16> {
     if let Some(p) = url.port() {

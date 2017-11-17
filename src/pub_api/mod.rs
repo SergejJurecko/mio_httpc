@@ -1,5 +1,6 @@
 
 /// Used when call is in send request state.
+#[derive(Debug)]
 pub enum SendState {
     /// Unrecoverable error has occured and call is finished.
     Error(::Error),
@@ -44,6 +45,7 @@ impl ResponseBody {
 }
 
 /// Used when call is in receive response state.
+#[derive(Debug)]
 pub enum RecvState {
     /// Unrecoverable error has occured and call is finished.
     Error(::Error),
@@ -86,7 +88,7 @@ pub use self::pub_httpc::*;
 mod pub_httpc {
     use std::time::Duration;
     use http::{Request};
-    use ::call::PrivCallBuilder;
+    use ::types::PrivCallBuilder;
     use mio::{Poll,Event};
     use tls_api::{TlsConnector};
     use ::Result;
@@ -115,6 +117,13 @@ mod pub_httpc {
         /// HTTP response body is stored in internal buffer if no external
         /// buffer is provided.
         pub fn max_response(&mut self, m: usize) -> &mut Self {
+            self
+        }
+
+        /// Default true.
+        /// 
+        /// Configurable because it entails copying the data stream.
+        pub fn chunked_parse(&mut self, b: bool) -> &mut Self {
             self
         }
 
@@ -181,7 +190,7 @@ mod pub_httpc {
     extern crate tls_api_rustls;
     use std::time::Duration;
     use http::{Request};
-    use ::call::PrivCallBuilder;
+    use ::types::PrivCallBuilder;
     use mio::{Poll,Event};
     use tls_api::{TlsConnector};
     use ::Result;
@@ -201,6 +210,10 @@ mod pub_httpc {
         }
         pub fn max_response(&mut self, m: usize) -> &mut Self {
             self.cb.max_response(m);
+            self
+        }
+        pub fn chunked_parse(&mut self, b: bool) -> &mut Self {
+            self.cb.chunked_parse(b);
             self
         }
         pub fn timeout(&mut self, d: Duration) -> &mut Self {
@@ -245,7 +258,7 @@ mod pub_httpc {
     extern crate tls_api_native_tls;
     use std::time::Duration;
     use http::{Request};
-    use ::call::PrivCallBuilder;
+    use ::types::PrivCallBuilder;
     use mio::{Poll,Event};
     use tls_api::{TlsConnector};
     use ::Result;
@@ -263,12 +276,14 @@ mod pub_httpc {
         pub fn call(self, httpc: &mut Httpc, poll: &Poll) -> ::Result<::CallId> {
             httpc.call::<tls_api_native_tls::TlsConnector>(self.cb, poll)
         }
-
         pub fn max_response(&mut self, m: usize) -> &mut Self {
             self.cb.max_response(m);
             self
         }
-
+        pub fn chunked_parse(&mut self, b: bool) -> &mut Self {
+            self.cb.chunked_parse(b);
+            self
+        }
         pub fn timeout(&mut self, d: Duration) -> &mut Self {
             self.cb.timeout(d);
             self
@@ -316,7 +331,7 @@ mod pub_httpc {
     extern crate tls_api_openssl;
     use std::time::Duration;
     use http::{Request};
-    use ::call::PrivCallBuilder;
+    use ::types::PrivCallBuilder;
     use mio::{Poll,Event};
     use tls_api::{TlsConnector};
     use ::Result;
@@ -331,16 +346,17 @@ mod pub_httpc {
                 cb: PrivCallBuilder::new(req),
             }
         }
-
         pub fn call(self, httpc: &mut Httpc, poll: &Poll) -> ::Result<::CallId> {
             httpc.call::<tls_api_openssl::TlsConnector>(self.cb, poll)
         }
-
         pub fn max_response(&mut self, m: usize) -> &mut Self {
             self.cb.max_response(m);
             self
         }
-
+        pub fn chunked_parse(&mut self, b: bool) -> &mut Self {
+            self.cb.chunked_parse(b);
+            self
+        }
         pub fn timeout(&mut self, d: Duration) -> &mut Self {
             self.cb.timeout(d);
             self
