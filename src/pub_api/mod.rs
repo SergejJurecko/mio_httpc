@@ -127,6 +127,13 @@ mod pub_httpc {
             self
         }
 
+        /// Default 32K
+        /// 
+        /// Max size of chunk in a chunked transfer.
+        pub fn chunked_max_chunk(&mut self, v: usize) -> &mut Self {
+            self
+        }
+
         /// Default 30s
         pub fn timeout(&mut self, d: Duration) -> &mut Self {
             self
@@ -196,7 +203,7 @@ mod pub_httpc {
     use ::Result;
 
     pub struct CallBuilder {
-        cb: ::call::PrivCallBuilder,
+        cb: PrivCallBuilder,
     }
 
     impl CallBuilder {
@@ -214,6 +221,10 @@ mod pub_httpc {
         }
         pub fn chunked_parse(&mut self, b: bool) -> &mut Self {
             self.cb.chunked_parse(b);
+            self
+        }
+        pub fn chunked_max_chunk(&mut self, v: usize) -> &mut Self {
+            self.cb.chunked_max_chunk(b);
             self
         }
         pub fn timeout(&mut self, d: Duration) -> &mut Self {
@@ -264,7 +275,7 @@ mod pub_httpc {
     use ::Result;
 
     pub struct CallBuilder {
-        cb: ::call::PrivCallBuilder,
+        cb: PrivCallBuilder,
     }
 
     impl CallBuilder {
@@ -282,6 +293,10 @@ mod pub_httpc {
         }
         pub fn chunked_parse(&mut self, b: bool) -> &mut Self {
             self.cb.chunked_parse(b);
+            self
+        }
+        pub fn chunked_max_chunk(&mut self, v: usize) -> &mut Self {
+            self.cb.chunked_max_chunk(v);
             self
         }
         pub fn timeout(&mut self, d: Duration) -> &mut Self {
@@ -355,6 +370,10 @@ mod pub_httpc {
         }
         pub fn chunked_parse(&mut self, b: bool) -> &mut Self {
             self.cb.chunked_parse(b);
+            self
+        }
+        pub fn chunked_max_chunk(&mut self, v: usize) -> &mut Self {
+            self.cb.chunked_max_chunk(v);
             self
         }
         pub fn timeout(&mut self, d: Duration) -> &mut Self {

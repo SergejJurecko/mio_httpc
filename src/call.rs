@@ -42,7 +42,7 @@ impl Call {
             buf,
             hdr_sz: 0,
             body_sz: 0,
-            chunked: ChunkIndex::new(),
+            chunked: ChunkIndex::new(0),
             // resp: None,
         }
     }
@@ -186,9 +186,14 @@ impl Call {
                         return Ok(RecvState::DoneWithBody(buf));
                     }
                     let ret = self.event_rec_do::<C>(con, cp, true, &mut buf);
+                    // if self.b.chunked_parse && self.hdr_sz > 0 {
+                    //     if b.is_some() {
+                    //         let mut b = b.unwrap();
+                    //         // self.chunked.
+                    //     } else {
+                    //     }
+                    // }
                     self.buf = buf;
-                    if self.b.chunked_parse && b.is_some() {
-                    }
                     ret
                 } else {
                     let mut b = b.unwrap();
@@ -367,9 +372,10 @@ impl Call {
                                 if let Ok(clhs) = clh.to_str() {
                                     if clhs == "chunked" {
                                         self.body_sz = usize::max_value();
-                                        if self.b.chunked_parse {
-                                            self.chunked.enable();
-                                        }
+                                        self.chunked = ChunkIndex::new(self.hdr_sz);
+                                        // if self.b.chunked_parse {
+                                        //     self.chunked.enable();
+                                        // }
                                     } else {
                                         self.b.chunked_parse = false;
                                     }
@@ -401,13 +407,22 @@ impl Call {
                     let pos = if let Dir::Receiving(pos) = self.dir {
                         pos
                     } else { 0 };
-                    
+
                     // do not set done if internal
                     // This way next call will be either copied to provided buffer or returned.
                     if pos + bytes_rec >= self.body_sz && !internal {
                         self.dir = Dir::Done;
                     } else {
-                        self.dir = Dir::Receiving(pos + bytes_rec);
+                        let mut chunked_done = false;
+                        if self.b.chunked_parse {
+                            if let Ok(true) = self.chunked.check_done(self.b.max_chunk, buf) {
+                                chunked_done = true;
+                                self.dir = Dir::Done;
+                            }
+                        }
+                        if !chunked_done {
+                            self.dir = Dir::Receiving(pos + bytes_rec);
+                        }
                     }
                     return Ok(RecvState::ReceivedBody(bytes_rec));
                 }

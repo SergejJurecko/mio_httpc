@@ -16,7 +16,6 @@ extern crate libc;
 extern crate fnv;
 extern crate http;
 extern crate itoa;
-extern crate btoi;
 #[macro_use(quick_error)]
 extern crate quick_error;
 #[cfg(test)]
@@ -125,6 +124,10 @@ quick_error! {
         /// Eror while parsing chunked stream
         ChunkedParse {
             display("Error parsing chunked transfer")
+        }
+        /// Chunk was larger than configured CallBuilder::cunked_max_chunk.
+        ChunkOverlimit(v:usize) {
+            display("Chunk was larger than configured CallBuilder::cunked_max_chunk. {}",v)
         }
         // #[cfg(unix)]
         // Nix(err: nix::Error) {
