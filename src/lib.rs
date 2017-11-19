@@ -28,8 +28,8 @@ extern crate core_foundation_sys;
 
 // Because of default implementation does nothing we suppress warnings of nothing going on.
 // One of TLS implementation features must be picked.
-#[allow(dead_code,unused_variables)]
-mod con_table;
+// #[allow(dead_code,unused_variables)]
+// mod con_table;
 #[allow(dead_code,unused_variables)]
 mod dns_cache;
 #[allow(dead_code,unused_variables)]

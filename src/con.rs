@@ -10,6 +10,7 @@ use std::str::FromStr;
 use http::{Request,Uri};
 use std::io::{Read,Write};
 use ::types::CallParam;
+use fnv::FnvHashMap as HashMap;
 
 fn url_port(url: &Uri) -> Result<u16> {
     if let Some(p) = url.port() {
@@ -35,10 +36,10 @@ fn connect(addr: SocketAddr) -> Result<TcpStream> {
 }
 
 pub struct Con {
-    pub token: Token,
+    token: Token,
     // pub req: Request<T>,
     nuses: usize,
-    pub reg_for: Ready,
+    reg_for: Ready,
     sock: Option<TcpStream>,
     tls: Option<TlsStream<TcpStream>>,
     mid_tls: Option<MidHandshakeTlsStream<TcpStream>>,
@@ -100,6 +101,16 @@ impl Con {
     #[inline]
     pub fn closed(&self) -> bool {
         self.closed
+    }
+
+    pub fn reg(&mut self, poll: &Poll, rdy: Ready) -> ::std::io::Result<()> {
+        if self.reg_for.is_empty() {
+            self.reg_for = rdy;
+            self.register(poll, self.token, self.reg_for, PollOpt::edge())
+        } else {
+            self.reg_for = rdy;
+            self.reregister(poll, self.token, self.reg_for, PollOpt::edge())
+        }
     }
 
     pub(crate) fn signalled<'a,C:TlsConnector,T>(&mut self, cp: &mut CallParam, req: &Request<T>) -> Result<()> {
@@ -210,7 +221,6 @@ impl Evented for Con {
         // } else if let Some(ref tls) = self.mid_tls {
         //     poll.register(tls.get_ref(),token, interest, opts)
         } else {
-            // Err(::std::io::Error::new(::std::io::ErrorKind::NotConnected,"No socket"))
             Ok(())
         }
     }
@@ -229,7 +239,6 @@ impl Evented for Con {
         } else if let Some(ref udp) = self.dns_sock {
             poll.reregister(udp,token, interest, opts)
         } else {
-            // Err(::std::io::Error::new(::std::io::ErrorKind::NotConnected,"No socket"))
             Ok(())
         }
     }
@@ -242,8 +251,69 @@ impl Evented for Con {
         } else if let Some(ref udp) = self.dns_sock {
             poll.deregister(udp)
         } else {
-            // Err(::std::io::Error::new(::std::io::ErrorKind::NotConnected,"No socket"))
             Ok(())
+        }
+    }
+}
+
+pub struct ConTable {
+    cons: Vec<Con>,
+    open_cons: HashMap<String,Con>,
+    empty_slots: usize,
+}
+
+impl ConTable {
+    pub fn new() -> ConTable {
+        ConTable {
+            open_cons: HashMap::default(),
+            cons: Vec::with_capacity(4),
+            empty_slots: 0,
+        }
+    }
+
+    pub fn get_con(&mut self, id: usize) -> Option<&mut Con> {
+        if id < self.cons.len() {
+            let c = &mut self.cons[id];
+            return Some(c);
+        }
+        None
+    }
+
+    pub fn push_con(&mut self, mut c: Con) -> Option<u16> {
+        if self.cons.len() == (u16::max_value() as usize) {
+            return None;
+        }
+        if self.empty_slots*4 <= self.cons.len() {
+            c.token = Token::from(c.token.0 + self.cons.len());
+            self.cons.push(c);
+            Some((self.cons.len()-1) as u16)
+        } else {
+            for i in 0..self.cons.len() {
+                if self.cons[i].closed() {
+                    c.token = Token::from(c.token.0 + i);
+                    self.cons[i] = c;
+                    self.empty_slots -= 1;
+                    return Some(i as u16);
+                }
+            }
+            return None;
+        }
+    }
+
+    pub fn close_con(&mut self, pos: u16) {
+        let pos = pos as usize;
+        self.cons[pos].close();
+        self.empty_slots += 1;
+        loop {
+            if self.cons.last().is_some() {
+                if self.cons.last().unwrap().closed() {
+                    let _ = self.cons.pop();
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
         }
     }
 }

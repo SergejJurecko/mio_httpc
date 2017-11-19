@@ -1,13 +1,12 @@
 use mio::{Token,Poll,Event};
 use dns_cache::DnsCache;
-use con::Con;
+use con::{Con,ConTable};
 use ::Result;
 use tls_api::{TlsConnector};
 use std::collections::VecDeque;
 use call::{Call};
 use types::*;
 use fnv::FnvHashMap as HashMap;
-use con_table::ConTable;
 use ::{SendState,RecvState,CallId};
 
 pub struct PrivHttpc {

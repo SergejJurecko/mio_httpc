@@ -1,5 +1,5 @@
 use con::Con;
-use mio::{Ready,PollOpt,Evented};
+use mio::{Ready};
 use std::io::ErrorKind as IoErrorKind;
 use tls_api::{TlsConnector};
 use httparse::{self, Response as ParseResp};
@@ -254,15 +254,7 @@ impl Call {
                     } else if ie.kind() == IoErrorKind::NotConnected {
                         return Ok(SendState::Wait);
                     } else if ie.kind() == IoErrorKind::WouldBlock {
-                        // con.ready.remove(Ready::writable());
-                        if con.reg_for.is_empty() {
-                            con.reg_for = Ready::writable();
-                            con.register(cp.poll, con.token, con.reg_for, PollOpt::edge())?;
-                        } else {
-                            con.reg_for = Ready::writable();
-                            con.reregister(cp.poll, con.token, con.reg_for, PollOpt::edge())?;
-                        }
-                        // con.ready.remove(Ready::writable());
+                        con.reg(cp.poll, Ready::writable())?;
                         return Ok(SendState::Wait);
                     }
                 }
@@ -320,13 +312,7 @@ impl Call {
                         continue;
                     } else if ie.kind() == IoErrorKind::WouldBlock {
                         buf.truncate(orig_len);
-                        if con.reg_for.is_empty() {
-                            con.reg_for = Ready::readable();
-                            con.register(cp.poll, con.token, con.reg_for, PollOpt::edge())?;
-                        } else {
-                            con.reg_for = Ready::readable();
-                            con.reregister(cp.poll, con.token, con.reg_for, PollOpt::edge())?;
-                        }
+                        con.reg(cp.poll, Ready::readable())?;
                         if entire_sz == 0 {
                             return Ok(RecvState::Wait);
                         }
