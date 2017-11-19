@@ -257,7 +257,7 @@ mod pub_httpc {
             self.h.call_close(id);
         }
         pub fn timeout(&mut self) {
-            self.h.timeout()
+            self.h.timeout::<tls_api_rustls::TlsConnector>()
         }
         pub fn event(&mut self, ev: &Event) -> Option<::CallId> {
             self.h.event::<tls_api_rustls::TlsConnector>(ev)
@@ -332,7 +332,7 @@ mod pub_httpc {
             self.h.call_close(id);
         }
         pub fn timeout(&mut self) {
-            self.h.timeout()
+            self.h.timeout::<tls_api_native_tls::TlsConnector>()
         }
         pub fn event(&mut self, ev: &Event) -> Option<::CallId> {
             self.h.event::<tls_api_native_tls::TlsConnector>(ev)
@@ -407,7 +407,7 @@ mod pub_httpc {
             self.h.call_close(id);
         }
         pub fn timeout(&mut self) {
-            self.h.timeout()
+            self.h.timeout::<tls_api_openssl::TlsConnector>()
         }
         pub fn event(&mut self, ev: &Event) -> Option<::CallId> {
             self.h.event::<tls_api_openssl::TlsConnector>(ev)
