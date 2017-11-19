@@ -25,6 +25,7 @@ pub struct Call {
     _start: Instant,
     // con: Con,
     buf: Vec<u8>,
+    // chunked_resp: Vec<u8>,
     hdr_sz: usize,
     body_sz: usize,
     // resp: Option<Response<Vec<u8>>>,
@@ -38,11 +39,12 @@ impl Call {
         Call {
             dir: Dir::SendingHdr(0),
             _start: Instant::now(),
+            // chunked_resp: Vec::new(),
             b,
             buf,
             hdr_sz: 0,
             body_sz: 0,
-            chunked: ChunkIndex::new(0),
+            chunked: ChunkIndex::new(),
             // resp: None,
         }
     }
@@ -185,14 +187,30 @@ impl Call {
                         }
                         return Ok(RecvState::DoneWithBody(buf));
                     }
-                    let ret = self.event_rec_do::<C>(con, cp, true, &mut buf);
-                    // if self.b.chunked_parse && self.hdr_sz > 0 {
-                    //     if b.is_some() {
-                    //         let mut b = b.unwrap();
-                    //         // self.chunked.
-                    //     } else {
-                    //     }
-                    // }
+                    let mut ret = self.event_rec_do::<C>(con, cp, true, &mut buf);
+
+                    if self.b.chunked_parse && self.hdr_sz > 0 {
+                        match ret {
+                            Err(_) => {}
+                            Ok(RecvState::Error(_)) => {}
+                            Ok(RecvState::Response(_,_)) => {}
+                            _ if b.is_some() => {
+                                let b = b.unwrap();
+                                let nc = self.chunked.push_to(self.hdr_sz, &mut buf, b)?;
+                                if nc == 0 {
+                                    ret = Ok(RecvState::Wait);
+                                } else {
+                                    ret = Ok(RecvState::ReceivedBody(nc));
+                                }
+                            }
+                            _ if Dir::Done == self.dir => {
+                                let mut b = Vec::with_capacity(buf.len());
+                                self.chunked.push_to(self.hdr_sz, &mut buf, &mut b)?;
+                                ret = Ok(RecvState::DoneWithBody(b));
+                            }
+                            _ => {}
+                        }
+                    }
                     self.buf = buf;
                     ret
                 } else {
@@ -372,10 +390,6 @@ impl Call {
                                 if let Ok(clhs) = clh.to_str() {
                                     if clhs == "chunked" {
                                         self.body_sz = usize::max_value();
-                                        self.chunked = ChunkIndex::new(self.hdr_sz);
-                                        // if self.b.chunked_parse {
-                                        //     self.chunked.enable();
-                                        // }
                                     } else {
                                         self.b.chunked_parse = false;
                                     }
@@ -385,12 +399,16 @@ impl Call {
                             } else {
                                 self.b.chunked_parse = false;
                             }
+
                             if self.body_sz == 0 {
                                 self.dir == Dir::Done;
                             } else {
                                 self.dir = Dir::Receiving(buflen - self.hdr_sz);
                             }
-                            if self.body_sz == usize::max_value() {
+                            if self.b.chunked_parse {
+                                if self.chunked.check_done(self.b.max_chunk, &buf[self.hdr_sz..])? {
+                                    self.dir = Dir::Done;
+                                }
                                 return Ok(RecvState::Response(resp, ::ResponseBody::Streamed));
                             } else {
                                 return Ok(RecvState::Response(resp, ::ResponseBody::Sized(self.body_sz)));
@@ -415,7 +433,7 @@ impl Call {
                     } else {
                         let mut chunked_done = false;
                         if self.b.chunked_parse {
-                            if let Ok(true) = self.chunked.check_done(self.b.max_chunk, buf) {
+                            if self.chunked.check_done(self.b.max_chunk, &buf[self.hdr_sz..])? {
                                 chunked_done = true;
                                 self.dir = Dir::Done;
                             }

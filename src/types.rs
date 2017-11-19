@@ -13,9 +13,9 @@ pub struct ChunkIndex {
 // read chunk by chunk and move data in buffer as it occurs. 
 // does not keep history
 impl ChunkIndex {
-    pub fn new(hdr: usize) -> ChunkIndex {
+    pub fn new() -> ChunkIndex {
         ChunkIndex {
-            offset: hdr,
+            offset: 0,
         }
     }
 
@@ -24,39 +24,38 @@ impl ChunkIndex {
         let mut off = self.offset;
         // For every chunk, shift bytes back over the NUM\r\n parts
         while off+4 < b.len() {
-            let (num,next_off) = self.get_chunk_size(&b[off..])?;
-            if num > max {
-                return Err(::Error::ChunkOverlimit(num));
+            if let Some((num,next_off)) = self.get_chunk_size(&b[off..])? {
+                if num > max {
+                    return Err(::Error::ChunkOverlimit(num));
+                }
+                if num == 0 {
+                    return Ok(true);
+                }
+                if off + num + next_off + 2 <= b.len() {
+                    off += num + next_off + 2;
+                    continue;
+                }
             }
-            if num == 0 {
-                return Ok(true);
-            }
-            if off + num + next_off + 2 <= b.len() {
-                // unsafe {
-                //     let src:*const u8 = b.as_ptr().offset((off+next_off) as isize);
-                //     let dst:*mut u8 = b.as_mut_ptr().offset(off as isize);
-                //     ::std::ptr::copy(src, dst, num);
-                // }
-                off += num + next_off + 2;
-            } else {
-                break;
-            }
+            break;
         }
         self.offset = off;
         Ok(false)
     }
 
     // copy full chunks to dst, move remainder (non-full chunk) back right after hdr.
-    pub fn push_to(&mut self, max:usize, hdr:usize, src: &mut Vec<u8>, dst: &mut Vec<u8>) -> ::Result<usize> {
+    pub fn push_to(&mut self, hdr:usize, src: &mut Vec<u8>, dst: &mut Vec<u8>) -> ::Result<usize> {
         let mut off = hdr;
         let mut num_copied = 0;
-        while off+2 < src.len() {
-            let (num,next_off) = self.get_chunk_size(&src[off..])?;
-            if off + next_off + num + 2 < src.len() {
-                dst.extend(&src[off..off+num]);
-                off += next_off+num+2;
-                num_copied += next_off+num;
-            } else {
+        loop {
+            if let Some((num,next_off)) = self.get_chunk_size(&src[off..])? {
+                if off + next_off + num + 2 <= src.len() {
+                    dst.extend(&src[off+next_off..off+next_off+num]);
+                    off += next_off+num+2;
+                    num_copied += num;
+                    continue;
+                }
+            }
+            if hdr != off {
                 let sl = src.len();
                 unsafe {
                     let src_p:*const u8 = src.as_ptr().offset(off as isize);
@@ -64,21 +63,19 @@ impl ChunkIndex {
                     ::std::ptr::copy(src_p, dst_p, sl-off);
                 }
                 src.truncate(hdr+sl-off);
-                self.offset = hdr;
-                break;
+                self.offset = 0;
             }
+            break;
         }
         Ok(num_copied)
     }
 
-    fn get_chunk_size(&mut self, b: &[u8]) -> ::Result<(usize,usize)> {
+    fn get_chunk_size(&mut self, b: &[u8]) -> ::Result<Option<(usize,usize)>> {
         let blen = b.len();
         let mut num:usize = 0;
-        let mut len = 0;
         for i in 0..blen {
             if i+1 < blen && b[i] == b'\r' && b[i+1] == b'\n' {
-                len = i+2;
-                break;
+                return Ok(Some((num,i+2)));
             }
             if let Some(v) = ascii_hex_to_num(b[i]) {
                 if let Some(num1) = num.checked_mul(16) {
@@ -95,16 +92,16 @@ impl ChunkIndex {
                 return Err(::Error::ChunkedParse);
             }
         }
-        Ok((num,len))
+        Ok(None)
     }
 }
 
 fn ascii_hex_to_num(ch: u8) -> Option<usize>
 {
     match ch {
-        b'0' ... b'9' if ch < b'0' + 16 => Some((ch - b'0') as usize),
-        b'a' ... b'z' if ch < b'a' + 6 => Some((ch - b'a' + 10) as usize),
-        b'A' ... b'Z' if ch < b'A' + 6 => Some((ch - b'A' + 10) as usize),
+        b'0' ... b'9' => Some((ch - b'0') as usize),
+        b'a' ... b'f' => Some((ch - b'a' + 10) as usize),
+        b'A' ... b'F' => Some((ch - b'A' + 10) as usize),
         _ => None,
     }
 }
