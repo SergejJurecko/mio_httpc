@@ -50,7 +50,6 @@ pub use pub_api::*;
 
 // TODO:
 // - con pool
-// - chunked response
 // - dns retries
 // - timeouts
 // - websockets

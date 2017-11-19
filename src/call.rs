@@ -23,12 +23,9 @@ enum Dir {
 pub struct Call {
     b: PrivCallBuilder,
     _start: Instant,
-    // con: Con,
     buf: Vec<u8>,
-    // chunked_resp: Vec<u8>,
     hdr_sz: usize,
     body_sz: usize,
-    // resp: Option<Response<Vec<u8>>>,
     dir: Dir,
     chunked: ChunkIndex, 
 }
@@ -383,6 +380,13 @@ impl Call {
                                 if let Ok(clhs) = clh.to_str() {
                                     if let Ok(bsz) = usize::from_str(clhs) {
                                         self.body_sz = bsz;
+                                    }
+                                }
+                            }
+                            if let Some(ref clh) = resp.headers().get(http::header::CONNECTION) {
+                                if let Ok(clhs) = clh.to_str() {
+                                    if clhs == "close" {
+                                        con.to_close = true;
                                     }
                                 }
                             }

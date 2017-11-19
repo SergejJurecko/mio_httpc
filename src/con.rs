@@ -46,6 +46,7 @@ pub struct Con {
     dns_sock: Option<UdpSocket>,
     con_port: u16,
     closed: bool,
+    pub to_close: bool,
 }
 
 impl Con {
@@ -74,6 +75,7 @@ impl Con {
         let res = Con {
             con_port: port,
             closed: false,
+            to_close: false,
             reg_for: rdy,
             nuses: 0,
             token,

@@ -86,6 +86,8 @@ impl PrivHttpc {
         }
         None
     }
+    pub fn timeout<C:TlsConnector>(&mut self) {
+    }
 
     pub fn call_send<C:TlsConnector>(&mut self, poll: &Poll, ev: &Event, id: ::CallId, buf: Option<&[u8]>) -> SendState {
         let cret = if let Some(c) = self.calls.get_mut(&id) {

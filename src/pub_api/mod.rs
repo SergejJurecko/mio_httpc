@@ -162,6 +162,10 @@ mod pub_httpc {
         pub fn call_close(&mut self, id: ::CallId) {
         }
 
+        /// If calls executing, timeout should be called at least every ~200ms.
+        pub fn timeout(&mut self) {
+        }
+
         /// Get CallId for ev if token in configured range for Httpc.
         /// 
         /// First you must call call_send until you get a SendState::Receiving
@@ -252,6 +256,9 @@ mod pub_httpc {
         pub fn call_close(&mut self, id: ::CallId) {
             self.h.call_close(id);
         }
+        pub fn timeout(&mut self) {
+            self.h.timeout()
+        }
         pub fn event(&mut self, ev: &Event) -> Option<::CallId> {
             self.h.event::<tls_api_rustls::TlsConnector>(ev)
         }
@@ -318,23 +325,21 @@ mod pub_httpc {
         pub(crate) fn call<C:TlsConnector>(&mut self, b: PrivCallBuilder, poll: &Poll) -> Result<::CallId> {
             self.h.call::<C>(b, poll)
         }
-
         pub fn reuse(&mut self, buf: Vec<u8>) {
             self.h.reuse(buf);
         }
-
         pub fn call_close(&mut self, id: ::CallId) {
             self.h.call_close(id);
         }
-
+        pub fn timeout(&mut self) {
+            self.h.timeout()
+        }
         pub fn event(&mut self, ev: &Event) -> Option<::CallId> {
             self.h.event::<tls_api_native_tls::TlsConnector>(ev)
         }
-
         pub fn call_send(&mut self, poll: &Poll, ev: &Event, id: ::CallId, buf: Option<&[u8]>) -> ::SendState {
             self.h.call_send::<tls_api_native_tls::TlsConnector>(poll, ev, id, buf)
         }
-
         pub fn call_recv(&mut self, poll: &Poll, ev: &Event, id: ::CallId, buf: Option<&mut Vec<u8>>) -> ::RecvState {
             self.h.call_recv::<tls_api_native_tls::TlsConnector>(poll, ev, id, buf)
         }
@@ -395,23 +400,21 @@ mod pub_httpc {
         pub(crate) fn call<C:TlsConnector>(&mut self, b: PrivCallBuilder, poll: &Poll) -> Result<::CallId> {
             self.h.call::<C>(b, poll)
         }
-
         pub fn reuse(&mut self, buf: Vec<u8>) {
             self.h.reuse(buf);
         }
-
         pub fn call_close(&mut self, id: ::CallId) {
             self.h.call_close(id);
         }
-
+        pub fn timeout(&mut self) {
+            self.h.timeout()
+        }
         pub fn event(&mut self, ev: &Event) -> Option<::CallId> {
             self.h.event::<tls_api_openssl::TlsConnector>(ev)
         }
-
         pub fn call_send(&mut self, poll: &Poll, ev: &Event, id: ::CallId, buf: Option<&[u8]>) -> ::SendState {
             self.h.call_send::<tls_api_openssl::TlsConnector>(poll, ev, id, buf)
         }
-
         pub fn call_recv(&mut self, poll: &Poll, ev: &Event, id: ::CallId, buf: Option<&mut Vec<u8>>) -> ::RecvState {
             self.h.call_recv::<tls_api_openssl::TlsConnector>(poll, ev, id, buf)
         }
