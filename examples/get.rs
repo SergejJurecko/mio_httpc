@@ -10,10 +10,6 @@ fn main() {
     let poll = Poll::new().unwrap();
     let mut htp = Httpc::new(10);
     let mut req = Request::builder();
-    // "http://127.0.0.1:26002"
-    // "https://www.rust-lang.org/"
-    // http://127.0.0.1:3000
-    // https://cdn4.tvim.tv
     let args: Vec<String> = ::std::env::args().collect();
     let req = req.uri(args[1].as_str()).body(Vec::new()).expect("can not build request");
     let call_id = CallBuilder::new(req).call(&mut htp, &poll).expect("Call start failed");
