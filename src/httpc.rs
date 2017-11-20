@@ -8,6 +8,7 @@ use call::{Call};
 use types::*;
 use fnv::FnvHashMap as HashMap;
 use ::{SendState,RecvState,CallId};
+use std::time::{Instant,Duration};
 
 pub struct PrivHttpc {
     cache: DnsCache,
@@ -15,6 +16,7 @@ pub struct PrivHttpc {
     con_offset: usize,
     free_bufs: VecDeque<Vec<u8>>,
     cons: ConTable,
+    last_timeout: Instant,
 }
 
 const BUF_SZ:usize = 4096*2;
@@ -22,6 +24,7 @@ const BUF_SZ:usize = 4096*2;
 impl PrivHttpc {
     pub fn new(con_offset: usize) -> PrivHttpc {
         PrivHttpc {
+            last_timeout: Instant::now(),
             cache: DnsCache::new(),
             calls: HashMap::default(),
             con_offset,
@@ -86,6 +89,14 @@ impl PrivHttpc {
         None
     }
     pub fn timeout<C:TlsConnector>(&mut self) {
+        let now = Instant::now();
+        if now.duration_since(self.last_timeout).subsec_nanos() < 90_000_000 {
+            return;
+        }
+        self.last_timeout = now;
+        for (k,v) in self.calls.iter_mut() {
+            // if v.
+        }
     }
 
     pub fn call_send<C:TlsConnector>(&mut self, poll: &Poll, ev: &Event, id: ::CallId, buf: Option<&[u8]>) -> SendState {

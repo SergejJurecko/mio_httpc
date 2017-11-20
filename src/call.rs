@@ -7,7 +7,7 @@ use http::response::Builder as RespBuilder;
 use http::{self,Version};
 use http::header::*;
 use std::str::FromStr;
-use std::time::{Instant};
+use std::time::{Instant,Duration};
 use std::io::{Read,Write};
 use ::{SendState,RecvState};
 use ::types::*;
@@ -22,7 +22,7 @@ enum Dir {
 
 pub struct Call {
     b: PrivCallBuilder,
-    _start: Instant,
+    start: Instant,
     buf: Vec<u8>,
     hdr_sz: usize,
     body_sz: usize,
@@ -35,7 +35,7 @@ impl Call {
         buf.truncate(0);
         Call {
             dir: Dir::SendingHdr(0),
-            _start: Instant::now(),
+            start: Instant::now(),
             // chunked_resp: Vec::new(),
             b,
             buf,
@@ -52,6 +52,10 @@ impl Call {
 
     pub fn stop(self) -> Vec<u8> {
         self.buf
+    }
+
+    pub fn duration(&self) -> Duration {
+        self.start.elapsed()
     }
 
     fn reserve_space(&mut self, internal: bool, buf: &mut Vec<u8>) -> ::Result<usize> {

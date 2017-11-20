@@ -134,7 +134,9 @@ mod pub_httpc {
             self
         }
 
-        /// Default 30s
+        /// Default 60s
+        /// 
+        /// Maximum amount of time a call should last.
         pub fn timeout(&mut self, d: Duration) -> &mut Self {
             self
         }
