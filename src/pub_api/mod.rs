@@ -230,7 +230,7 @@ mod pub_httpc {
             self
         }
         pub fn chunked_max_chunk(&mut self, v: usize) -> &mut Self {
-            self.cb.chunked_max_chunk(b);
+            self.cb.chunked_max_chunk(v);
             self
         }
         pub fn timeout(&mut self, d: Duration) -> &mut Self {

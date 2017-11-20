@@ -14,7 +14,8 @@ fn main() {
     // "https://www.rust-lang.org/"
     // http://127.0.0.1:3000
     // https://cdn4.tvim.tv
-    let req = req.uri("http://www.teamliquid.net").body(Vec::new()).expect("can not build request");
+    let args: Vec<String> = ::std::env::args().collect();
+    let req = req.uri(args[1].as_str()).body(Vec::new()).expect("can not build request");
     let call_id = CallBuilder::new(req).call(&mut htp, &poll).expect("Call start failed");
 
     let mut sending = true;

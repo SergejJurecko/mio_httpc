@@ -48,13 +48,6 @@ mod types;
 
 pub use pub_api::*;
 
-// TODO:
-// - con pool
-// - dns retries
-// - timeouts
-// - websockets
-// - http2
-
 pub type Result<T> = ::std::result::Result<T,Error>;
 
 quick_error! {
