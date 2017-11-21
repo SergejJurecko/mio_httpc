@@ -359,7 +359,7 @@ mod pub_httpc {
     use ::Result;
 
     pub struct CallBuilder {
-        cb: ::call::PrivCallBuilder,
+        cb: PrivCallBuilder,
     }
 
     impl CallBuilder {
