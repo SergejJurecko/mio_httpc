@@ -120,6 +120,7 @@ pub struct PrivCallBuilder {
     pub dur: Duration,
     pub max_response: usize,
     pub max_chunk: usize,
+    pub root_ca: Vec<Vec<u8>>,
 }
 
 #[allow(dead_code)]
@@ -131,10 +132,15 @@ impl PrivCallBuilder {
             max_chunk: 32*1024,
             req,
             chunked_parse: true,
+            root_ca: Vec::new(),
         }
     }
     pub fn call<C:TlsConnector>(self, httpc: &mut PrivHttpc, poll: &Poll) -> ::Result<::CallId> {
         httpc.call::<C>(self, poll)
+    }
+    pub fn add_root_ca(&mut self, v: Vec<u8>) -> &mut Self {
+        self.root_ca.push(v);
+        self
     }
     pub fn max_response(&mut self, m: usize) -> &mut Self {
         self.max_response = m;

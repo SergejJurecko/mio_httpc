@@ -47,9 +47,10 @@ impl PrivHttpc {
         self.free_bufs.push_front(buf);
     }
 
-    pub fn call<C:TlsConnector>(&mut self, b: PrivCallBuilder, poll: &Poll) -> Result<::CallId> {
+    pub fn call<C:TlsConnector>(&mut self, mut b: PrivCallBuilder, poll: &Poll) -> Result<::CallId> {
         // cons.push_con will set actual mio token
-        let con = Con::new::<C,Vec<u8>>(Token::from(self.con_offset), &b.req, &mut self.cache, poll)?;
+        let root_ca = ::std::mem::replace(&mut b.root_ca, Vec::new());
+        let con = Con::new::<C,Vec<u8>>(Token::from(self.con_offset), &b.req, &mut self.cache, poll, root_ca)?;
         let call = Call::new(b, self.get_buf());
         if let Some(con_id) = self.cons.push_con(con) {
             let id = CallId::new(con_id, 0);

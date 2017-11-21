@@ -110,6 +110,11 @@ mod pub_httpc {
             Err(::Error::NoTls)
         }
 
+        /// Add custom root ca in DER format
+        pub fn add_root_ca_der(&mut self, v: Vec<u8>) -> &mut Self {
+            self
+        }
+
         /// Default 10MB.
         /// 
         /// This will limit how big the internal Vec<u8> can grow.
@@ -221,6 +226,10 @@ mod pub_httpc {
         pub fn call(self, httpc: &mut Httpc, poll: &Poll) -> ::Result<::CallId> {
             httpc.call::<tls_api_rustls::TlsConnector>(self.cb, poll)
         }
+        pub fn add_root_ca_der(&mut self, v: Vec<u8>) -> &mut Self {
+            self.cb.add_root_ca(v);
+            self
+        }
         pub fn max_response(&mut self, m: usize) -> &mut Self {
             self.cb.max_response(m);
             self
@@ -296,6 +305,10 @@ mod pub_httpc {
         pub fn call(self, httpc: &mut Httpc, poll: &Poll) -> ::Result<::CallId> {
             httpc.call::<tls_api_native_tls::TlsConnector>(self.cb, poll)
         }
+        pub fn add_root_ca_der(&mut self, v: Vec<u8>) -> &mut Self {
+            self.cb.add_root_ca(v);
+            self
+        }
         pub fn max_response(&mut self, m: usize) -> &mut Self {
             self.cb.max_response(m);
             self
@@ -370,6 +383,10 @@ mod pub_httpc {
         }
         pub fn call(self, httpc: &mut Httpc, poll: &Poll) -> ::Result<::CallId> {
             httpc.call::<tls_api_openssl::TlsConnector>(self.cb, poll)
+        }
+        pub fn add_root_ca_der(&mut self, v: Vec<u8>) -> &mut Self {
+            self.cb.add_root_ca(v);
+            self
         }
         pub fn max_response(&mut self, m: usize) -> &mut Self {
             self.cb.max_response(m);

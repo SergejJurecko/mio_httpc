@@ -48,10 +48,11 @@ pub struct Con {
     con_port: u16,
     closed: bool,
     pub to_close: bool,
+    root_ca: Vec<Vec<u8>>,
 }
 
 impl Con {
-    pub fn new<C:TlsConnector,T>(token: Token, req: &Request<T>, cache: &mut DnsCache, poll: &Poll) -> Result<Con> {
+    pub fn new<C:TlsConnector,T>(token: Token, req: &Request<T>, cache: &mut DnsCache, poll: &Poll, root_ca: Vec<Vec<u8>>) -> Result<Con> {
         let port = url_port(req.uri())?;
         let mut sock = None;
         let mut rdy = Ready::writable();
@@ -85,6 +86,7 @@ impl Con {
             dns_sock,
             tls: None,
             mid_tls: None,
+            root_ca,
         };
         res.register(poll, res.token, rdy, PollOpt::edge())?;
         Ok(res)
@@ -136,7 +138,12 @@ impl Con {
             self.dns_sock = Some(udp);
         } else {
             if self.sock.is_some() && self.con_port == 443 && self.tls.is_none() && self.mid_tls.is_none() {
-                let connector: C = C::builder()?.build()?;
+                let mut connector = C::builder()?;
+                let root_ca = ::std::mem::replace(&mut self.root_ca, Vec::new());
+                for rca in root_ca.into_iter() {
+                    connector.add_root_certificate(::tls_api::Certificate::from_der(rca))?;
+                }
+                let connector = connector.build()?;
                 let host = req.uri().host().unwrap();
                 // Switch to level trigger for tls.
                 self.reg_for = Ready::readable();
