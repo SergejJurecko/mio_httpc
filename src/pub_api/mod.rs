@@ -97,19 +97,19 @@ enum State {
 /// Simplified API for non-streaming requests and responses.
 /// If body exists it needs to be provided to Request. If response has a body
 /// it is returned in Response.
-pub struct CallSimple {
+pub struct SimpleCall {
     state: State,
     id: CallId,
     resp: Option<::http::Response<Vec<u8>>>,
     resp_body: Option<Vec<u8>>,
 }
 
-impl CallSimple {
-    /// An empty CallSimple not associated with a valid mio::Token/CallId.
+impl SimpleCall {
+    /// An empty SimpleCall not associated with a valid mio::Token/CallId.
     /// Exists to be overwritten with an actual valid request.
     /// Always returns is_done true.
-    fn empty() -> CallSimple {
-        CallSimple {
+    fn empty() -> SimpleCall {
+        SimpleCall {
             state: State::Done,
             id: CallId(0xFFFF_FFFF),
             resp: None,
@@ -117,9 +117,9 @@ impl CallSimple {
         }
     }
 
-    /// Replaces self with an empty CallSimple and returns result if any.
+    /// Replaces self with an empty SimpleCall and returns result if any.
     pub fn take(&mut self) -> Option<::http::Response<Vec<u8>>> {
-        let out = ::std::mem::replace(self, CallSimple::empty());
+        let out = ::std::mem::replace(self, SimpleCall::empty());
         out.close()
     }
 
@@ -145,9 +145,9 @@ impl CallSimple {
         false
     }
 
-    /// If using Option<CallSimple> in a struct, you can quickly compare 
+    /// If using Option<SimpleCall> in a struct, you can quickly compare 
     /// callid from httpc::event. If either is none will return false.
-    pub fn is_opt_callid(a: &Option<CallSimple>, b: &Option<CallId>) -> bool {
+    pub fn is_opt_callid(a: &Option<SimpleCall>, b: &Option<CallId>) -> bool {
         if let &Some(ref a) = a {
             if let &Some(ref b) = b {
                 return a.id == *b;
@@ -222,9 +222,9 @@ impl CallSimple {
         Ok(false)
     }
 }
-impl From<CallId> for CallSimple {
-    fn from(v: CallId) -> CallSimple {
-        CallSimple {
+impl From<CallId> for SimpleCall {
+    fn from(v: CallId) -> SimpleCall {
+        SimpleCall {
             state: State::Sending,
             id: v,
             resp: None,
