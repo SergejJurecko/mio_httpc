@@ -83,6 +83,10 @@ quick_error! {
             description(err.description())
             from()
         }
+        /// Request structure did not contain body and CallSimple was used for POST/PUT.
+        MissingBody {
+            display("Request structure did not contain body and CallSimple was used for POST/PUT.")
+        }
         /// No call for mio::Token
         InvalidToken {
             display("No call for token")

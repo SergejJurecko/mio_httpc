@@ -61,6 +61,9 @@ impl Call {
 
     fn reserve_space(&mut self, internal: bool, buf: &mut Vec<u8>) -> ::Result<usize> {
         let orig_len = buf.len();
+        if self.b.max_response <= orig_len {
+            return Err(::Error::ResponseTooBig);
+        }
         // Vec will actually reserve on an exponential scale.
         buf.reserve(4096*2);
         unsafe {
