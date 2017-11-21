@@ -48,6 +48,7 @@ mod pub_api;
 mod types;
 
 pub use pub_api::*;
+pub use http::*;
 
 pub type Result<T> = ::std::result::Result<T,Error>;
 
