@@ -141,7 +141,7 @@ impl Con {
                 let mut connector = C::builder()?;
                 let root_ca = ::std::mem::replace(&mut self.root_ca, Vec::new());
                 for rca in root_ca.into_iter() {
-                    connector.add_root_certificate(::tls_api::Certificate::from_der(rca))?;
+                    let _ = connector.add_root_certificate(::tls_api::Certificate::from_der(rca));
                 }
                 let connector = connector.build()?;
                 let host = req.uri().host().unwrap();
