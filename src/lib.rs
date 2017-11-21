@@ -16,6 +16,7 @@ extern crate libc;
 extern crate fnv;
 extern crate http;
 extern crate itoa;
+extern crate data_encoding;
 #[macro_use(quick_error)]
 extern crate quick_error;
 #[cfg(test)]

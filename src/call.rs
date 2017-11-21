@@ -11,6 +11,7 @@ use std::time::{Instant,Duration};
 use std::io::{Read,Write};
 use ::{SendState,RecvState};
 use ::types::*;
+use data_encoding::BASE64;
 
 #[derive(PartialEq)]
 enum Dir {
@@ -117,6 +118,28 @@ impl Call {
                 buf.extend(b": ");
                 buf.extend(h.as_bytes());
                 buf.extend(b"\r\n");
+            }
+        }
+        if let Some(auth) = self.b.req.uri().authority_part() {
+            if let Some(auth) = auth.as_str().split("@").next() {
+                let mut auth = auth.split(":");
+                if let Some(us) = auth.next() {
+                    if let Some(pw) = auth.next() {
+                        buf.extend(AUTHORIZATION.as_str().as_bytes());
+                        buf.extend(b": Basic ");
+                        let enc_len = BASE64.encode_len(us.len()+1+pw.len());
+                        if BASE64.encode_len(us.len()+1+pw.len()) < 512 {
+                            let mut ar = [0u8;512];
+                            let mut out = [0u8;512];
+                            (&mut ar[..us.len()]).copy_from_slice(us.as_bytes());
+                            (&mut ar[us.len()..us.len()+1]).copy_from_slice(b":");
+                            (&mut ar[us.len()+1..us.len()+1+pw.len()]).copy_from_slice(pw.as_bytes());
+                            BASE64.encode_mut(&ar[..us.len()+1+pw.len()], &mut out[..enc_len]);
+                            buf.extend(&out[..enc_len]);
+                            buf.extend(b"\r\n");
+                        }
+                    }
+                }
             }
         }
         buf.extend(b"\r\n");

@@ -27,6 +27,7 @@ cargo run --example get --features "native" -- "https://edition.cnn.com"
 - [x] Basic API
 - [x] Configurable TLS backend
 - [x] Chunked encoding download
+- [x] Basic Auth
 - [ ] Con pool
 - [ ] DNS retries
 - [ ] Timeouts
