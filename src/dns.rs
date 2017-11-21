@@ -7,7 +7,8 @@ use mio::net::UdpSocket;
 use ::dns_parser;
 // use std::collections::VecDeque;
 // use std::time::{Instant,Duration};
-use rand;
+use rand::os::OsRng;
+use rand::Rng;
 // use dns_cache::DnsCache;
 use ::dns_parser::{Packet,RRData};
 
@@ -28,6 +29,7 @@ pub(crate) fn dns_parse(buf:&[u8]) -> Option<IpAddr> {
     None
 }
 pub struct Dns {
+    rng: OsRng,
     srvs: [IpAddr;2],
     // cache: DnsCache,
     // sock4: Option<UdpSocket>,
@@ -38,6 +40,7 @@ pub struct Dns {
 impl Dns {
     pub fn new() -> Dns {
         Dns {
+            rng: OsRng::new().unwrap(),
             // cache: DnsCache::new(),
             srvs: get_dns_servers(),
         }
@@ -59,7 +62,7 @@ impl Dns {
         Ok(s6)
     }
 
-    pub fn start_lookup(&self, _id: usize,  host: &str) -> io::Result<UdpSocket> {
+    pub fn start_lookup(&mut self, _id: usize,  host: &str) -> io::Result<UdpSocket> {
         if let Ok(sock) = self.get_socket_v4() {
             if let Ok(_) = self.lookup_on(&sock, 0, host) {
                 return Ok(sock)
@@ -70,9 +73,10 @@ impl Dns {
         Ok(s)
     }
 
-    pub fn lookup_on(&self, sock: &UdpSocket, mut pos: usize, host: &str) -> io::Result<()> {
+    pub fn lookup_on(&mut self, sock: &UdpSocket, mut pos: usize, host: &str) -> io::Result<()> {
         let len_srvs = self.srvs.len();
         let mut last_err = io::Error::new(io::ErrorKind::Other,"");
+        let rnd = (self.rng.next_u32() & 0x0000_FFFF) as u16;
         for _ in 0..len_srvs {
             let srv = pos % self.srvs.len();
             pos += 1;
@@ -81,7 +85,7 @@ impl Dns {
             let mut buf_send = [0; 512];
             let nsend = {
                 let mut builder = dns_parser::Builder::new(&mut buf_send[..]);
-                let _ = builder.start(rand::random::<u16>(), true);
+                let _ = builder.start(rnd, true);
                 let _ = builder.add_question(host, 
                     dns_parser::QueryType::A,
                     dns_parser::QueryClass::IN);

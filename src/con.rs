@@ -64,7 +64,7 @@ impl Con {
         }
         let mut dns_sock = None;
         let dns = if sock.is_none() {
-            let r = Dns::new();
+            let mut r = Dns::new();
             if let Some(host) = req.uri().host() {
                 rdy = Ready::readable();
                 dns_sock = Some(r.start_lookup(token.0, host)?);
