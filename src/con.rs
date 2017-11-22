@@ -314,6 +314,7 @@ impl ConTable {
         loop {
             if self.cons.last().is_some() {
                 if self.cons.last().unwrap().closed() {
+                    self.empty_slots -= 1;
                     let _ = self.cons.pop();
                 } else {
                     break;

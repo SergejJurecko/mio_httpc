@@ -48,7 +48,15 @@ mod pub_api;
 mod types;
 
 pub use pub_api::*;
-pub use http::*;
+pub use http::{Error as HttpError};
+pub use http::header::*;
+pub use http::method::*;
+pub use http::request::*;
+pub use http::response::*;
+pub use http::status::*;
+pub use http::uri::*;
+pub use http::version::*;
+// pub use http::Extensions;
 
 pub type Result<T> = ::std::result::Result<T,Error>;
 

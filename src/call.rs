@@ -212,6 +212,7 @@ impl Call {
                             let dst:*mut u8 = buf.as_mut_ptr();
                             ::std::ptr::copy(src, dst, self.body_sz);
                         }
+                        buf.truncate(self.body_sz);
                         return Ok(RecvState::DoneWithBody(buf));
                     }
                     let mut ret = self.event_rec_do::<C>(con, cp, true, &mut buf);
