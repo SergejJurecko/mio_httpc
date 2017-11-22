@@ -13,6 +13,7 @@ use std::time::{Instant,Duration};
 pub struct PrivHttpc {
     cache: DnsCache,
     calls: HashMap<::CallId,Call>,
+    timed_out_calls: HashMap<::CallId,Call>,
     con_offset: usize,
     free_bufs: VecDeque<Vec<u8>>,
     cons: ConTable,
@@ -24,6 +25,7 @@ const BUF_SZ:usize = 4096*2;
 impl PrivHttpc {
     pub fn new(con_offset: usize) -> PrivHttpc {
         PrivHttpc {
+            timed_out_calls: HashMap::default(),
             last_timeout: Instant::now(),
             cache: DnsCache::new(),
             calls: HashMap::default(),
@@ -63,10 +65,14 @@ impl PrivHttpc {
 
     pub fn call_close(&mut self, id: ::CallId) {
         if let Some(call) = self.calls.remove(&id) {
-            let buf = call.stop();
-            if buf.capacity() > 0 {
-                self.reuse(buf);
-            }
+            self.call_close_detached(id, call);
+        }
+    }
+
+    fn call_close_detached(&mut self, id: ::CallId, call: Call) {
+        let buf = call.stop();
+        if buf.capacity() > 0 {
+            self.reuse(buf);
         }
         self.cons.close_con(id.con_id());
     }
@@ -80,6 +86,7 @@ impl PrivHttpc {
         }
     }
     pub fn event<C:TlsConnector>(&mut self, ev: &Event) -> Option<::CallId> {
+        self.timeout::<C>();
         let mut id = ev.token().0;
         if id >= self.con_offset && id <= (u16::max_value() as usize) {
             id -= self.con_offset;
@@ -89,15 +96,31 @@ impl PrivHttpc {
         }
         None
     }
-    pub fn timeout<C:TlsConnector>(&mut self) {
+
+    pub fn timeout<C:TlsConnector>(&mut self) -> Vec<::CallId> {
         let now = Instant::now();
         if now.duration_since(self.last_timeout).subsec_nanos() < 90_000_000 {
-            return;
+            return Vec::new();
         }
         self.last_timeout = now;
-        for (k,v) in self.calls.iter_mut() {
-            // if v.
+        // for (k,v) in self.calls.iter_mut() {
+        //     if now - v.start_time() >= v.settings().dur {
+        //     }
+        // }
+        let calls = ::std::mem::replace(&mut self.calls, HashMap::default());
+        let (keepers,gonners) = 
+            calls.into_iter().partition(|&(ref k, ref v)| {
+                now - v.start_time() >= v.settings().dur
+            } );
+        self.calls = keepers;
+        if gonners.len() > 0 {
+            let mut out = Vec::with_capacity(gonners.len());
+            for (k,v) in gonners.into_iter() {
+                out.push(k);
+                self.call_close_detached(k,v);
+            }
         }
+        Vec::new()
     }
 
     pub fn call_send<C:TlsConnector>(&mut self, poll: &Poll, ev: &Event, id: ::CallId, buf: Option<&[u8]>) -> SendState {

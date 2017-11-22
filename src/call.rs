@@ -47,6 +47,15 @@ impl Call {
         }
     }
 
+    #[inline]
+    pub fn start_time(&self) -> Instant {
+        self.start
+    }
+
+    pub fn settings(&self) -> &PrivCallBuilder {
+        &self.b
+    }
+
     // pub fn is_done(&self) -> bool {
     //     self.dir == Dir::Done
     // }

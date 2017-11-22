@@ -135,12 +135,6 @@ quick_error! {
         ChunkOverlimit(v:usize) {
             display("Chunk was larger than configured CallBuilder::cunked_max_chunk. {}",v)
         }
-        // #[cfg(unix)]
-        // Nix(err: nix::Error) {
-        //     description(err.description())
-        //     from()
-        // }
-        // Empty {}
     }
 }
 
