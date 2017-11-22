@@ -103,10 +103,6 @@ impl PrivHttpc {
             return Vec::new();
         }
         self.last_timeout = now;
-        // for (k,v) in self.calls.iter_mut() {
-        //     if now - v.start_time() >= v.settings().dur {
-        //     }
-        // }
         let calls = ::std::mem::replace(&mut self.calls, HashMap::default());
         let (keepers,gonners) = 
             calls.into_iter().partition(|&(ref k, ref v)| {
