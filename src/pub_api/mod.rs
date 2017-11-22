@@ -105,18 +105,6 @@ pub struct SimpleCall {
 }
 
 impl SimpleCall {
-    /// An empty SimpleCall not associated with a valid mio::Token/CallId.
-    /// Exists to be overwritten with an actual valid request.
-    /// Always returns is_done true.
-    fn empty() -> SimpleCall {
-        SimpleCall {
-            state: State::Done,
-            id: CallId(0xFFFF_FFFF),
-            resp: None,
-            resp_body: None,
-        }
-    }
-
     /// Replaces self with an empty SimpleCall and returns result if any.
     pub fn take(&mut self) -> Option<::http::Response<Vec<u8>>> {
         let out = ::std::mem::replace(self, SimpleCall::empty());
@@ -220,6 +208,22 @@ impl SimpleCall {
             }
         }
         Ok(false)
+    }
+
+    /// An empty SimpleCall not associated with a valid mio::Token/CallId.
+    /// Exists to be overwritten with an actual valid request.
+    /// Always returns is_done true.
+    pub fn empty() -> SimpleCall {
+        SimpleCall {
+            state: State::Done,
+            id: CallId(0xFFFF_FFFF),
+            resp: None,
+            resp_body: None,
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.id.0 == 0xFFFF_FFFF
     }
 }
 impl From<CallId> for SimpleCall {
