@@ -34,12 +34,19 @@ fn main() {
     let args: Vec<String> = ::std::env::args().collect();
     let req = req.uri(args[1].as_str()).body(Vec::new()).expect("can not build request");
 
-    let call_id = CallBuilder::new(req).call(&mut htp, &poll).expect("Call start failed");
+    let call_id = CallBuilder::new(req).timeout_ms(500).call(&mut htp, &poll).expect("Call start failed");
     let mut call = SimpleCall::from(call_id);
 
+    let to = ::std::time::Duration::from_millis(100);
     'outer: loop {
         let mut events = Events::with_capacity(8);
-        poll.poll(&mut events, None).unwrap();
+        poll.poll(&mut events, Some(to)).unwrap();
+        for cid in htp.timeout().into_iter() {
+            if cid == *call.id() {
+                println!("Request timed out");
+                break 'outer;
+            }
+        }
 
         for ev in events.iter() {
             let cid = htp.event(&ev);
