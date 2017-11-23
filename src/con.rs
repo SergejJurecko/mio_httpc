@@ -2,7 +2,7 @@ use dns::{self,Dns};
 use dns_cache::DnsCache;
 use tls_api::{TlsConnector,TlsStream,TlsConnectorBuilder,HandshakeError, MidHandshakeTlsStream};
 use ::Result;
-use mio::net::{TcpStream,UdpSocket};
+use mio::net::{TcpStream};
 use mio::event::Evented;
 use mio::{Token,Ready,PollOpt,Poll};
 use std::net::{SocketAddr, IpAddr};
@@ -11,6 +11,7 @@ use http::{Request,Uri};
 use std::io::{Read,Write};
 use ::types::CallParam;
 use fnv::FnvHashMap as HashMap;
+use std::time::{Duration};
 
 fn url_port(url: &Uri) -> Result<u16> {
     if let Some(p) = url.port() {
@@ -43,8 +44,8 @@ pub struct Con {
     sock: Option<TcpStream>,
     tls: Option<TlsStream<TcpStream>>,
     mid_tls: Option<MidHandshakeTlsStream<TcpStream>>,
-    _dns: Option<Dns>,
-    dns_sock: Option<UdpSocket>,
+    dns: Option<Dns>,
+    // dns_sock: Option<UdpSocket>,
     con_port: u16,
     closed: bool,
     pub to_close: bool,
@@ -52,7 +53,8 @@ pub struct Con {
 }
 
 impl Con {
-    pub fn new<C:TlsConnector,T>(token: Token, req: &Request<T>, cache: &mut DnsCache, poll: &Poll, root_ca: Vec<Vec<u8>>) -> Result<Con> {
+    pub fn new<C:TlsConnector,T>(token: Token, req: &Request<T>, cache: &mut DnsCache, 
+            poll: &Poll, root_ca: Vec<Vec<u8>>, dns_timeout: u64) -> Result<Con> {
         let port = url_port(req.uri())?;
         let mut sock = None;
         let mut rdy = Ready::writable();
@@ -63,16 +65,14 @@ impl Con {
                 sock = Some(connect(SocketAddr::new(ip,port))?);
             }
         }
-        let mut dns_sock = None;
         let dns = if sock.is_none() {
-            let mut r = Dns::new();
             if let Some(host) = req.uri().host() {
                 rdy = Ready::readable();
-                dns_sock = Some(r.start_lookup(token.0, host)?);
+                // dns_sock = Some(r.start_lookup(token.0, host)?);
+                Some(Dns::new(host,dns_timeout)?)
             } else {
                 return Err(::Error::NoHost);
             }
-            Some(r)
         } else { None };
         let res = Con {
             con_port: port,
@@ -82,8 +82,8 @@ impl Con {
             nuses: 0,
             token,
             sock,
-            _dns: dns,
-            dns_sock,
+            dns,
+            // dns_sock,
             tls: None,
             mid_tls: None,
             root_ca,
@@ -92,11 +92,14 @@ impl Con {
         Ok(res)
     }
 
+    pub fn timeout(&mut self) {
+    }
+
     pub fn close(&mut self) {
         self.sock = None;
         self.tls = None;
-        self.dns_sock = None;
-        self._dns = None;
+        // self.dns_sock = None;
+        self.dns = None;
         self.closed = true;
     }
 
@@ -116,18 +119,17 @@ impl Con {
     }
 
     pub(crate) fn signalled<'a,C:TlsConnector,T>(&mut self, cp: &mut CallParam, req: &Request<T>) -> Result<()> {
-        if self.dns_sock.is_some() {
-            let udp = self.dns_sock.take().unwrap();
+        if self.dns.is_some() {
+            let dns = self.dns.take().unwrap();
             let mut buf: [u8;512] = unsafe { ::std::mem::uninitialized() };
-            if let Ok(sz) = udp.recv(&mut buf[..]) {
+            if let Ok(sz) = dns.sock.recv(&mut buf[..]) {
                 if let Some(ip) = dns::dns_parse(&buf[..sz]) {
                     let host = req.uri().host().unwrap();
                     cp.dns.save(host, ip);
                     let port = url_port(req.uri())?;
                     // self.sock = Some(TcpStream::connect(&SocketAddr::new(ip,port))?);
-                    self.dns_sock = Some(udp);
+                    self.dns = Some(dns);
                     self.deregister(cp.poll)?;
-                    self.dns_sock = None;
                     self.sock = Some(connect(SocketAddr::new(ip,port))?);
                     self.reg_for = Ready::writable();
                     self.register(cp.poll, self.token, self.reg_for, PollOpt::edge())?;
@@ -135,7 +137,7 @@ impl Con {
                     return Ok(());
                 }
             }
-            self.dns_sock = Some(udp);
+            self.dns = Some(dns);
         } else {
             if self.sock.is_some() && self.con_port == 443 && self.tls.is_none() && self.mid_tls.is_none() {
                 let mut connector = C::builder()?;
@@ -223,8 +225,8 @@ impl Evented for Con {
             poll.register(tcp,token, interest, opts) 
         } else if let Some(ref tls) = self.tls {
             poll.register(tls.get_ref(),token, interest, opts)
-        } else if let Some(ref udp) = self.dns_sock {
-            poll.register(udp,token, interest, opts)
+        } else if let Some(ref dns) = self.dns {
+            poll.register(&dns.sock,token, interest, opts)
         // } else if let Some(ref tls) = self.mid_tls {
         //     poll.register(tls.get_ref(),token, interest, opts)
         } else {
@@ -243,8 +245,8 @@ impl Evented for Con {
             poll.reregister(tcp,token, interest, opts)
         } else if let Some(ref tls) = self.tls {
             poll.reregister(tls.get_ref(),token, interest, opts)
-        } else if let Some(ref udp) = self.dns_sock {
-            poll.reregister(udp,token, interest, opts)
+        } else if let Some(ref dns) = self.dns {
+            poll.reregister(&dns.sock,token, interest, opts)
         } else {
             Ok(())
         }
@@ -255,8 +257,8 @@ impl Evented for Con {
             poll.deregister(tcp)
         } else if let Some(ref tls) = self.tls {
             poll.deregister(tls.get_ref())
-        } else if let Some(ref udp) = self.dns_sock {
-            poll.deregister(udp)
+        } else if let Some(ref dns) = self.dns {
+            poll.deregister(&dns.sock)
         } else {
             Ok(())
         }

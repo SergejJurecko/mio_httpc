@@ -1,16 +1,11 @@
-// pub use self::implemented::Dns;
 use std::io;
 use std::net::{IpAddr, SocketAddr,Ipv4Addr, SocketAddrV4, SocketAddrV6, Ipv6Addr};
-// use std::str::FromStr;
 use mio::net::UdpSocket;
 // use mio::Poll;
 use ::dns_parser;
-// use std::collections::VecDeque;
-// use std::time::{Instant,Duration};
-use rand::os::OsRng;
-use rand::Rng;
-// use dns_cache::DnsCache;
 use ::dns_parser::{Packet,RRData};
+use rand;
+use std::time::{Instant,Duration};
 
 pub(crate) fn dns_parse(buf:&[u8]) -> Option<IpAddr> {
     let packet = Packet::parse(buf).unwrap();
@@ -29,58 +24,74 @@ pub(crate) fn dns_parse(buf:&[u8]) -> Option<IpAddr> {
     None
 }
 pub struct Dns {
-    rng: OsRng,
     srvs: [IpAddr;2],
-    // cache: DnsCache,
-    // sock4: Option<UdpSocket>,
-    // sock6: Option<UdpSocket>,
-    // clients: VecDeque<Client>,
+    pub sock: UdpSocket,
+    pos: u8,
+    last_send: Instant,
+    retry_in: Duration,
 }
 
 impl Dns {
-    pub fn new() -> Dns {
-        Dns {
-            rng: OsRng::new().unwrap(),
-            // cache: DnsCache::new(),
-            srvs: get_dns_servers(),
-        }
+    pub fn new(host: &str, retry_in: u64) -> ::Result<Dns> {
+        let srvs = get_dns_servers();
+        let sock = Self::start_lookup(&srvs[..], host)?;
+        Ok(Dns {
+            srvs: srvs,
+            sock,
+            pos: 0,
+            last_send: Instant::now(),
+            retry_in: Duration::from_millis(retry_in),
+        })
+    }
+
+    pub fn check_retry(&mut self, host: &str) {
+        let now = Instant::now();
+        if now - self.last_send >= self.retry_in {
+            let mut pos = self.pos as usize;
+            let _ = Self::lookup_on(&self.srvs, &self.sock, &mut pos, host);
+            self.pos = (pos & 0xff) as u8;
+            self.last_send = now;
+            self.retry_in = self.retry_in*2;
+        } 
     }
 
     // pub fn check_cached(&mut self, host: &str) -> Option<IpAddr> {
     //     self.cache.find(host)
     // }
 
-    fn get_socket_v4(&self) -> io::Result<UdpSocket> {
+    fn get_socket_v4() -> io::Result<UdpSocket> {
         let s4a = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0,0,0,0),0));
         let s4 = UdpSocket::bind(&s4a)?;
         Ok(s4)
     }
 
-    fn get_socket_v6(&self) -> io::Result<UdpSocket> {
+    fn get_socket_v6() -> io::Result<UdpSocket> {
         let s6a = SocketAddr::V6(SocketAddrV6::new(Ipv6Addr::new(0,0,0,0,0,0,0,0), 0, 0, 0));
         let s6 = UdpSocket::bind(&s6a)?;
         Ok(s6)
     }
 
-    pub fn start_lookup(&mut self, _id: usize,  host: &str) -> io::Result<UdpSocket> {
-        if let Ok(sock) = self.get_socket_v4() {
-            if let Ok(_) = self.lookup_on(&sock, 0, host) {
+    fn start_lookup(srvs: &[IpAddr], host: &str) -> ::Result<UdpSocket> {
+        let mut pos = 0;
+        if let Ok(sock) = Self::get_socket_v4() {
+            if let Ok(_) = Self::lookup_on(srvs, &sock, &mut pos, host) {
                 return Ok(sock)
             }
         }
-        let s = self.get_socket_v6()?;
-        self.lookup_on(&s, 0, host)?;
+        let s = Self::get_socket_v6()?;
+        Self::lookup_on(srvs, &s, &mut pos, host)?;
         Ok(s)
     }
 
-    pub fn lookup_on(&mut self, sock: &UdpSocket, mut pos: usize, host: &str) -> io::Result<()> {
-        let len_srvs = self.srvs.len();
+    fn lookup_on(srvs: &[IpAddr], sock: &UdpSocket, pos: &mut usize, host: &str) -> ::Result<()> {
+        let len_srvs = srvs.len();
         let mut last_err = io::Error::new(io::ErrorKind::Other,"");
-        let rnd = (self.rng.next_u32() & 0x0000_FFFF) as u16;
+        // let rnd = (self.rng.next_u32() & 0x0000_FFFF) as u16;
+        let rnd = rand::random::<u16>();
         for _ in 0..len_srvs {
-            let srv = pos % self.srvs.len();
-            pos += 1;
-            let sockaddr = SocketAddr::new(self.srvs[srv], 53);
+            let srv = *pos % srvs.len();
+            *pos += 1;
+            let sockaddr = SocketAddr::new(srvs[srv], 53);
 
             let mut buf_send = [0; 512];
             let nsend = {
@@ -98,7 +109,7 @@ impl Dns {
                 last_err = e;
             }
         }
-        Err(last_err)
+        Err(From::from(last_err))
     }
 
     // pub fn check_result(&mut self) -> Option<(usize,usize,IpAddr)> {

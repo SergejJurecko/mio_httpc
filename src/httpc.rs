@@ -52,7 +52,12 @@ impl PrivHttpc {
     pub fn call<C:TlsConnector>(&mut self, mut b: PrivCallBuilder, poll: &Poll) -> Result<::CallId> {
         // cons.push_con will set actual mio token
         let root_ca = ::std::mem::replace(&mut b.root_ca, Vec::new());
-        let con = Con::new::<C,Vec<u8>>(Token::from(self.con_offset), &b.req, &mut self.cache, poll, root_ca)?;
+        let con = Con::new::<C,Vec<u8>>(Token::from(self.con_offset), 
+            &b.req, 
+            &mut self.cache, 
+            poll, 
+            root_ca,
+            b.dns_timeout)?;
         let call = Call::new(b, self.get_buf());
         if let Some(con_id) = self.cons.push_con(con) {
             let id = CallId::new(con_id, 0);
@@ -111,6 +116,9 @@ impl PrivHttpc {
         for (k,v) in self.calls.iter() {
             if now - v.start_time() >= v.settings().dur {
                 out.push(k.clone());
+            } else {
+                if let Some(con) = self.cons.get_con(k.con_id() as usize) {
+                }
             }
         }
         // let calls = ::std::mem::replace(&mut self.calls, HashMap::default());

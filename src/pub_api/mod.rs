@@ -280,6 +280,15 @@ mod pub_httpc {
             self
         }
 
+        /// Default: 100ms
+        /// 
+        /// Starting point of dns packet resends if nothing received.
+        /// Every next resend timeout is 2x the previous one.
+        /// So for 100ms: 100ms, 200ms, 400ms, ...
+        pub fn dns_retry_ms(&mut self, n: u64) -> &mut Self {
+            self
+        }
+
         /// Default true.
         /// 
         /// Configurable because it entails copying the data stream.
@@ -399,6 +408,10 @@ mod pub_httpc {
             self.cb.max_response(m);
             self
         }
+        pub fn dns_retry_ms(&mut self, n: u64) -> &mut Self {
+            self.cb.dns_retry_ms(n);
+            self
+        }
         pub fn chunked_parse(&mut self, b: bool) -> &mut Self {
             self.cb.chunked_parse(b);
             self
@@ -481,6 +494,10 @@ mod pub_httpc {
             self.cb.max_response(m);
             self
         }
+        pub fn dns_retry_ms(&mut self, n: u64) -> &mut Self {
+            self.cb.dns_retry_ms(n);
+            self
+        }
         pub fn chunked_parse(&mut self, b: bool) -> &mut Self {
             self.cb.chunked_parse(b);
             self
@@ -561,6 +578,10 @@ mod pub_httpc {
         }
         pub fn max_response(&mut self, m: usize) -> &mut Self {
             self.cb.max_response(m);
+            self
+        }
+        pub fn dns_retry_ms(&mut self, n: u64) -> &mut Self {
+            self.cb.dns_retry_ms(n);
             self
         }
         pub fn chunked_parse(&mut self, b: bool) -> &mut Self {
