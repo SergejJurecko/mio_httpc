@@ -118,6 +118,9 @@ impl PrivHttpc {
                 out.push(k.clone());
             } else {
                 if let Some(con) = self.cons.get_con(k.con_id() as usize) {
+                    if let Some(host) = v.settings().req.uri().host() {
+                        con.timeout(host);
+                    }
                 }
             }
         }

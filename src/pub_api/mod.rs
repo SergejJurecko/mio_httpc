@@ -283,8 +283,8 @@ mod pub_httpc {
         /// Default: 100ms
         /// 
         /// Starting point of dns packet resends if nothing received.
-        /// Every next resend timeout is 2x the previous one.
-        /// So for 100ms: 100ms, 200ms, 400ms, ...
+        /// Every next resend timeout is 2x the previous one but stops at 1s.
+        /// So for 100ms: 100ms, 200ms, 400ms, 800ms, 1000ms, 1000ms...
         pub fn dns_retry_ms(&mut self, n: u64) -> &mut Self {
             self
         }

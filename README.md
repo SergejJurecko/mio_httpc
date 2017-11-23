@@ -67,7 +67,7 @@ fn main() {
 - [x] Chunked encoding download
 - [x] Basic Auth
 - [ ] Con pool
-- [ ] DNS retries
-- [ ] Timeouts
+- [x] DNS retries
+- [x] Timeouts
 - [ ] Websockets
 - [ ] HTTP2

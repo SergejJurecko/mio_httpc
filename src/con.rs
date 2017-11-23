@@ -92,7 +92,10 @@ impl Con {
         Ok(res)
     }
 
-    pub fn timeout(&mut self) {
+    pub fn timeout(&mut self, host: &str) {
+        if let Some(ref mut dns) = self.dns {
+            dns.check_retry(host);
+        }
     }
 
     pub fn close(&mut self) {

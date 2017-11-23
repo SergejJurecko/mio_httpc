@@ -51,7 +51,8 @@ impl Dns {
             let _ = Self::lookup_on(&self.srvs, &self.sock, &mut pos, host);
             self.pos = (pos & 0xff) as u8;
             self.last_send = now;
-            self.retry_in = self.retry_in*2;
+            let secdur = Duration::from_millis(1000);
+            self.retry_in = if (self.retry_in*2) > secdur { secdur } else { self.retry_in*2 };
         } 
     }
 
