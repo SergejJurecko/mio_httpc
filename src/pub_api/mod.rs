@@ -324,8 +324,18 @@ mod pub_httpc {
         pub fn call_close(&mut self, id: ::CallId) {
         }
 
-        /// If calls executing, timeout should be called at least every ~200ms.
-        pub fn timeout(&mut self) {
+        /// Call periodically to check for call timeouts and DNS retries.
+        /// Returns list of calls that have timed out.
+        /// You must execute call_close yourself and timeout will return them
+        /// every time until you do.
+        /// (every 100ms for example)
+        pub fn timeout(&mut self) -> Vec<::CallId> {
+            Vec::new()
+        }
+
+        /// Same as timeout except that timed out calls get appended.
+        /// This way you can reuse old allocations (if you truncated to 0).
+        pub fn timeout_extend<C:TlsConnector>(&mut self, out: &mut Vec<::CallId>) {
         }
 
         /// Get CallId for ev if token in configured range for Httpc.
@@ -422,8 +432,11 @@ mod pub_httpc {
         pub fn call_close(&mut self, id: ::CallId) {
             self.h.call_close(id);
         }
-        pub fn timeout(&mut self) {
+        pub fn timeout(&mut self) -> Vec<::CallId> {
             self.h.timeout::<tls_api_rustls::TlsConnector>()
+        }
+        pub fn timeout_extend<C:TlsConnector>(&mut self, out: &mut Vec<::CallId>) {
+            self.h.timeout_extend::<tls_api_rustls::TlsConnector>(out)
         }
         pub fn event(&mut self, ev: &Event) -> Option<::CallId> {
             self.h.event::<tls_api_rustls::TlsConnector>(ev)
@@ -501,8 +514,11 @@ mod pub_httpc {
         pub fn call_close(&mut self, id: ::CallId) {
             self.h.call_close(id);
         }
-        pub fn timeout(&mut self) {
+        pub fn timeout(&mut self) -> Vec<::CallId> {
             self.h.timeout::<tls_api_native_tls::TlsConnector>()
+        }
+        pub fn timeout_extend<C:TlsConnector>(&mut self, out: &mut Vec<::CallId>) {
+            self.h.timeout_extend::<tls_api_native_tls::TlsConnector>(out)
         }
         pub fn event(&mut self, ev: &Event) -> Option<::CallId> {
             self.h.event::<tls_api_native_tls::TlsConnector>(ev)
@@ -580,8 +596,11 @@ mod pub_httpc {
         pub fn call_close(&mut self, id: ::CallId) {
             self.h.call_close(id);
         }
-        pub fn timeout(&mut self) {
+        pub fn timeout(&mut self) -> Vec<::CallId> {
             self.h.timeout::<tls_api_openssl::TlsConnector>()
+        }
+        pub fn timeout_extend<C:TlsConnector>(&mut self, out: &mut Vec<::CallId>) {
+            self.h.timeout_extend::<tls_api_openssl::TlsConnector>(out)
         }
         pub fn event(&mut self, ev: &Event) -> Option<::CallId> {
             self.h.event::<tls_api_openssl::TlsConnector>(ev)

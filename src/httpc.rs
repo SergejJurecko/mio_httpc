@@ -86,7 +86,6 @@ impl PrivHttpc {
         }
     }
     pub fn event<C:TlsConnector>(&mut self, ev: &Event) -> Option<::CallId> {
-        self.timeout::<C>();
         let mut id = ev.token().0;
         if id >= self.con_offset && id <= (u16::max_value() as usize) {
             id -= self.con_offset;
@@ -98,25 +97,34 @@ impl PrivHttpc {
     }
 
     pub fn timeout<C:TlsConnector>(&mut self) -> Vec<::CallId> {
+        let mut out = Vec::new();
+        self.timeout_extend::<C>(&mut out);
+        out
+    }
+
+    pub fn timeout_extend<C:TlsConnector>(&mut self, out: &mut Vec<::CallId>) {
         let now = Instant::now();
-        if now.duration_since(self.last_timeout).subsec_nanos() < 90_000_000 {
-            return Vec::new();
+        if now.duration_since(self.last_timeout).subsec_nanos() < 50_000_000 {
+            return;
         }
         self.last_timeout = now;
-        let calls = ::std::mem::replace(&mut self.calls, HashMap::default());
-        let (keepers,gonners) = 
-            calls.into_iter().partition(|&(ref k, ref v)| {
-                now - v.start_time() >= v.settings().dur
-            } );
-        self.calls = keepers;
-        if gonners.len() > 0 {
-            let mut out = Vec::with_capacity(gonners.len());
-            for (k,v) in gonners.into_iter() {
-                out.push(k);
-                self.call_close_detached(k,v);
+        for (k,v) in self.calls.iter() {
+            if now - v.start_time() >= v.settings().dur {
+                out.push(k.clone());
             }
         }
-        Vec::new()
+        // let calls = ::std::mem::replace(&mut self.calls, HashMap::default());
+        // let (keepers,gonners) = 
+        //     calls.into_iter().partition(|&(ref k, ref v)| {
+        //         now - v.start_time() >= v.settings().dur
+        //     } );
+        // self.calls = keepers;
+        // if gonners.len() > 0 {
+        //     for (k,v) in gonners.into_iter() {
+        //         out.push(k);
+        //         self.call_close_detached(k,v);
+        //     }
+        // }
     }
 
     pub fn call_send<C:TlsConnector>(&mut self, poll: &Poll, ev: &Event, id: ::CallId, buf: Option<&[u8]>) -> SendState {
