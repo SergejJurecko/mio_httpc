@@ -160,8 +160,8 @@ impl PrivCallBuilder {
         self.max_chunk = v;
         self
     }
-    pub fn timeout(&mut self, d: Duration) -> &mut Self {
-        self.dur = d;
+    pub fn timeout_ms(&mut self, v: u64) -> &mut Self {
+        self.dur = Duration::from_millis(v);
         self
     }
 }

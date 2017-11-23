@@ -129,8 +129,7 @@ impl Con {
                     let host = req.uri().host().unwrap();
                     cp.dns.save(host, ip);
                     let port = url_port(req.uri())?;
-                    // self.sock = Some(TcpStream::connect(&SocketAddr::new(ip,port))?);
-                    self.dns = Some(dns);
+                    self.dns = None;
                     self.deregister(cp.poll)?;
                     self.sock = Some(connect(SocketAddr::new(ip,port))?);
                     self.reg_for = Ready::writable();

@@ -9,4 +9,8 @@ check:
 	cargo check --features="native"
 	cargo check --features="rustls"	
 
+run_cnn:
+	cargo run --example get --features "native" -- "https://edition.cnn.com"
 
+run:
+	cargo run --example get --features "native" -- $(URL)

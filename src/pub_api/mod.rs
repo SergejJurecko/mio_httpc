@@ -111,6 +111,10 @@ impl SimpleCall {
         out.close()
     }
 
+    pub fn id(&self) -> &CallId {
+        &self.id
+    }
+
     /// Consume and return response with body.
     pub fn close(mut self) -> Option<::http::Response<Vec<u8>>> {
         let r = self.resp.take();
@@ -241,7 +245,6 @@ pub use self::pub_httpc::*;
 
 #[cfg(not(any(feature="rustls", feature="native", feature="openssl")))]
 mod pub_httpc {
-    use std::time::Duration;
     use http::{Request};
     use ::types::PrivCallBuilder;
     use mio::{Poll,Event};
@@ -266,7 +269,7 @@ mod pub_httpc {
         }
 
         /// Add custom root ca in DER format
-        pub fn add_root_ca_der(&mut self, v: Vec<u8>) -> &mut Self {
+        pub fn add_root_ca_der(self, v: Vec<u8>) -> Self {
             self
         }
 
@@ -276,7 +279,7 @@ mod pub_httpc {
         /// HTTP response headers are always stored in internal buffer.
         /// HTTP response body is stored in internal buffer if no external
         /// buffer is provided.
-        pub fn max_response(&mut self, m: usize) -> &mut Self {
+        pub fn max_response(self, m: usize) -> Self {
             self
         }
 
@@ -285,28 +288,28 @@ mod pub_httpc {
         /// Starting point of dns packet resends if nothing received.
         /// Every next resend timeout is 2x the previous one but stops at 1s.
         /// So for 100ms: 100ms, 200ms, 400ms, 800ms, 1000ms, 1000ms...
-        pub fn dns_retry_ms(&mut self, n: u64) -> &mut Self {
+        pub fn dns_retry_ms(self, n: u64) -> Self {
             self
         }
 
         /// Default true.
         /// 
         /// Configurable because it entails copying the data stream.
-        pub fn chunked_parse(&mut self, b: bool) -> &mut Self {
+        pub fn chunked_parse(self, b: bool) -> Self {
             self
         }
 
         /// Default 32K
         /// 
         /// Max size of chunk in a chunked transfer.
-        pub fn chunked_max_chunk(&mut self, v: usize) -> &mut Self {
+        pub fn chunked_max_chunk(self, v: usize) -> Self {
             self
         }
 
         /// Default 60s
         /// 
         /// Maximum amount of time a call should last.
-        pub fn timeout(&mut self, d: Duration) -> &mut Self {
+        pub fn timeout_ms(self, d: u64) -> Self {
             self
         }
     }
@@ -380,7 +383,6 @@ mod pub_httpc {
 #[cfg(feature = "rustls")]
 mod pub_httpc {
     extern crate tls_api_rustls;
-    use std::time::Duration;
     use http::{Request};
     use ::types::PrivCallBuilder;
     use mio::{Poll,Event};
@@ -400,28 +402,28 @@ mod pub_httpc {
         pub fn call(self, httpc: &mut Httpc, poll: &Poll) -> ::Result<::CallId> {
             httpc.call::<tls_api_rustls::TlsConnector>(self.cb, poll)
         }
-        pub fn add_root_ca_der(&mut self, v: Vec<u8>) -> &mut Self {
+        pub fn add_root_ca_der(mut self, v: Vec<u8>) -> Self {
             self.cb.add_root_ca(v);
             self
         }
-        pub fn max_response(&mut self, m: usize) -> &mut Self {
+        pub fn max_response(mut self, m: usize) -> Self {
             self.cb.max_response(m);
             self
         }
-        pub fn dns_retry_ms(&mut self, n: u64) -> &mut Self {
+        pub fn dns_retry_ms(mut self, n: u64) -> Self {
             self.cb.dns_retry_ms(n);
             self
         }
-        pub fn chunked_parse(&mut self, b: bool) -> &mut Self {
+        pub fn chunked_parse(mut self, b: bool) -> Self {
             self.cb.chunked_parse(b);
             self
         }
-        pub fn chunked_max_chunk(&mut self, v: usize) -> &mut Self {
+        pub fn chunked_max_chunk(mut self, v: usize) -> Self {
             self.cb.chunked_max_chunk(v);
             self
         }
-        pub fn timeout(&mut self, d: Duration) -> &mut Self {
-            self.cb.timeout(d);
+        pub fn timeout_ms(mut self, d: u64) -> Self {
+            self.cb.timeout_ms(d);
             self
         }
     }
@@ -466,7 +468,6 @@ mod pub_httpc {
 #[cfg(feature = "native")]
 mod pub_httpc {
     extern crate tls_api_native_tls;
-    use std::time::Duration;
     use http::{Request};
     use ::types::PrivCallBuilder;
     use mio::{Poll,Event};
@@ -486,28 +487,28 @@ mod pub_httpc {
         pub fn call(self, httpc: &mut Httpc, poll: &Poll) -> ::Result<::CallId> {
             httpc.call::<tls_api_native_tls::TlsConnector>(self.cb, poll)
         }
-        pub fn add_root_ca_der(&mut self, v: Vec<u8>) -> &mut Self {
+        pub fn add_root_ca_der(mut self, v: Vec<u8>) -> Self {
             self.cb.add_root_ca(v);
             self
         }
-        pub fn max_response(&mut self, m: usize) -> &mut Self {
+        pub fn max_response(mut self, m: usize) -> Self {
             self.cb.max_response(m);
             self
         }
-        pub fn dns_retry_ms(&mut self, n: u64) -> &mut Self {
+        pub fn dns_retry_ms(mut self, n: u64) -> Self {
             self.cb.dns_retry_ms(n);
             self
         }
-        pub fn chunked_parse(&mut self, b: bool) -> &mut Self {
+        pub fn chunked_parse(mut self, b: bool) -> Self {
             self.cb.chunked_parse(b);
             self
         }
-        pub fn chunked_max_chunk(&mut self, v: usize) -> &mut Self {
+        pub fn chunked_max_chunk(mut self, v: usize) -> Self {
             self.cb.chunked_max_chunk(v);
             self
         }
-        pub fn timeout(&mut self, d: Duration) -> &mut Self {
-            self.cb.timeout(d);
+        pub fn timeout_ms(mut self, d: u64) -> Self {
+            self.cb.timeout_ms(d);
             self
         }
     }
@@ -552,7 +553,6 @@ mod pub_httpc {
 #[cfg(feature = "openssl")]
 mod pub_httpc {
     extern crate tls_api_openssl;
-    use std::time::Duration;
     use http::{Request};
     use ::types::PrivCallBuilder;
     use mio::{Poll,Event};
@@ -572,28 +572,28 @@ mod pub_httpc {
         pub fn call(self, httpc: &mut Httpc, poll: &Poll) -> ::Result<::CallId> {
             httpc.call::<tls_api_openssl::TlsConnector>(self.cb, poll)
         }
-        pub fn add_root_ca_der(&mut self, v: Vec<u8>) -> &mut Self {
+        pub fn add_root_ca_der(mut self, v: Vec<u8>) -> Self {
             self.cb.add_root_ca(v);
             self
         }
-        pub fn max_response(&mut self, m: usize) -> &mut Self {
+        pub fn max_response(mut self, m: usize) -> Self {
             self.cb.max_response(m);
             self
         }
-        pub fn dns_retry_ms(&mut self, n: u64) -> &mut Self {
+        pub fn dns_retry_ms(mut self, n: u64) -> Self {
             self.cb.dns_retry_ms(n);
             self
         }
-        pub fn chunked_parse(&mut self, b: bool) -> &mut Self {
+        pub fn chunked_parse(mut self, b: bool) -> Self {
             self.cb.chunked_parse(b);
             self
         }
-        pub fn chunked_max_chunk(&mut self, v: usize) -> &mut Self {
+        pub fn chunked_max_chunk(mut self, v: usize) -> Self {
             self.cb.chunked_max_chunk(v);
             self
         }
-        pub fn timeout(&mut self, d: Duration) -> &mut Self {
-            self.cb.timeout(d);
+        pub fn timeout_ms(mut self, d: u64) -> Self {
+            self.cb.timeout_ms(d);
             self
         }
     }

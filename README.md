@@ -65,6 +65,7 @@ fn main() {
 - [x] Basic API
 - [x] Configurable TLS backend
 - [x] Chunked encoding download
+- [ ] Chunked encoding upload
 - [x] Basic Auth
 - [ ] Con pool
 - [x] DNS retries
