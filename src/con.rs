@@ -11,7 +11,6 @@ use http::{Request,Uri};
 use std::io::{Read,Write};
 use ::types::CallParam;
 use fnv::FnvHashMap as HashMap;
-use std::time::{Duration};
 
 fn url_port(url: &Uri) -> Result<u16> {
     if let Some(p) = url.port() {

@@ -8,7 +8,7 @@ use call::{Call};
 use types::*;
 use fnv::FnvHashMap as HashMap;
 use ::{SendState,RecvState,CallId};
-use std::time::{Instant,Duration};
+use std::time::{Instant};
 
 pub struct PrivHttpc {
     cache: DnsCache,
