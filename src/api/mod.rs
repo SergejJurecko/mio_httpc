@@ -67,7 +67,7 @@ pub enum RecvState {
 
 /// Id for calls. Directly tied to mio token but not equal to it.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct CallId(u32);
+pub struct CallId(pub(crate) u32);
 
 impl CallId {
     // (Call:16, Con:16)
@@ -87,11 +87,16 @@ pub fn extract_body(r: &mut ::http::Response<Vec<u8>>) -> Vec<u8> {
     ::std::mem::replace(r.body_mut(), Vec::new())
 }
 
+mod websocket;
+pub use self::websocket::*;
+
+mod simple_call;
+pub use self::simple_call::*;
+
 #[cfg(not(any(feature="rustls", feature="native", feature="openssl")))]
 mod default;
 #[cfg(not(any(feature="rustls", feature="native", feature="openssl")))]
 pub use self::default::*;
-
 
 #[cfg(feature = "rustls")]
 mod rustls;
@@ -107,3 +112,4 @@ pub use self::native::*;
 mod openssl;
 #[cfg(feature = "openssl")]
 pub use self::openssl::*;
+
