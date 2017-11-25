@@ -44,10 +44,10 @@ mod httpc;
 #[allow(dead_code,unused_variables)]
 mod call;
 #[allow(dead_code,unused_variables)]
-mod pub_api;
+mod api;
 mod types;
 
-pub use pub_api::*;
+pub use api::*;
 pub use http::{Error as HttpError};
 pub use http::header::*;
 pub use http::method::*;
