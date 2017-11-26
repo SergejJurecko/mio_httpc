@@ -142,10 +142,9 @@ impl PrivCallBuilder {
     pub fn call<C:TlsConnector>(self, httpc: &mut PrivHttpc, poll: &Poll) -> ::Result<::CallId> {
         httpc.call::<C>(self, poll)
     }
-    pub fn websocket<C:TlsConnector>(mut self, httpc: &mut PrivHttpc, poll: &Poll) -> ::Result<::WebSocket> {
+    pub fn websocket(&mut self) -> &mut Self {
         self.ws = true;
-        let cid = httpc.call::<C>(self, poll)?;
-        Ok(::WebSocket::new(cid))
+        self
     }
     pub fn add_root_ca(&mut self, v: Vec<u8>) -> &mut Self {
         self.root_ca.push(v);

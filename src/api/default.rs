@@ -2,7 +2,7 @@ use http::{Request};
 use ::types::PrivCallBuilder;
 use mio::{Poll,Event};
 use tls_api::{TlsConnector};
-use ::Result;
+use ::{Result,WebSocket,CallId};
 
 /// Used to start a call and get a CallId for it.
 pub struct CallBuilder {
@@ -16,8 +16,14 @@ impl CallBuilder {
     pub fn new(req: Request<Vec<u8>>) -> CallBuilder {
         CallBuilder{}
     }
-    /// Consume and execute
-    pub fn call(self, httpc: &mut Httpc, poll: &Poll) -> ::Result<::CallId> {
+
+    /// Consume and execute HTTP call
+    pub fn call(self, httpc: &mut Httpc, poll: &Poll) -> ::Result<CallId> {
+        Err(::Error::NoTls)
+    }
+
+    /// Consume and start a WebSocket
+    pub fn websocket(self, httpc: &mut Httpc, poll: &Poll) -> ::Result<WebSocket> {
         Err(::Error::NoTls)
     }
 

@@ -12,6 +12,7 @@ use std::io::{Read,Write};
 use ::{SendState,RecvState};
 use ::types::*;
 use data_encoding::BASE64;
+use byteorder::{LittleEndian,ByteOrder};
 
 #[derive(PartialEq)]
 enum Dir {
@@ -56,9 +57,9 @@ impl Call {
         &self.b
     }
 
-    // pub fn is_done(&self) -> bool {
-    //     self.dir == Dir::Done
-    // }
+    pub fn is_done(&self) -> bool {
+        self.dir == Dir::Done
+    }
 
     pub fn stop(self) -> Vec<u8> {
         self.buf
@@ -92,6 +93,9 @@ impl Call {
         }
         buf.extend(b" HTTP/1.1\r\n");
         for (k,v) in self.b.req.headers().iter() {
+            // if k == CONNECTION && self.b.ws {
+            //     continue;
+            // }
             buf.extend(k.as_str().as_bytes());
             buf.extend(b": ");
             buf.extend(v.as_bytes());
@@ -120,7 +124,21 @@ impl Call {
             buf.extend((env!("CARGO_PKG_VERSION")).as_bytes());
             buf.extend(b"\r\n");
         }
-        if None == self.b.req.headers().get(CONNECTION) {
+        if self.b.ws {
+            buf.extend(CONNECTION.as_str().as_bytes());
+            buf.extend(b": upgrade\r\n");
+            buf.extend(b"sec-websocket-key: ");
+            buf.extend(b"upgrade: websocket\r\n");
+            let mut ar = [0u8;16];
+            let mut out = [0u8;32];
+            LittleEndian::write_u64(&mut ar, ::rand::random::<u64>());
+            LittleEndian::write_u64(&mut ar[8..], ::rand::random::<u64>());
+            let enc_len = BASE64.encode_len(ar.len());
+            BASE64.encode_mut(&ar, &mut out[..enc_len]);
+            buf.extend(&out[..enc_len]);
+            buf.extend(b"\r\n");
+            buf.extend(b"sec-websocket-version: 13\r\n");
+        } else if None == self.b.req.headers().get(CONNECTION) {
             buf.extend(CONNECTION.as_str().as_bytes());
             buf.extend(b": keep-alive\r\n");
         }

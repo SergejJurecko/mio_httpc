@@ -114,6 +114,9 @@ impl PrivHttpc {
         }
         self.last_timeout = now;
         for (k,v) in self.calls.iter() {
+            if v.is_done() {
+                continue;
+            }
             if now - v.start_time() >= v.settings().dur {
                 out.push(k.clone());
             } else {

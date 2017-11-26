@@ -18,6 +18,11 @@ impl CallBuilder {
     pub fn call(self, httpc: &mut Httpc, poll: &Poll) -> ::Result<::CallId> {
         httpc.call::<tls_api_openssl::TlsConnector>(self.cb, poll)
     }
+    pub fn websocket(mut self, httpc: &mut Httpc, poll: &Poll) -> ::Result<::WebSocket> {
+        self.cb.websocket();
+        let cid = self.call(httpc, poll)?;
+        Ok(::WebSocket::new(cid))
+    }
     pub fn add_root_ca_der(mut self, v: Vec<u8>) -> Self {
         self.cb.add_root_ca(v);
         self

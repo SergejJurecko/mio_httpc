@@ -91,6 +91,9 @@ quick_error! {
             description(err.description())
             from()
         }
+        WebSocketFail(req: http::Response<Vec<u8>>) {
+            display("WebSocket setup failed {:?}",req)
+        }
         /// Request structure did not contain body and CallSimple was used for POST/PUT.
         MissingBody {
             display("Request structure did not contain body and CallSimple was used for POST/PUT.")
