@@ -1,4 +1,4 @@
-use ::{CallId,Httpc,SendState, RecvState, ResponseBody};
+use ::{CallRef,Call,Httpc,SendState, RecvState, ResponseBody};
 
 #[derive(Debug,Copy,Clone,Eq,PartialEq)]
 pub enum WSState {
@@ -21,12 +21,12 @@ enum State {
 }
 
 pub struct WebSocket {
-    id: ::CallId,
+    id: Call,
     state: State,
 }
 
 impl WebSocket {
-    pub(crate) fn new(id: ::CallId) -> WebSocket {
+    pub(crate) fn new(id: Call) -> WebSocket {
         WebSocket {
             id,
             state: State::InitSending,
@@ -35,19 +35,19 @@ impl WebSocket {
 
     /// For quick comparison with httpc::event response.
     /// If cid is none will return false.
-    pub fn is_callid(&self, cid: &Option<CallId>) -> bool {
+    pub fn is_call(&self, cid: &Option<CallRef>) -> bool {
         if let &Some(ref b) = cid {
-            return self.id == *b;
+            return self.id.0 == b.0;
         }
         false
     }
 
     /// If using Option<WebSocket> in a struct, you can quickly compare 
     /// callid from httpc::event. If either is none will return false.
-    pub fn is_opt_callid(a: &Option<WebSocket>, b: &Option<CallId>) -> bool {
+    pub fn is_opt_call(a: &Option<WebSocket>, b: &Option<CallRef>) -> bool {
         if let &Some(ref a) = a {
             if let &Some(ref b) = b {
-                return a.id == *b;
+                return a.id.0 == b.0;
             }
         }
         false
@@ -71,6 +71,7 @@ impl WebSocket {
         if !is_wsupg {
             return Err(::Error::WebSocketFail(resp));
         }
+        self.state = State::Active;
         Ok(WSState::NoData)
     }
 
@@ -83,7 +84,7 @@ impl WebSocket {
             return Ok(WSState::Closed);
         }
         if self.state == State::InitSending {
-            match htp.call_send(poll, ev, self.id, None) {
+            match htp.call_send(poll, &mut self.id, None) {
                 SendState::Wait => {}
                 SendState::Receiving => {
                     self.state = State::InitReceiving;
@@ -105,7 +106,7 @@ impl WebSocket {
         }
         if self.state == State::InitReceiving {
             loop {
-                match htp.call_recv(poll, ev, self.id, None) {
+                match htp.call_recv(poll, &mut self.id, None) {
                     RecvState::DoneWithBody(b) => {
                         self.state = State::Done;
                         return Err(::Error::Closed);

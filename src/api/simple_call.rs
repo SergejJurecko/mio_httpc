@@ -1,4 +1,4 @@
-use ::{CallId, Httpc, SendState, RecvState, ResponseBody};
+use ::{Call, CallRef, Httpc, SendState, RecvState, ResponseBody};
 
 #[derive(Clone,Copy,PartialEq,Eq)]
 enum State {
@@ -12,7 +12,7 @@ enum State {
 /// it is returned in Response.
 pub struct SimpleCall {
     state: State,
-    id: CallId,
+    id: Call,
     resp: Option<::http::Response<Vec<u8>>>,
     resp_body: Option<Vec<u8>>,
 }
@@ -24,7 +24,11 @@ impl SimpleCall {
         out.close()
     }
 
-    pub fn id(&self) -> &CallId {
+    pub fn is_ref(&self, r: CallRef) -> bool {
+        self.id.is_ref(r)
+    }
+
+    pub fn call(&self) -> &Call {
         &self.id
     }
 
@@ -43,19 +47,19 @@ impl SimpleCall {
 
     /// For quick comparison with httpc::event response.
     /// If cid is none will return false.
-    pub fn is_callid(&self, cid: &Option<CallId>) -> bool {
+    pub fn is_call(&self, cid: &Option<CallRef>) -> bool {
         if let &Some(ref b) = cid {
-            return self.id == *b;
+            return self.id.0 == b.0;
         }
         false
     }
 
     /// If using Option<SimpleCall> in a struct, you can quickly compare 
     /// callid from httpc::event. If either is none will return false.
-    pub fn is_opt_callid(a: &Option<SimpleCall>, b: &Option<CallId>) -> bool {
+    pub fn is_opt_callid(a: &Option<SimpleCall>, b: &Option<CallRef>) -> bool {
         if let &Some(ref a) = a {
             if let &Some(ref b) = b {
-                return a.id == *b;
+                return a.id.0 == b.0;
             }
         }
         false
@@ -72,7 +76,7 @@ impl SimpleCall {
             return Ok(true);
         }
         if self.state == State::Sending {
-            match htp.call_send(poll, ev, self.id, None) {
+            match htp.call_send(poll, &mut self.id, None) {
                 SendState::Wait => {}
                 SendState::Receiving => {
                     self.state = State::Receiving;
@@ -94,7 +98,7 @@ impl SimpleCall {
         }
         if self.state == State::Receiving {
             loop {
-                match htp.call_recv(poll, ev, self.id, None) {
+                match htp.call_recv(poll, &mut self.id, None) {
                     RecvState::DoneWithBody(b) => {
                         self.resp_body = Some(b);
                         self.state = State::Done;
@@ -120,7 +124,7 @@ impl SimpleCall {
                     }
                     RecvState::Wait => {}
                     RecvState::Sending => {}
-                    RecvState::ReceivedBody(_) => {}
+                    RecvState::ReceivedBody(_s) => {}
                 }
             }
         }
@@ -133,18 +137,18 @@ impl SimpleCall {
     pub fn empty() -> SimpleCall {
         SimpleCall {
             state: State::Done,
-            id: CallId(0xFFFF_FFFF),
+            id: ::Call::empty(),
             resp: None,
             resp_body: None,
         }
     }
 
     pub fn is_empty(&self) -> bool {
-        self.id.0 == 0xFFFF_FFFF
+        self.id.is_empty()
     }
 }
-impl From<CallId> for SimpleCall {
-    fn from(v: CallId) -> SimpleCall {
+impl From<Call> for SimpleCall {
+    fn from(v: Call) -> SimpleCall {
         SimpleCall {
             state: State::Sending,
             id: v,

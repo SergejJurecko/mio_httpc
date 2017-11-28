@@ -2,9 +2,9 @@ use http::{Request};
 use ::types::PrivCallBuilder;
 use mio::{Poll,Event};
 use tls_api::{TlsConnector};
-use ::{Result,WebSocket,CallId};
+use ::{Result,WebSocket,Call, CallRef, SendState, RecvState};
 
-/// Used to start a call and get a CallId for it.
+/// Used to start a call and get a Call for it.
 pub struct CallBuilder {
 }
 
@@ -18,7 +18,7 @@ impl CallBuilder {
     }
 
     /// Consume and execute HTTP call
-    pub fn call(self, httpc: &mut Httpc, poll: &Poll) -> ::Result<CallId> {
+    pub fn call(self, httpc: &mut Httpc, poll: &Poll) -> ::Result<Call> {
         Err(::Error::NoTls)
     }
 
@@ -73,7 +73,7 @@ impl CallBuilder {
     }
 }
 
-/// Send request data, receive response data for CallId.
+/// Send requests, receive responses.
 pub struct Httpc {
 }
 
@@ -83,7 +83,7 @@ impl Httpc {
         Httpc {
         }
     }
-    pub(crate) fn call<C:TlsConnector>(&mut self, b: PrivCallBuilder, poll: &Poll) -> Result<::CallId> {
+    pub(crate) fn call<C:TlsConnector>(&mut self, b: PrivCallBuilder, poll: &Poll) -> Result<Call> {
         Err(::Error::NoTls)
     }
 
@@ -92,7 +92,7 @@ impl Httpc {
     }
 
     /// Prematurely finish call. 
-    pub fn call_close(&mut self, id: ::CallId) {
+    pub fn call_close(&mut self, id: Call) {
     }
 
     /// Call periodically to check for call timeouts and DNS retries.
@@ -100,20 +100,21 @@ impl Httpc {
     /// You must execute call_close yourself and timeout will return them
     /// every time until you do.
     /// (every 100ms for example)
-    pub fn timeout(&mut self) -> Vec<::CallId> {
+    pub fn timeout(&mut self) -> Vec<CallRef> {
         Vec::new()
     }
 
     /// Same as timeout except that timed out calls get appended.
     /// This way you can reuse old allocations (if you truncated to 0).
-    pub fn timeout_extend<C:TlsConnector>(&mut self, out: &mut Vec<::CallId>) {
+    pub fn timeout_extend<C:TlsConnector>(&mut self, out: &mut Vec<CallRef>) {
     }
 
-    /// Get CallId for ev if token in configured range for Httpc.
+    /// Get CallRef for ev if token in configured range for Httpc.
+    /// Compare CallRef external call.
     /// 
     /// First you must call call_send until you get a SendState::Receiving
     /// after that call is in receive state and you must call call_recv.
-    pub fn event(&mut self, ev: &Event) -> Option<::CallId> {
+    pub fn event(&mut self, ev: &Event) -> Option<CallRef> {
         None
     }
 
@@ -122,7 +123,7 @@ impl Httpc {
     /// 
     /// buf slice is assumed to have taken previous SendState::SentBody(usize) into account
     /// and starts from part of buffer that has not been sent yet.
-    pub fn call_send(&mut self, poll: &Poll, ev: &Event, id: ::CallId, buf: Option<&[u8]>) -> ::SendState {
+    pub fn call_send(&mut self, poll: &Poll, id: &mut Call, buf: Option<&[u8]>) -> SendState {
         ::SendState::Error(::Error::NoTls)
     }
 
@@ -133,7 +134,7 @@ impl Httpc {
     /// response entirely in buf, you should reserve capacity for entire body before calling call_recv.
     /// 
     /// If body is only stored in internal buffer it will be limited to CallBuilder::max_response.
-    pub fn call_recv(&mut self, poll: &Poll, ev: &Event, id: ::CallId, buf: Option<&mut Vec<u8>>) -> ::RecvState {
+    pub fn call_recv(&mut self, poll: &Poll, id: &mut Call, buf: Option<&mut Vec<u8>>) -> RecvState {
         ::RecvState::Error(::Error::NoTls)
     }
 }

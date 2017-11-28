@@ -10,7 +10,7 @@ fn main() {
     let mut req = Request::builder();
     let args: Vec<String> = ::std::env::args().collect();
     let req = req.uri(args[1].as_str()).body(Vec::new()).expect("can not build request");
-    let call_id = CallBuilder::new(req).call(&mut htp, &poll).expect("Call start failed");
+    let mut call = CallBuilder::new(req).call(&mut htp, &poll).expect("Call start failed");
 
     let mut sending = true;
     let mut done = false;
@@ -22,11 +22,11 @@ fn main() {
         for ev in events.iter() {
             // println!("ev {}",ev.token().0);
             let cid = htp.event(&ev).expect("Event not from http request");
-            assert_eq!(cid, call_id);
+            assert!(call.is_ref(cid));
 
             if sending {
                 // None because we are not sending any body
-                match htp.call_send(&poll, &ev, cid, None) {
+                match htp.call_send(&poll, &mut call, None) {
                     SendState::Done => {
                         panic!("Done while sending");
                     }
@@ -47,7 +47,7 @@ fn main() {
                 // This is so socket is always drained entirely. Otherwise poll will not return
                 // anything. Httpc uses edge triggered sockets.
                 loop {
-                    match htp.call_recv(&poll, &ev, cid, Some(&mut recv_vec)) {
+                    match htp.call_recv(&poll, &mut call, Some(&mut recv_vec)) {
                         RecvState::Done => {
                             println!("Done");
                             done = true;

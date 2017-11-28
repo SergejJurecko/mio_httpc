@@ -18,11 +18,12 @@ use byteorder::{LittleEndian,ByteOrder};
 enum Dir {
     SendingHdr(usize),
     SendingBody(usize),
-    Receiving(usize),
+    // (bytes_rec, duplex)
+    Receiving(usize,bool),
     Done,
 }
 
-pub struct Call {
+pub struct CallImpl {
     b: PrivCallBuilder,
     start: Instant,
     buf: Vec<u8>,
@@ -32,10 +33,10 @@ pub struct Call {
     chunked: ChunkIndex, 
 }
 
-impl Call {
-    pub fn new(b: PrivCallBuilder, mut buf: Vec<u8>) -> Call {
+impl CallImpl {
+    pub fn new(b: PrivCallBuilder, mut buf: Vec<u8>) -> CallImpl {
         buf.truncate(0);
-        Call {
+        CallImpl {
             dir: Dir::SendingHdr(0),
             start: Instant::now(),
             // chunked_resp: Vec::new(),
@@ -184,8 +185,12 @@ impl Call {
             Dir::Done => {
                 return Ok(SendState::Done);
             }
-            Dir::Receiving(_) => {
+            Dir::Receiving(_,false) => {
                 return Ok(SendState::Receiving)
+            }
+            Dir::Receiving(_,true) => {
+                let b = b.unwrap();
+                self.event_send_do::<C>(con, cp, 0, &b[..])
             }
             Dir::SendingHdr(pos) => {
                 let mut buf = ::std::mem::replace(&mut self.buf, Vec::new());
@@ -201,7 +206,7 @@ impl Call {
                     self.buf.truncate(0);
                     // go again
                     return self.event_send::<C>(con, cp, b);
-                } else if let Dir::Receiving(_) = self.dir {
+                } else if let Dir::Receiving(_,_) = self.dir {
                     self.buf.truncate(0);
                 }
                 ret
@@ -213,9 +218,12 @@ impl Call {
                 let b = b.unwrap();
                 self.event_send_do::<C>(con, cp, 0, &b[..])
             }
-            _ => {
+            Dir::SendingBody(_) => {
                 Ok(SendState::WaitReqBody)
             }
+            // _ => {
+            //     Ok(SendState::WaitReqBody)
+            // }
         }
     }
 
@@ -227,7 +235,7 @@ impl Call {
             Dir::Done => {
                 return Ok(RecvState::Done);
             }
-            Dir::Receiving(rec_pos) => {
+            Dir::Receiving(rec_pos,_) => {
                 if self.hdr_sz == 0 || b.is_none() || self.b.chunked_parse {
                     let mut buf = ::std::mem::replace(&mut self.buf, Vec::new());
                     // Have we already received everything?
@@ -283,7 +291,10 @@ impl Call {
                     self.event_rec_do::<C>(con, cp, false, b)
                 }
             }
-            _ => {
+            Dir::SendingBody(_) => {
+                Ok(RecvState::Sending)
+            }
+            Dir::SendingHdr(_) => {
                 Ok(RecvState::Sending)
             }
         }
@@ -325,7 +336,7 @@ impl Call {
                             } else {
                                 self.hdr_sz = 0;
                                 self.body_sz = 0;
-                                self.dir = Dir::Receiving(0);
+                                self.dir = Dir::Receiving(0,false);
                                 return Ok(SendState::Receiving);
                             }
                         } else {
@@ -336,7 +347,7 @@ impl Call {
                         if self.body_sz == pos+sz {
                             self.hdr_sz = 0;
                             self.body_sz = 0;
-                            self.dir = Dir::Receiving(0);
+                            self.dir = Dir::Receiving(0,false);
                             return Ok(SendState::Receiving);
                         }
                         self.dir = Dir::SendingBody(pos+sz);
@@ -448,10 +459,14 @@ impl Call {
                                 self.b.chunked_parse = false;
                             }
 
-                            if self.body_sz == 0 {
+                            // If switching protocols body is unlimited
+                            if resp.status() == ::StatusCode::SWITCHING_PROTOCOLS {
+                                self.body_sz = usize::max_value();
+                                self.dir = Dir::Receiving(buflen - self.hdr_sz,true);
+                            } else if self.body_sz == 0 {
                                 self.dir == Dir::Done;
                             } else {
-                                self.dir = Dir::Receiving(buflen - self.hdr_sz);
+                                self.dir = Dir::Receiving(buflen - self.hdr_sz,false);
                             }
                             if self.b.chunked_parse {
                                 if self.chunked.check_done(self.b.max_chunk, &buf[self.hdr_sz..])? {
@@ -470,9 +485,9 @@ impl Call {
                         }
                     }
                 } else {
-                    let pos = if let Dir::Receiving(pos) = self.dir {
-                        pos
-                    } else { 0 };
+                    let (pos,duplex) = if let Dir::Receiving(pos,duplex) = self.dir {
+                        (pos,duplex)
+                    } else { (0,false) };
 
                     // do not set done if internal
                     // This way next call will be either copied to provided buffer or returned.
@@ -487,7 +502,7 @@ impl Call {
                             }
                         }
                         if !chunked_done {
-                            self.dir = Dir::Receiving(pos + bytes_rec);
+                            self.dir = Dir::Receiving(pos + bytes_rec, duplex);
                         }
                     }
                     return Ok(RecvState::ReceivedBody(bytes_rec));

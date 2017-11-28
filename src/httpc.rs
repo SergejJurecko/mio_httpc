@@ -4,16 +4,16 @@ use con::{Con,ConTable};
 use ::Result;
 use tls_api::{TlsConnector};
 use std::collections::VecDeque;
-use call::{Call};
+use call::{CallImpl};
 use types::*;
 use fnv::FnvHashMap as HashMap;
-use ::{SendState,RecvState,CallId};
+use ::{SendState,RecvState,CallRef,Call};
 use std::time::{Instant};
 
 pub struct PrivHttpc {
     cache: DnsCache,
-    calls: HashMap<::CallId,Call>,
-    timed_out_calls: HashMap<::CallId,Call>,
+    calls: HashMap<::Call,CallImpl>,
+    timed_out_calls: HashMap<::Call,CallImpl>,
     con_offset: usize,
     free_bufs: VecDeque<Vec<u8>>,
     cons: ConTable,
@@ -49,7 +49,7 @@ impl PrivHttpc {
         self.free_bufs.push_front(buf);
     }
 
-    pub fn call<C:TlsConnector>(&mut self, mut b: PrivCallBuilder, poll: &Poll) -> Result<::CallId> {
+    pub fn call<C:TlsConnector>(&mut self, mut b: PrivCallBuilder, poll: &Poll) -> Result<Call> {
         // cons.push_con will set actual mio token
         let root_ca = ::std::mem::replace(&mut b.root_ca, Vec::new());
         let con = Con::new::<C,Vec<u8>>(Token::from(self.con_offset), 
@@ -58,23 +58,23 @@ impl PrivHttpc {
             poll, 
             root_ca,
             b.dns_timeout)?;
-        let call = Call::new(b, self.get_buf());
+        let call = CallImpl::new(b, self.get_buf());
         if let Some(con_id) = self.cons.push_con(con) {
-            let id = CallId::new(con_id, 0);
-            self.calls.insert(id, call);
+            let id = Call::new(con_id, 0);
+            self.calls.insert(Call(id.0), call);
             Ok(id)
         } else {
             Err(::Error::NoSpace)
         }
     }
 
-    pub fn call_close(&mut self, id: ::CallId) {
+    pub fn call_close(&mut self, id: Call) {
         if let Some(call) = self.calls.remove(&id) {
             self.call_close_detached(id, call);
         }
     }
 
-    fn call_close_detached(&mut self, id: ::CallId, call: Call) {
+    fn call_close_detached(&mut self, id: Call, call: CallImpl) {
         let buf = call.stop();
         if buf.capacity() > 0 {
             self.reuse(buf);
@@ -90,24 +90,24 @@ impl PrivHttpc {
             b
         }
     }
-    pub fn event<C:TlsConnector>(&mut self, ev: &Event) -> Option<::CallId> {
+    pub fn event<C:TlsConnector>(&mut self, ev: &Event) -> Option<CallRef> {
         let mut id = ev.token().0;
         if id >= self.con_offset && id <= (u16::max_value() as usize) {
             id -= self.con_offset;
             if self.cons.get_con(id).is_some() {
-                return Some(::CallId::new(id as u16, 0));
+                return Some(CallRef::new(id as u16, 0));
             }
         }
         None
     }
 
-    pub fn timeout<C:TlsConnector>(&mut self) -> Vec<::CallId> {
+    pub fn timeout<C:TlsConnector>(&mut self) -> Vec<CallRef> {
         let mut out = Vec::new();
         self.timeout_extend::<C>(&mut out);
         out
     }
 
-    pub fn timeout_extend<C:TlsConnector>(&mut self, out: &mut Vec<::CallId>) {
+    pub fn timeout_extend<C:TlsConnector>(&mut self, out: &mut Vec<CallRef>) {
         let now = Instant::now();
         if now.duration_since(self.last_timeout).subsec_nanos() < 50_000_000 {
             return;
@@ -118,7 +118,7 @@ impl PrivHttpc {
                 continue;
             }
             if now - v.start_time() >= v.settings().dur {
-                out.push(k.clone());
+                out.push(CallRef(k.0));
             } else {
                 if let Some(con) = self.cons.get_con(k.con_id() as usize) {
                     if let Some(host) = v.settings().req.uri().host() {
@@ -141,9 +141,12 @@ impl PrivHttpc {
         // }
     }
 
-    pub fn call_send<C:TlsConnector>(&mut self, poll: &Poll, ev: &Event, id: ::CallId, buf: Option<&[u8]>) -> SendState {
-        let cret = if let Some(c) = self.calls.get_mut(&id) {
-            let con = if let Some(con) = self.cons.get_con(id.con_id() as usize) {
+    pub fn call_send<C:TlsConnector>(&mut self, poll: &Poll, call: &mut Call, buf: Option<&[u8]>) -> SendState {
+        if call.is_empty() {
+            return SendState::Done;
+        }
+        let cret = if let Some(c) = self.calls.get_mut(&call) {
+            let con = if let Some(con) = self.cons.get_con(call.con_id() as usize) {
                 con
             } else {
                 return SendState::Error(::Error::InvalidToken);
@@ -151,7 +154,7 @@ impl PrivHttpc {
             let mut cp = ::types::CallParam {
                 poll,
                 dns: &mut self.cache,
-                ev,
+                // ev,
             };
             c.event_send::<C>(con, &mut cp, buf)
         } else {
@@ -159,29 +162,34 @@ impl PrivHttpc {
         };
         match cret {
             Ok(SendState::Done) => {
-                self.call_close(id);
+                self.call_close(Call(call.0));
+                call.invalidate();
                 return SendState::Done;
             }
             Ok(er) => {
                 return er;
             }
             Err(e) => {
-                self.call_close(id);
+                self.call_close(Call(call.0));
+                call.invalidate();
                 return SendState::Error(e); 
             }
         }
     }
 
-    pub fn call_recv<C:TlsConnector>(&mut self, poll: &Poll, ev: &Event, id: ::CallId, buf: Option<&mut Vec<u8>>) -> RecvState {
-        let cret = if let Some(c) = self.calls.get_mut(&id) {
-            let con = if let Some(con) = self.cons.get_con(id.con_id() as usize) {
+    pub fn call_recv<C:TlsConnector>(&mut self, poll: &Poll, call: &mut Call, buf: Option<&mut Vec<u8>>) -> RecvState {
+        if call.is_empty() {
+            return RecvState::Done;
+        }
+        let cret = if let Some(c) = self.calls.get_mut(&call) {
+            let con = if let Some(con) = self.cons.get_con(call.con_id() as usize) {
                 con
             } else {
                 return RecvState::Error(::Error::InvalidToken);
             };
             let mut cp = ::types::CallParam {
                 poll,
-                ev,
+                // ev,
                 dns: &mut self.cache,
             };
             c.event_recv::<C>(con, &mut cp, buf)
@@ -190,22 +198,26 @@ impl PrivHttpc {
         };
         match cret {
             Ok(RecvState::Response(r,::ResponseBody::Sized(0))) => {
-                self.call_close(id);
+                self.call_close(Call(call.0));
+                call.invalidate();
                 return RecvState::Response(r,::ResponseBody::Sized(0));
             }
             Ok(RecvState::Done) => {
-                self.call_close(id);
+                self.call_close(Call(call.0));
+                call.invalidate();
                 return RecvState::Done;
             }
             Ok(RecvState::DoneWithBody(body)) => {
-                self.call_close(id);
+                self.call_close(Call(call.0));
+                call.invalidate();
                 return RecvState::DoneWithBody(body);
             }
             Ok(er) => {
                 return er;
             }
             Err(e) => {
-                self.call_close(id);
+                self.call_close(Call(call.0));
+                call.invalidate();
                 return RecvState::Error(e); 
             }
         }

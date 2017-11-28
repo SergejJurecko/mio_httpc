@@ -65,20 +65,62 @@ pub enum RecvState {
     Wait,
 }
 
-/// Id for calls. Directly tied to mio token but not equal to it.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct CallId(pub(crate) u32);
+/// Call structure.
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)] // no clone,copy on purpose. We want a single instance.
+pub struct Call(pub(crate) u32);
 
-impl CallId {
+impl Call {
+    /// Get a CallRef that matches this call.
+    pub fn get_ref(&self) -> CallRef {
+        CallRef(self.0)
+    }
+
+    /// Is CallRef for this call.
+    pub fn is_ref(&self, r: CallRef) -> bool {
+        self.0 == r.0
+    }
     // (Call:16, Con:16)
-    pub(crate) fn new(con_id: u16, call_id: u16) -> CallId {
+    pub(crate) fn new(con_id: u16, call_id: u16) -> Call {
         let con_id = con_id as u32;
         let call_id = call_id as u32;
-        CallId((call_id << 16) | con_id)
+        Call((call_id << 16) | con_id)
     }
 
     pub(crate) fn con_id(&self) -> u16 {
         (self.0 & 0xFFFF) as u16
+    }
+
+    pub(crate) fn empty() -> Call {
+        Call(0xffff_ffff)
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        *self == Call::empty()
+    }
+
+    // Once call finished it gets invalidated.
+    pub(crate) fn invalidate(&mut self) {
+        *self = Call::empty();
+    }
+}
+
+// I wish...Need httpc.
+// impl Drop for Call {
+//     fn drop(&mut self) {
+//         if !self.is_empty() {
+//         }
+//     }
+// }
+
+/// Reference to call. Used for matching mio Token with call.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct CallRef(pub(crate) u32);
+impl CallRef {
+    // (Call:16, Con:16)
+    pub(crate) fn new(con_id: u16, call_id: u16) -> CallRef {
+        let con_id = con_id as u32;
+        let call_id = call_id as u32;
+        CallRef((call_id << 16) | con_id)
     }
 }
 

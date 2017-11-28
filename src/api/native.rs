@@ -15,7 +15,7 @@ impl CallBuilder {
             cb: PrivCallBuilder::new(req),
         }
     }
-    pub fn call(self, httpc: &mut Httpc, poll: &Poll) -> ::Result<::CallId> {
+    pub fn call(self, httpc: &mut Httpc, poll: &Poll) -> ::Result<::Call> {
         httpc.call::<tls_api_native_tls::TlsConnector>(self.cb, poll)
     }
     pub fn websocket(mut self, httpc: &mut Httpc, poll: &Poll) -> ::Result<::WebSocket> {
@@ -59,28 +59,28 @@ impl Httpc {
             h: ::httpc::PrivHttpc::new(con_offset),
         }
     }
-    pub(crate) fn call<C:TlsConnector>(&mut self, b: PrivCallBuilder, poll: &Poll) -> Result<::CallId> {
+    pub(crate) fn call<C:TlsConnector>(&mut self, b: PrivCallBuilder, poll: &Poll) -> Result<::Call> {
         self.h.call::<C>(b, poll)
     }
     pub fn reuse(&mut self, buf: Vec<u8>) {
         self.h.reuse(buf);
     }
-    pub fn call_close(&mut self, id: ::CallId) {
+    pub fn call_close(&mut self, id: ::Call) {
         self.h.call_close(id);
     }
-    pub fn timeout(&mut self) -> Vec<::CallId> {
+    pub fn timeout(&mut self) -> Vec<::CallRef> {
         self.h.timeout::<tls_api_native_tls::TlsConnector>()
     }
-    pub fn timeout_extend<C:TlsConnector>(&mut self, out: &mut Vec<::CallId>) {
+    pub fn timeout_extend<C:TlsConnector>(&mut self, out: &mut Vec<::CallRef>) {
         self.h.timeout_extend::<tls_api_native_tls::TlsConnector>(out)
     }
-    pub fn event(&mut self, ev: &Event) -> Option<::CallId> {
+    pub fn event(&mut self, ev: &Event) -> Option<::CallRef> {
         self.h.event::<tls_api_native_tls::TlsConnector>(ev)
     }
-    pub fn call_send(&mut self, poll: &Poll, ev: &Event, id: ::CallId, buf: Option<&[u8]>) -> ::SendState {
-        self.h.call_send::<tls_api_native_tls::TlsConnector>(poll, ev, id, buf)
+    pub fn call_send(&mut self, poll: &Poll, id: &mut ::Call, buf: Option<&[u8]>) -> ::SendState {
+        self.h.call_send::<tls_api_native_tls::TlsConnector>(poll, id, buf)
     }
-    pub fn call_recv(&mut self, poll: &Poll, ev: &Event, id: ::CallId, buf: Option<&mut Vec<u8>>) -> ::RecvState {
-        self.h.call_recv::<tls_api_native_tls::TlsConnector>(poll, ev, id, buf)
+    pub fn call_recv(&mut self, poll: &Poll, id: &mut ::Call, buf: Option<&mut Vec<u8>>) -> ::RecvState {
+        self.h.call_recv::<tls_api_native_tls::TlsConnector>(poll, id, buf)
     }
 }

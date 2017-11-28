@@ -1,5 +1,5 @@
 use dns_cache::DnsCache;
-use mio::{Poll,Event};
+use mio::{Poll};
 use http::{Request};
 use std::time::Duration;
 use httpc::PrivHttpc;
@@ -110,7 +110,7 @@ pub struct CallParam<'a> {
     pub poll: &'a Poll,
     pub dns: &'a mut DnsCache,
     // pub con: &'a mut Con,
-    pub ev: &'a Event,
+    // pub ev: &'a Event,
 }
 
 /// Start configure call.
@@ -139,7 +139,7 @@ impl PrivCallBuilder {
             ws: false,
         }
     }
-    pub fn call<C:TlsConnector>(self, httpc: &mut PrivHttpc, poll: &Poll) -> ::Result<::CallId> {
+    pub fn call<C:TlsConnector>(self, httpc: &mut PrivHttpc, poll: &Poll) -> ::Result<::Call> {
         httpc.call::<C>(self, poll)
     }
     pub fn websocket(&mut self) -> &mut Self {
