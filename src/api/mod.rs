@@ -66,7 +66,7 @@ pub enum RecvState {
 }
 
 /// Call structure.
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)] // no clone,copy on purpose. We want a single instance.
+#[derive(Debug, PartialEq)] // much fewer derives then ref on purpose. We want a single instance.
 pub struct Call(pub(crate) u32);
 
 impl Call {
@@ -84,10 +84,6 @@ impl Call {
         let con_id = con_id as u32;
         let call_id = call_id as u32;
         Call((call_id << 16) | con_id)
-    }
-
-    pub(crate) fn con_id(&self) -> u16 {
-        (self.0 & 0xFFFF) as u16
     }
 
     pub(crate) fn empty() -> Call {
@@ -121,6 +117,10 @@ impl CallRef {
         let con_id = con_id as u32;
         let call_id = call_id as u32;
         CallRef((call_id << 16) | con_id)
+    }
+
+    pub(crate) fn con_id(&self) -> u16 {
+        (self.0 & 0xFFFF) as u16
     }
 }
 

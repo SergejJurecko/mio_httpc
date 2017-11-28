@@ -12,8 +12,8 @@ use std::time::{Instant};
 
 pub struct PrivHttpc {
     cache: DnsCache,
-    calls: HashMap<::Call,CallImpl>,
-    timed_out_calls: HashMap<::Call,CallImpl>,
+    calls: HashMap<CallRef,CallImpl>,
+    timed_out_calls: HashMap<CallRef,CallImpl>,
     con_offset: usize,
     free_bufs: VecDeque<Vec<u8>>,
     cons: ConTable,
@@ -61,7 +61,7 @@ impl PrivHttpc {
         let call = CallImpl::new(b, self.get_buf());
         if let Some(con_id) = self.cons.push_con(con) {
             let id = Call::new(con_id, 0);
-            self.calls.insert(Call(id.0), call);
+            self.calls.insert(id.get_ref(), call);
             Ok(id)
         } else {
             Err(::Error::NoSpace)
@@ -69,7 +69,7 @@ impl PrivHttpc {
     }
 
     pub fn call_close(&mut self, id: Call) {
-        if let Some(call) = self.calls.remove(&id) {
+        if let Some(call) = self.calls.remove(&id.get_ref()) {
             self.call_close_detached(id, call);
         }
     }
@@ -79,7 +79,7 @@ impl PrivHttpc {
         if buf.capacity() > 0 {
             self.reuse(buf);
         }
-        self.cons.close_con(id.con_id());
+        self.cons.close_con(id.get_ref().con_id());
     }
 
     fn get_buf(&mut self) -> Vec<u8> {
@@ -145,8 +145,8 @@ impl PrivHttpc {
         if call.is_empty() {
             return SendState::Done;
         }
-        let cret = if let Some(c) = self.calls.get_mut(&call) {
-            let con = if let Some(con) = self.cons.get_con(call.con_id() as usize) {
+        let cret = if let Some(c) = self.calls.get_mut(&call.get_ref()) {
+            let con = if let Some(con) = self.cons.get_con(call.get_ref().con_id() as usize) {
                 con
             } else {
                 return SendState::Error(::Error::InvalidToken);
@@ -181,8 +181,8 @@ impl PrivHttpc {
         if call.is_empty() {
             return RecvState::Done;
         }
-        let cret = if let Some(c) = self.calls.get_mut(&call) {
-            let con = if let Some(con) = self.cons.get_con(call.con_id() as usize) {
+        let cret = if let Some(c) = self.calls.get_mut(&call.get_ref()) {
+            let con = if let Some(con) = self.cons.get_con(call.get_ref().con_id() as usize) {
                 con
             } else {
                 return RecvState::Error(::Error::InvalidToken);
