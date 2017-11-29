@@ -90,16 +90,6 @@ impl PrivHttpc {
             b
         }
     }
-    pub fn event<C:TlsConnector>(&mut self, ev: &Event) -> Option<CallRef> {
-        let mut id = ev.token().0;
-        if id >= self.con_offset && id <= (u16::max_value() as usize) {
-            id -= self.con_offset;
-            if self.cons.get_con(id).is_some() {
-                return Some(CallRef::new(id as u16, 0));
-            }
-        }
-        None
-    }
 
     pub fn timeout<C:TlsConnector>(&mut self) -> Vec<CallRef> {
         let mut out = Vec::new();
@@ -139,6 +129,18 @@ impl PrivHttpc {
         //         self.call_close_detached(k,v);
         //     }
         // }
+    }
+
+    pub fn event<C:TlsConnector>(&mut self, ev: &Event) -> Option<CallRef> {
+        let mut id = ev.token().0;
+        if id >= self.con_offset && id <= (u16::max_value() as usize) {
+            id -= self.con_offset;
+            if let Some(con) = self.cons.get_con(id) {
+                con.unreg_for(ev.readiness());
+                return Some(CallRef::new(id as u16, 0));
+            }
+        }
+        None
     }
 
     pub fn call_send<C:TlsConnector>(&mut self, poll: &Poll, call: &mut Call, buf: Option<&[u8]>) -> SendState {
@@ -189,7 +191,6 @@ impl PrivHttpc {
             };
             let mut cp = ::types::CallParam {
                 poll,
-                // ev,
                 dns: &mut self.cache,
             };
             c.event_recv::<C>(con, &mut cp, buf)

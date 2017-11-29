@@ -110,6 +110,10 @@ impl Con {
         self.closed
     }
 
+    pub fn unreg_for(&mut self, rdy: Ready) {
+        self.reg_for.remove(rdy);
+    }
+
     pub fn reg(&mut self, poll: &Poll, rdy: Ready) -> ::std::io::Result<()> {
         if self.reg_for.is_empty() {
             self.reg_for = rdy;
@@ -120,7 +124,7 @@ impl Con {
         }
     }
 
-    pub(crate) fn signalled<'a,C:TlsConnector,T>(&mut self, cp: &mut CallParam, req: &Request<T>) -> Result<()> {
+    pub fn signalled<'a,C:TlsConnector,T>(&mut self, cp: &mut CallParam, req: &Request<T>) -> Result<()> {
         if self.dns.is_some() {
             let dns = self.dns.take().unwrap();
             let mut buf: [u8;512] = unsafe { ::std::mem::uninitialized() };
@@ -148,14 +152,13 @@ impl Con {
                 }
                 let connector = connector.build()?;
                 let host = req.uri().host().unwrap();
-                // Switch to level trigger for tls.
-                self.reg_for = Ready::readable();
-                self.reregister(cp.poll, self.token, self.reg_for, PollOpt::level())?;
+                self.reg(cp.poll, Ready::readable())?;
                 let tcp = self.sock.take().unwrap();
                 let r = connector.connect(host, tcp);
                 self.handshake_resp::<C>(r)?;
             }
             if self.mid_tls.is_some() {
+                self.reg(cp.poll, Ready::readable())?;
                 let tls = self.mid_tls.take().unwrap();
                 let r = tls.handshake();
                 self.handshake_resp::<C>(r)?;
