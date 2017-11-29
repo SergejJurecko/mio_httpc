@@ -76,7 +76,7 @@ impl WebSocket {
     }
 
     /// Perform operation. Returns true if request is finished.
-    pub fn perform(&mut self, htp: &mut Httpc, poll: &::mio::Poll, ev: &::mio::Event) -> ::Result<WSState> {
+    pub fn perform(&mut self, htp: &mut Httpc, poll: &::mio::Poll) -> ::Result<WSState> {
         if self.state == State::Active {
             return Ok(WSState::NoData);
         }

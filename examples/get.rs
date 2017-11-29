@@ -29,7 +29,7 @@ fn main() {
             let cref = htp.event(&ev);
 
             if call.is_call(&cref) {
-                if call.perform(&mut htp, &poll, &ev).expect("Call failed") {
+                if call.perform(&mut htp, &poll).expect("Call failed") {
                     let mut resp = call.close().expect("No response");
                     let v = mio_httpc::extract_body(&mut resp);
                     if let Ok(s) = String::from_utf8(v) {
