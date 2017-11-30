@@ -24,7 +24,7 @@ enum Dir {
 }
 
 pub struct CallImpl {
-    b: PrivCallBuilder,
+    b: CallBuilderImpl,
     start: Instant,
     buf: Vec<u8>,
     hdr_sz: usize,
@@ -34,7 +34,7 @@ pub struct CallImpl {
 }
 
 impl CallImpl {
-    pub fn new(b: PrivCallBuilder, mut buf: Vec<u8>) -> CallImpl {
+    pub fn new(b: CallBuilderImpl, mut buf: Vec<u8>) -> CallImpl {
         buf.truncate(0);
         CallImpl {
             dir: Dir::SendingHdr(0),
@@ -54,7 +54,27 @@ impl CallImpl {
         self.start
     }
 
-    pub fn settings(&self) -> &PrivCallBuilder {
+    pub fn peek_body(&mut self, off: &mut usize) -> &[u8] {
+        if self.body_sz > 0 {
+            if self.buf.len() > self.hdr_sz + *off {
+                // there is some additional data after last offset and hdr
+                return &self.buf[self.hdr_sz+(*off)..];
+            } else if self.buf.len() > self.hdr_sz {
+                // everything after hdr_sz has been processed
+                self.buf.truncate(self.hdr_sz);
+                *off = 0;
+            }
+        }
+        &[]
+    }
+
+    // pub fn truncate_body(&mut self) {
+    //     if self.body_sz > 0 && self.buf.len() > self.hdr_sz {
+    //         self.buf.truncate(self.hdr_sz);
+    //     }
+    // }
+
+    pub fn settings(&self) -> &CallBuilderImpl {
         &self.b
     }
 

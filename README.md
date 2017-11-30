@@ -7,11 +7,11 @@ It uses [http crate](https://crates.io/crates/http) for Request/Response types.
 
 mio_httpc requires you specify one of the TLS implementations using features: rustls, native, openssl. Not picking any feature will NOT work, as all calls will be no-op.
 
-# WARNING
-
-rustls is unreliable at the moment. I'm not sure if the issue is rustls or [tls-api-rustls](https://crates.io/crates/tls-api-rustls).
+### WARNING
 
 openssl and native backends work well.
+
+rustls is unreliable at the moment. I'm not sure if the issue is rustls or [tls-api-rustls](https://crates.io/crates/tls-api-rustls).
 
 # EXAMPLE
 

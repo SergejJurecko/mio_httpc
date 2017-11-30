@@ -16,7 +16,7 @@ fn url_port(url: &Uri) -> Result<u16> {
     if let Some(p) = url.port() {
         return Ok(p);
     }
-    if let Some(scheme) = url.scheme() {
+    if let Some(scheme) = url.scheme_part() {
         if scheme == "https" {
             return Ok(443);
         } else if scheme == "http" {

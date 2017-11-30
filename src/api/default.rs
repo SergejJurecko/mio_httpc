@@ -1,5 +1,5 @@
 use http::{Request};
-use ::types::PrivCallBuilder;
+use ::types::CallBuilderImpl;
 use mio::{Poll,Event};
 use tls_api::{TlsConnector};
 use ::{Result,WebSocket,Call, CallRef, SendState, RecvState};
@@ -83,8 +83,11 @@ impl Httpc {
         Httpc {
         }
     }
-    pub(crate) fn call<C:TlsConnector>(&mut self, b: PrivCallBuilder, poll: &Poll) -> Result<Call> {
+    pub(crate) fn call<C:TlsConnector>(&mut self, b: CallBuilderImpl, poll: &Poll) -> Result<Call> {
         Err(::Error::NoTls)
+    }
+    pub(crate) fn peek_body(&mut self, id: &::Call, off: &mut usize) -> &[u8] {
+        &[]
     }
 
     /// Reuse a response buffer for subsequent calls.

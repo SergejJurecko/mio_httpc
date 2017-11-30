@@ -1,15 +1,25 @@
 use ::{CallRef,Call,Httpc,SendState, RecvState, ResponseBody};
+use mio::Poll;
 
-#[derive(Debug,Copy,Clone,Eq,PartialEq)]
-pub enum WSState {
-    /// WebSocket has not finished initiating.
-    Init,
-    /// Nothing to return.
-    NoData,
-    /// How many bytes were sent
-    Sent(usize),
-    /// WS us closed
-    Closed,
+/// WebSocket packet received from server.
+pub enum WSPacket<'a> {
+    /// Nothing to return yet.
+    None,
+    /// (fin,text)
+    Text(bool,&'a str),
+    /// (fin, bin)
+    Binary(bool,&'a [u8]),
+    /// Ping may contain data.
+    /// You should send pong back.
+    Ping(&'a [u8]),
+    // Pong may contain data.
+    Pong(&'a [u8]),
+}
+
+pub enum WSPacketFull<'a> {
+    Pub(WSPacket<'a>),
+    Close,
+    // Truncate,
 }
 
 #[derive(Debug,Copy,Clone,Eq,PartialEq)]
@@ -17,19 +27,39 @@ enum State {
     InitSending,
     InitReceiving,
     Active,
+    Finish,
     Done,
 }
 
+impl State {
+    fn is_init(&self) -> bool {
+        match *self {
+           State::InitSending =>  true,
+           State::InitReceiving =>  true,
+           _ => false,
+        }
+    }
+}
+
+/// WebSocket interface.
 pub struct WebSocket {
     id: Call,
     state: State,
+    send_lover: usize,
+    recv_lover: usize,
+    cur_op: u8,
+    closing: bool,
 }
 
 impl WebSocket {
     pub(crate) fn new(id: Call) -> WebSocket {
         WebSocket {
+            closing: false,
+            cur_op: 0,
             id,
             state: State::InitSending,
+            send_lover: 0,
+            recv_lover: 0,
         }
     }
 
@@ -58,8 +88,17 @@ impl WebSocket {
         self.state == State::Done
     }
 
-    fn switch(&mut self, resp: ::Response<Vec<u8>>) -> ::Result<WSState> {
+    /// Ping server.
+    pub fn ping(&self, body: Option<&[u8]>) {
+    }
+
+    /// A reply to ping or not. Both are valid.
+    pub fn pong(&self, body: Option<&[u8]>) {
+    }
+
+    fn switch(&mut self, htp: &mut Httpc, resp: ::Response<Vec<u8>>) -> ::Result<()> {
         if resp.status() != ::StatusCode::SWITCHING_PROTOCOLS {
+            self.stop(htp);
             return Err(::Error::WebSocketFail(resp));
         }
         let mut is_wsupg = false;
@@ -69,19 +108,141 @@ impl WebSocket {
             }
         }
         if !is_wsupg {
+            self.stop(htp);
             return Err(::Error::WebSocketFail(resp));
         }
         self.state = State::Active;
-        Ok(WSState::NoData)
+        Ok(())
     }
 
-    /// Perform operation. Returns true if request is finished.
-    pub fn perform(&mut self, htp: &mut Httpc, poll: &::mio::Poll) -> ::Result<WSState> {
+    fn stop(&mut self, htp: &mut Httpc) {
+        self.state = State::Done;
+        let call = ::std::mem::replace(&mut self.id, Call::empty());
+        htp.call_close(call);
+    }
+
+    /// Send websocket packet. It will create a packet for entire size of pkt slice.
+    /// It is assumed slice always starts at unsent data. If pkt was not sent completely
+    /// it will remember how many bytes it has leftover for current packet.
+    pub fn send_packet(&mut self, htp: &mut Httpc, poll: &Poll, pkt: &[u8]) -> ::Result<usize> {
+        if self.state.is_init() {
+            self.perform(htp, poll)?;
+            return Ok(0);
+        } else if self.state == State::Done {
+            return Err(::Error::Closed);
+        } else if self.state == State::Finish {
+            self.stop(htp);
+            return Err(::Error::Closed);
+        }
+        Ok(0)
+    }
+
+    /// You should call this in a loop until you get WSPacket::None.
+    pub fn recv_packet<'a>(&mut self, htp: &'a mut Httpc, poll: &Poll) -> ::Result<WSPacket<'a>> {
+        if self.state.is_init() {
+            self.perform(htp, poll)?;
+            return Ok(WSPacket::None);
+        } else if self.state == State::Done {
+            return Err(::Error::Closed);
+        } else {
+            self.perform(htp,poll)?;
+        }
+        loop {
+            match self.read_packet(htp) {
+                Ok(WSPacketFull::Pub(p)) => {
+                    return Ok(p);
+                }
+                Ok(WSPacketFull::Close) => {
+                    if !self.closing {
+                        // send close
+                        self.closing = true;
+                    }
+                    self.state = State::Finish;
+                }
+                // Ok(WSPacketFull::Truncate) => {
+                //     htp.truncate_body(&self.id);
+                // }
+                Err(e) => {
+                    return Err(e);
+                }
+            }
+            return Ok(WSPacket::None);
+        }
+    }
+
+    fn read_packet<'a>(&mut self, htp: &'a mut Httpc) -> ::Result<WSPacketFull<'a>> {
+        let slice = htp.peek_body(&self.id, &mut self.recv_lover);
+        if let Some((fin, op, mut pos,len)) = self.parse_packet(&slice[self.recv_lover..]) {
+            pos += self.recv_lover;
+            self.recv_lover += pos + len;
+            match op {
+                _ if self.cur_op == 1 || op == 1 => {
+                    if op != 0 && !fin {
+                        self.cur_op = 1;
+                    }
+                    let s = ::std::str::from_utf8(&slice[pos..pos+len])?;
+                    return Ok(WSPacketFull::Pub(WSPacket::Text(fin,s)));
+                }
+                _ if self.cur_op == 2 || op == 2 => {
+                    if op != 0 && !fin {
+                        self.cur_op = 2;
+                    }
+                    return Ok(WSPacketFull::Pub(WSPacket::Binary::<'a>(fin,&slice[pos..pos+len])));
+                }
+                8 => {
+                    return Ok(WSPacketFull::Close);
+                }
+                9 => {
+                    return Ok(WSPacketFull::Pub(WSPacket::Ping::<'a>(&slice[pos..pos+len])));
+                }
+                10 => {
+                    return Ok(WSPacketFull::Pub(WSPacket::Pong::<'a>(&slice[pos..pos+len])));
+                }
+                _ => {
+                    return Ok(WSPacketFull::Pub(WSPacket::None));
+                }
+            }
+        }
+        Ok(WSPacketFull::Pub(WSPacket::None))
+    }
+
+    fn parse_packet(&self, pkt: &[u8]) -> Option<(bool, u8,usize,usize)> {
+        // let mut rdr = Reader::new(Input::from(pkt));
+        let mut pos = 0;
+        let b:u8 = *pkt.get(pos)?;
+        pos += 1;
+        let fin = ((b & 0b1000_0000) >> 7) == 1;
+        let op = b & 0b0000_1111;
+        let b:u8 = *pkt.get(pos)?;
+        pos += 1;
+        let mut len:u64 = (b & 0b0111_1111) as u64;
+        let nb = if len == 126 { len=0; 2 } else if len == 127 { len = 0; 8 } else { 0 };
+        for i in 0..nb {
+            len <<= 8;
+            len |= (*pkt.get(pos)?) as u64;
+            pos += 1;
+        }
+        if len > u32::max_value() as u64 {
+            return None;
+        }
+        let len = len as usize;
+        if (len as usize) + pos <= pkt.len() {
+            return Some((fin, op,pos,len));
+        }
+        None
+    }
+
+    /// Perform socket operation.
+    pub fn perform(&mut self, htp: &mut Httpc, poll: &Poll) -> ::Result<()> {
         if self.state == State::Active {
-            return Ok(WSState::NoData);
+            return Ok(());
         }
         if self.state == State::Done {
-            return Ok(WSState::Closed);
+            return Err(::Error::Closed);
+        }
+        if self.state == State::Finish {
+            self.stop(htp);
+            return Err(::Error::Closed);
         }
         if self.state == State::InitSending {
             match htp.call_send(poll, &mut self.id, None) {
@@ -91,15 +252,15 @@ impl WebSocket {
                 }
                 SendState::SentBody(_) => {}
                 SendState::Error(e) => {
-                    self.state = State::Done;
+                    self.stop(htp);
                     return Err(From::from(e));
                 }
                 SendState::WaitReqBody => {
-                    self.state = State::Done;
+                    self.stop(htp);
                     return Err(::Error::MissingBody);
                 }
                 SendState::Done => {
-                    self.state = State::Done;
+                    self.stop(htp);
                     return Err(::Error::Closed);
                 }
             }
@@ -108,25 +269,24 @@ impl WebSocket {
             loop {
                 match htp.call_recv(poll, &mut self.id, None) {
                     RecvState::DoneWithBody(b) => {
-                        self.state = State::Done;
+                        self.stop(htp);
                         return Err(::Error::Closed);
                     }
                     RecvState::Done => {
-                        self.state = State::Done;
+                        self.stop(htp);
                         return Err(::Error::Closed);
                     }
                     RecvState::Error(e) => {
-                        self.state = State::Done;
+                        self.stop(htp);
                         return Err(From::from(e));
                     }
                     RecvState::Response(r,body) => {
                         match body {
                             ResponseBody::Sized(0) => {
-                                self.state = State::Done;
-                                return self.switch(r);
+                                return self.switch(htp, r);
                             }
                             _ => {
-                                self.state = State::Done;
+                                self.stop(htp);
                                 return Err(::Error::Closed);
                             }
                         }
@@ -137,7 +297,7 @@ impl WebSocket {
                 }
             }
         }
-        Ok(WSState::Init)
+        Ok(())
     }
 }
 

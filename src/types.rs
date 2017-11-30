@@ -2,7 +2,7 @@ use dns_cache::DnsCache;
 use mio::{Poll};
 use http::{Request};
 use std::time::Duration;
-use httpc::PrivHttpc;
+use httpc::HttpcImpl;
 use tls_api::{TlsConnector};
 
 pub struct ChunkIndex {
@@ -114,7 +114,7 @@ pub struct CallParam<'a> {
 }
 
 /// Start configure call.
-pub struct PrivCallBuilder {
+pub struct CallBuilderImpl {
     pub req: Request<Vec<u8>>,
     pub chunked_parse: bool,
     pub dur: Duration,
@@ -126,9 +126,9 @@ pub struct PrivCallBuilder {
 }
 
 #[allow(dead_code)]
-impl PrivCallBuilder {
-    pub fn new(req: Request<Vec<u8>>) -> PrivCallBuilder {
-        PrivCallBuilder {
+impl CallBuilderImpl {
+    pub fn new(req: Request<Vec<u8>>) -> CallBuilderImpl {
+        CallBuilderImpl {
             max_response: 1024*1024*10,
             dur: Duration::from_millis(30000),
             max_chunk: 32*1024,
@@ -139,7 +139,7 @@ impl PrivCallBuilder {
             ws: false,
         }
     }
-    pub fn call<C:TlsConnector>(self, httpc: &mut PrivHttpc, poll: &Poll) -> ::Result<::Call> {
+    pub fn call<C:TlsConnector>(self, httpc: &mut HttpcImpl, poll: &Poll) -> ::Result<::Call> {
         httpc.call::<C>(self, poll)
     }
     pub fn websocket(&mut self) -> &mut Self {

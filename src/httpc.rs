@@ -10,7 +10,7 @@ use fnv::FnvHashMap as HashMap;
 use ::{SendState,RecvState,CallRef,Call};
 use std::time::{Instant};
 
-pub struct PrivHttpc {
+pub struct HttpcImpl {
     cache: DnsCache,
     calls: HashMap<CallRef,CallImpl>,
     timed_out_calls: HashMap<CallRef,CallImpl>,
@@ -22,9 +22,9 @@ pub struct PrivHttpc {
 
 const BUF_SZ:usize = 4096*2;
 
-impl PrivHttpc {
-    pub fn new(con_offset: usize) -> PrivHttpc {
-        PrivHttpc {
+impl HttpcImpl {
+    pub fn new(con_offset: usize) -> HttpcImpl {
+        HttpcImpl {
             timed_out_calls: HashMap::default(),
             last_timeout: Instant::now(),
             cache: DnsCache::new(),
@@ -49,7 +49,7 @@ impl PrivHttpc {
         self.free_bufs.push_front(buf);
     }
 
-    pub fn call<C:TlsConnector>(&mut self, mut b: PrivCallBuilder, poll: &Poll) -> Result<Call> {
+    pub fn call<C:TlsConnector>(&mut self, mut b: CallBuilderImpl, poll: &Poll) -> Result<Call> {
         // cons.push_con will set actual mio token
         let root_ca = ::std::mem::replace(&mut b.root_ca, Vec::new());
         let con = Con::new::<C,Vec<u8>>(Token::from(self.con_offset), 
@@ -141,6 +141,16 @@ impl PrivHttpc {
             }
         }
         None
+    }
+
+    pub fn peek_body(&mut self, call: &Call, off: &mut usize) -> &[u8] {
+        if call.is_empty() {
+            return &[];
+        }
+        if let Some(c) = self.calls.get_mut(&call.get_ref()) {
+            return c.peek_body(off);
+        }
+        &[]
     }
 
     pub fn call_send<C:TlsConnector>(&mut self, poll: &Poll, call: &mut Call, buf: Option<&[u8]>) -> SendState {

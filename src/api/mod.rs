@@ -95,6 +95,8 @@ impl Call {
     }
 
     // Once call finished it gets invalidated.
+    // This is a fail-safe so we can destroy Call structure
+    // from Httpc on error or request finished.
     pub(crate) fn invalidate(&mut self) {
         *self = Call::empty();
     }
@@ -109,6 +111,8 @@ impl Call {
 // }
 
 /// Reference to call. Used for matching mio Token with call.
+/// If you have lots of calls, you can use this as a key in a HashMap 
+/// (you probably want fnv HashMap).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct CallRef(pub(crate) u32);
 impl CallRef {

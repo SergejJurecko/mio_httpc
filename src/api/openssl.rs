@@ -1,18 +1,18 @@
 extern crate tls_api_openssl;
 use http::{Request};
-use ::types::PrivCallBuilder;
+use ::types::CallBuilderImpl;
 use mio::{Poll,Event};
 use tls_api::{TlsConnector};
 use ::{Result,Call,CallRef};
 
 pub struct CallBuilder {
-    cb: PrivCallBuilder,
+    cb: CallBuilderImpl,
 }
 
 impl CallBuilder {
     pub fn new(req: Request<Vec<u8>>) -> CallBuilder {
         CallBuilder {
-            cb: PrivCallBuilder::new(req),
+            cb: CallBuilderImpl::new(req),
         }
     }
     pub fn call(self, httpc: &mut Httpc, poll: &Poll) -> ::Result<Call> {
@@ -50,17 +50,20 @@ impl CallBuilder {
 }
 
 pub struct Httpc {
-    h: ::httpc::PrivHttpc,
+    h: ::httpc::HttpcImpl,
 }
 
 impl Httpc {
     pub fn new(con_offset: usize) -> Httpc {
         Httpc {
-            h: ::httpc::PrivHttpc::new(con_offset),
+            h: ::httpc::HttpcImpl::new(con_offset),
         }
     }
-    pub(crate) fn call<C:TlsConnector>(&mut self, b: PrivCallBuilder, poll: &Poll) -> Result<Call> {
+    pub(crate) fn call<C:TlsConnector>(&mut self, b: CallBuilderImpl, poll: &Poll) -> Result<Call> {
         self.h.call::<C>(b, poll)
+    }
+    pub(crate) fn peek_body(&mut self, id: &::Call, off: &mut usize) -> &[u8] {
+        self.h.peek_body(id, off)
     }
     pub fn reuse(&mut self, buf: Vec<u8>) {
         self.h.reuse(buf);
