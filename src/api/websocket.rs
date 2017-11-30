@@ -12,14 +12,20 @@ pub enum WSPacket<'a> {
     /// Ping may contain data.
     /// You should send pong back.
     Ping(&'a [u8]),
-    // Pong may contain data.
+    /// Pong may contain data.
     Pong(&'a [u8]),
+    /// Close may contain data.
+    /// You should call close.
+    Close(&'a [u8]),
 }
 
-pub enum WSPacketFull<'a> {
-    Pub(WSPacket<'a>),
-    Close,
-    // Truncate,
+impl<'a> WSPacket<'a> {
+    fn is_close(&self) -> bool {
+        match *self {
+            WSPacket::Close(_) => true,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Debug,Copy,Clone,Eq,PartialEq)]
@@ -42,6 +48,15 @@ impl State {
 }
 
 /// WebSocket interface.
+///
+/// WebSocket does not send pings automatically or close replies.
+/// 
+/// If received ping, you should send pong back.
+/// You can also just send pong which will not invoke a response.
+/// 
+/// If WSPacket::Close(_) returned you should call close and then finish.
+/// If you want to initiate close, you should call close and wait for WSPacket::Close(_),
+/// then call finish. At leas that is the standard way of destroying connection.
 pub struct WebSocket {
     id: Call,
     state: State,
@@ -83,17 +98,24 @@ impl WebSocket {
         false
     }
 
-    /// Is request finished.
-    pub fn is_done(&self) -> bool {
-        self.state == State::Done
-    }
-
     /// Ping server.
     pub fn ping(&self, body: Option<&[u8]>) {
     }
 
     /// A reply to ping or not. Both are valid.
     pub fn pong(&self, body: Option<&[u8]>) {
+    }
+
+    /// A reply to close or initiate close.
+    /// close must be send by both parties. 
+    pub fn close(&self, htp: &mut Httpc, body: Option<&[u8]>) {
+        // htp.call_close(self.id);
+    }
+
+    /// Actually close connection.
+    /// If any other call returns error, you should always call finish afterwards.
+    pub fn finish(mut self, htp: &mut Httpc) {
+        self.stop(htp);
     }
 
     fn switch(&mut self, htp: &mut Httpc, resp: ::Response<Vec<u8>>) -> ::Result<()> {
@@ -124,7 +146,7 @@ impl WebSocket {
     /// Send websocket packet. It will create a packet for entire size of pkt slice.
     /// It is assumed slice always starts at unsent data. If pkt was not sent completely
     /// it will remember how many bytes it has leftover for current packet.
-    pub fn send_packet(&mut self, htp: &mut Httpc, poll: &Poll, pkt: &[u8]) -> ::Result<usize> {
+    pub fn send_bin(&mut self, htp: &mut Httpc, poll: &Poll, pkt: &[u8]) -> ::Result<usize> {
         if self.state.is_init() {
             self.perform(htp, poll)?;
             return Ok(0);
@@ -134,6 +156,10 @@ impl WebSocket {
             self.stop(htp);
             return Err(::Error::Closed);
         }
+        Ok(0)
+    }
+
+    pub fn send_text(&mut self, htp: &mut Httpc, poll: &Poll, pkt: &[u8]) -> ::Result<usize> {
         Ok(0)
     }
 
@@ -147,30 +173,10 @@ impl WebSocket {
         } else {
             self.perform(htp,poll)?;
         }
-        loop {
-            match self.read_packet(htp) {
-                Ok(WSPacketFull::Pub(p)) => {
-                    return Ok(p);
-                }
-                Ok(WSPacketFull::Close) => {
-                    if !self.closing {
-                        // send close
-                        self.closing = true;
-                    }
-                    self.state = State::Finish;
-                }
-                // Ok(WSPacketFull::Truncate) => {
-                //     htp.truncate_body(&self.id);
-                // }
-                Err(e) => {
-                    return Err(e);
-                }
-            }
-            return Ok(WSPacket::None);
-        }
+        self.read_packet(htp)
     }
 
-    fn read_packet<'a>(&mut self, htp: &'a mut Httpc) -> ::Result<WSPacketFull<'a>> {
+    fn read_packet<'a>(&mut self, htp: &'a mut Httpc) -> ::Result<WSPacket<'a>> {
         let slice = htp.peek_body(&self.id, &mut self.recv_lover);
         if let Some((fin, op, mut pos,len)) = self.parse_packet(&slice[self.recv_lover..]) {
             pos += self.recv_lover;
@@ -181,29 +187,34 @@ impl WebSocket {
                         self.cur_op = 1;
                     }
                     let s = ::std::str::from_utf8(&slice[pos..pos+len])?;
-                    return Ok(WSPacketFull::Pub(WSPacket::Text(fin,s)));
+                    return Ok(WSPacket::Text(fin,s));
                 }
                 _ if self.cur_op == 2 || op == 2 => {
                     if op != 0 && !fin {
                         self.cur_op = 2;
                     }
-                    return Ok(WSPacketFull::Pub(WSPacket::Binary::<'a>(fin,&slice[pos..pos+len])));
+                    return Ok(WSPacket::Binary::<'a>(fin,&slice[pos..pos+len]));
                 }
                 8 => {
-                    return Ok(WSPacketFull::Close);
+                    if !self.closing {
+                        // send close
+                        self.closing = true;
+                    }
+                    return Ok(WSPacket::Close::<'a>(&slice[pos..pos+len]));
                 }
                 9 => {
-                    return Ok(WSPacketFull::Pub(WSPacket::Ping::<'a>(&slice[pos..pos+len])));
+                    return Ok(WSPacket::Ping::<'a>(&slice[pos..pos+len]));
                 }
                 10 => {
-                    return Ok(WSPacketFull::Pub(WSPacket::Pong::<'a>(&slice[pos..pos+len])));
+                    return Ok(WSPacket::Pong::<'a>(&slice[pos..pos+len]));
                 }
                 _ => {
-                    return Ok(WSPacketFull::Pub(WSPacket::None));
+                    self.state = State::Finish;
+                    return Err(::Error::WebSocketParse);
                 }
             }
         }
-        Ok(WSPacketFull::Pub(WSPacket::None))
+        Ok(WSPacket::None)
     }
 
     fn parse_packet(&self, pkt: &[u8]) -> Option<(bool, u8,usize,usize)> {

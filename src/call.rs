@@ -68,12 +68,6 @@ impl CallImpl {
         &[]
     }
 
-    // pub fn truncate_body(&mut self) {
-    //     if self.body_sz > 0 && self.buf.len() > self.hdr_sz {
-    //         self.buf.truncate(self.hdr_sz);
-    //     }
-    // }
-
     pub fn settings(&self) -> &CallBuilderImpl {
         &self.b
     }

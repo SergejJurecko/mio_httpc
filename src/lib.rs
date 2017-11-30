@@ -134,6 +134,10 @@ quick_error! {
         ChunkedParse {
             display("Error parsing chunked transfer")
         }
+        /// Eror while parsing chunked stream
+        WebSocketParse {
+            display("Error parsing WebSocket transfer")
+        }
         /// Chunk was larger than configured CallBuilder::cunked_max_chunk.
         ChunkOverlimit(v:usize) {
             display("Chunk was larger than configured CallBuilder::cunked_max_chunk. {}",v)
