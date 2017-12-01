@@ -21,6 +21,10 @@ fn url_port(url: &Uri) -> Result<u16> {
             return Ok(443);
         } else if scheme == "http" {
             return Ok(80);
+        } else if scheme == "ws" {
+            return Ok(80);
+        } else if scheme == "wss" {
+            return Ok(443);
         } else {
             return Err(::Error::InvalidScheme);
         }
