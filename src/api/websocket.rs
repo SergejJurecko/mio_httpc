@@ -1,5 +1,6 @@
 use ::{CallRef,Call,Httpc,SendState, RecvState, ResponseBody};
 use mio::Poll;
+use byteorder::{BigEndian,ByteOrder};
 
 /// WebSocket packet received from server.
 pub enum WSPacket<'a> {
@@ -14,15 +15,16 @@ pub enum WSPacket<'a> {
     Ping(&'a [u8]),
     /// Pong may contain data.
     Pong(&'a [u8]),
+    /// (StatusCode,Data)
     /// Close may contain data.
-    /// You should call close.
-    Close(&'a [u8]),
+    /// You should call close after receiving this (if you did not already).
+    Close(Option<u16>,&'a [u8]),
 }
 
 impl<'a> WSPacket<'a> {
     fn is_close(&self) -> bool {
         match *self {
-            WSPacket::Close(_) => true,
+            WSPacket::Close(_,_) => true,
             _ => false,
         }
     }
@@ -49,14 +51,16 @@ impl State {
 
 /// WebSocket interface.
 ///
-/// WebSocket does not send pings automatically or close replies.
+/// WebSocket does not send pings/pongs automatically or close replies.
 /// 
 /// If received ping, you should send pong back.
 /// You can also just send pong which will not invoke a response.
+/// You should send ping periodically as you never know if your connection
+/// is actually alive without it.
 /// 
 /// If WSPacket::Close(_) returned you should call close and then finish.
 /// If you want to initiate close, you should call close and wait for WSPacket::Close(_),
-/// then call finish. At leas that is the standard way of destroying connection.
+/// then call finish. That is the standard way of closing ws connections.
 pub struct WebSocket {
     id: Call,
     state: State,
@@ -64,17 +68,29 @@ pub struct WebSocket {
     recv_lover: usize,
     cur_op: u8,
     closing: bool,
+    send_buf: Vec<u8>,
+    send_buf_pos: usize,
+    send_middle: bool,
+    curframe: [u8;16],
+    curframe_len: u8,
+    curframe_pos: u8,
 }
 
 impl WebSocket {
-    pub(crate) fn new(id: Call) -> WebSocket {
+    pub(crate) fn new(id: Call, send_buf: Vec<u8>) -> WebSocket {
         WebSocket {
+            send_buf,
+            send_buf_pos: 0,
+            send_middle: false,
             closing: false,
             cur_op: 0,
             id,
             state: State::InitSending,
             send_lover: 0,
             recv_lover: 0,
+            curframe: [0u8;16],
+            curframe_len: 0,
+            curframe_pos: 0,
         }
     }
 
@@ -99,17 +115,66 @@ impl WebSocket {
     }
 
     /// Ping server.
-    pub fn ping(&self, body: Option<&[u8]>) {
+    pub fn ping(&mut self, htp: &mut Httpc, poll: &Poll, body: Option<&[u8]>) -> ::Result<()> {
+        self.send_buf_append(htp, poll, 9, None, true, body)
     }
 
     /// A reply to ping or not. Both are valid.
-    pub fn pong(&self, body: Option<&[u8]>) {
+    pub fn pong(&mut self, htp: &mut Httpc, poll: &Poll, body: Option<&[u8]>) -> ::Result<()> {
+        self.send_buf_append(htp, poll, 10, None, true, body)
     }
 
     /// A reply to close or initiate close.
-    /// close must be send by both parties. 
-    pub fn close(&self, htp: &mut Httpc, body: Option<&[u8]>) {
-        // htp.call_close(self.id);
+    /// close must be sent by both parties. 
+    pub fn close(&mut self, htp: &mut Httpc, poll: &Poll, status: Option<u16>, body: Option<&[u8]>) -> ::Result<()> {
+        self.send_buf_append(htp, poll, 8, status, true, body)
+    }
+
+    fn send_buf_append(&mut self, htp: &mut Httpc, poll: &Poll, op: u8, status: Option<u16>, fin:bool, body: Option<&[u8]>) -> ::Result<()> {
+        let body_sz = if let Some(body) = body {
+            body.len()
+        } else { 0 };
+        let mut send_buf = ::std::mem::replace(&mut self.send_buf, Vec::new());
+        let start_pos = send_buf.len();
+        send_buf.resize(start_pos + body_sz + 16, 0);
+        let pkt = if let Some(body) = body {
+            body
+        } else {
+            &[]
+        };
+        let mut mask = [0u8;4];
+        let fsz = self.fill_frame(fin, op, pkt, &mut send_buf[start_pos..], &mut mask[..]);
+        let mut mask_pos = 0;
+        let status_sz = if let Some(status) = status {
+            BigEndian::write_u16(&mut send_buf[start_pos+fsz..], status);
+            Self::mask_inplace(&mask, &mut send_buf[start_pos+fsz..start_pos+fsz+2]);
+            mask_pos = 2;
+            2
+        } else { 0 };
+        if let Some(body) = body {
+            Self::mask_to(&mask, mask_pos, body, &mut send_buf[start_pos+fsz+status_sz..]);
+        }
+        if fsz + status_sz < 16 {
+            let len = send_buf.len();
+            send_buf.truncate(len - (16 - fsz - status_sz));
+        }
+        self.send_buf = send_buf;
+
+        self.do_send_buf(htp, poll)
+    }
+
+    fn do_send_buf(&mut self, htp: &mut Httpc, poll: &Poll) -> ::Result<()> {
+        let mut send_buf = ::std::mem::replace(&mut self.send_buf, Vec::new());
+        let send_buf_pos = self.send_buf_pos;
+        let sent = self.call_send(htp, poll, &send_buf[send_buf_pos..])?;
+        if sent + send_buf_pos == send_buf.len() {
+            send_buf.truncate(0);
+            self.send_buf_pos = 0;
+        } else {
+            self.send_buf_pos += sent;
+        }
+        self.send_buf = send_buf;
+        Ok(())
     }
 
     /// Actually close connection.
@@ -118,49 +183,190 @@ impl WebSocket {
         self.stop(htp);
     }
 
-    fn switch(&mut self, htp: &mut Httpc, resp: ::Response<Vec<u8>>) -> ::Result<()> {
-        if resp.status() != ::StatusCode::SWITCHING_PROTOCOLS {
-            self.stop(htp);
-            return Err(::Error::WebSocketFail(resp));
-        }
-        let mut is_wsupg = false;
-        if let Some(upg) = resp.headers().get(::UPGRADE) {
-            if upg != "websocket" {
-                is_wsupg = true;
-            }
-        }
-        if !is_wsupg {
-            self.stop(htp);
-            return Err(::Error::WebSocketFail(resp));
-        }
-        self.state = State::Active;
-        Ok(())
-    }
-
     fn stop(&mut self, htp: &mut Httpc) {
         self.state = State::Done;
         let call = ::std::mem::replace(&mut self.id, Call::empty());
+        let buf = ::std::mem::replace(&mut self.send_buf, Vec::new());
+        if buf.capacity() > 0 {
+            htp.reuse(buf);
+        }
         htp.call_close(call);
     }
 
-    /// Send websocket packet. It will create a packet for entire size of pkt slice.
+    /// Send text packet. Data gets copied out into an internal buffer, as it must be
+    /// masked before sending. 
+    /// On return all, none or some bytes have been delivered to socket.
+    /// Any remaining bytes will be sent on subsequent send_XXX, recv_packet or perform calls.
+    pub fn send_text(&mut self, htp: &mut Httpc, poll: &Poll, fin: bool, pkt: &str) -> ::Result<()> {
+        self.send_buf_append(htp, poll, 1, None, fin, Some(pkt.as_bytes()))
+    }
+
+    /// Send binary packet. Data gets copied out into an internal buffer, as it must be
+    /// masked before sending.
+    /// On return all, none or some bytes have been delivered to socket.
+    /// Any remaining bytes will be sent on subsequent send_XXX, recv_packet or perform calls.
+    pub fn send_bin(&mut self, htp: &mut Httpc, poll: &Poll, fin: bool, pkt: &[u8]) -> ::Result<()> {
+        self.send_buf_append(htp, poll, 2, None, fin, Some(pkt))
+    }
+
+    /// Send websocket packet. It will create a frame for entire size of pkt slice.
     /// It is assumed slice always starts at unsent data. If pkt was not sent completely
-    /// it will remember how many bytes it has leftover for current packet.
-    pub fn send_bin(&mut self, htp: &mut Httpc, poll: &Poll, pkt: &[u8]) -> ::Result<usize> {
+    /// it will remember how many bytes it has leftover for current packet. You must always use 
+    /// previous result to move pkt slice forward.
+    /// 
+    /// If starting from the middle, fin is ignored and will be used to start the next packet.
+    /// 
+    /// inplace send will mask pkt directly and send it. This is the most efficient method but leaves
+    /// pkt scrambled.
+    pub fn send_bin_inplace(&mut self, htp: &mut Httpc, poll: &Poll, fin: bool, pkt: &mut [u8]) -> ::Result<usize> {
         if self.state.is_init() {
             self.perform(htp, poll)?;
             return Ok(0);
-        } else if self.state == State::Done {
+        }
+        if self.state == State::Done {
             return Err(::Error::Closed);
-        } else if self.state == State::Finish {
+        }
+        if self.state == State::Finish {
             self.stop(htp);
             return Err(::Error::Closed);
         }
-        Ok(0)
+        if self.send_buf.len() > 0 {
+            self.do_send_buf(htp, poll)?;
+            if self.send_buf.len() > 0 {
+                return Ok(0);
+            }
+        }
+
+        let mut consumed = 0;
+        let mut pkt_offset = 0;
+        loop {
+            if self.send_lover == 0 && self.curframe_pos == 0 {
+                let mut frame = [0u8;16];
+                let mut mask = [0u8;4];
+                self.curframe_len = self.fill_frame(fin, 2, pkt, &mut frame, &mut mask) as u8;
+                let len = self.curframe_len as usize;
+                let sent = self.call_send(htp, poll, &frame[0..len])?;
+                if sent == len {
+                    Self::mask_inplace(&mask, &mut pkt[pkt_offset..]);
+                    let sent = self.call_send(htp, poll, &pkt[pkt_offset..])?;
+                    consumed += sent;
+                    if sent != pkt.len()-pkt_offset {
+                        self.send_lover = pkt.len() - sent - pkt_offset;
+                    }
+                } else if sent > 0 {
+                    // some bytes have been sent, we are commited to this mask.
+                    Self::mask_inplace(&mask[..], &mut pkt[pkt_offset..]);
+                    self.curframe.copy_from_slice(&frame[..]);
+                    self.curframe_pos = sent as u8;
+                    self.send_lover = pkt.len() - pkt_offset;
+                }
+                break;
+            } else if self.curframe_pos == 0 {
+                let slover = self.send_lover;
+                let sent = self.call_send(htp, poll, &pkt[0..slover])?;
+                consumed += sent;
+                if sent == self.send_lover {
+                    pkt_offset = self.send_lover;
+                    self.send_lover = 0;
+                } else {
+                    self.send_lover -= sent;
+                    break;
+                }
+            } else {
+                let mut frame = [0u8;16];
+                frame.copy_from_slice(&self.curframe[..]);
+                let pos = self.curframe_pos as usize;
+                let len = self.curframe_len as usize;
+                let sent = self.call_send(htp, poll, &frame[pos..len])?;
+                if sent == len {
+                    self.curframe_pos = 0;
+                    self.curframe_len = 0;
+                } else {
+                    self.curframe_pos += sent as u8;
+                    break;
+                }
+            }
+        }
+        Ok(consumed)
     }
 
-    pub fn send_text(&mut self, htp: &mut Httpc, poll: &Poll, pkt: &[u8]) -> ::Result<usize> {
-        Ok(0)
+    fn call_send(&mut self, htp: &mut Httpc, poll: &Poll, pkt: &[u8]) -> ::Result<usize> {
+        match htp.call_send(poll, &mut self.id, Some(pkt)) {
+            SendState::Wait => Ok(0),
+            SendState::Receiving => {
+                self.stop(htp);
+                Err(::Error::Closed)
+            }
+            SendState::SentBody(sz) => {
+                Ok(sz)
+            }
+            SendState::Error(e) => {
+                self.stop(htp);
+                Err(From::from(e))
+            }
+            SendState::WaitReqBody => {
+                self.stop(htp);
+                Err(::Error::MissingBody)
+            }
+            SendState::Done => {
+                self.stop(htp);
+                Err(::Error::Closed)
+            }
+        }
+    }
+
+    fn mask_inplace(mask: &[u8], pkt: &mut [u8]) {
+        let mut mpos = 0;
+        let len = pkt.len();
+        for i in 0..len {
+            pkt[i] = pkt[i] ^ mask[mpos];
+            mpos = (mpos + 1) & 3;
+        }
+    }
+
+    fn mask_to(mask: &[u8], mut mpos: usize, src: &[u8], dst: &mut [u8]) {
+        mpos &= 3;
+        let mut i = 0;
+        for &byte in src.iter() {
+            dst[i] = byte ^ mask[mpos];
+            i += 1;
+            mpos = (mpos + 1) & 3;
+        }
+    }
+
+    fn fill_frame(&mut self, fin: bool, mut op: u8, pkt: &[u8], frame: &mut [u8], mask_bytes: &mut [u8]) -> usize {
+        let mut pos = 0;
+        if op <= 2 {
+            if self.send_middle {
+                op = 0;
+            }
+            self.send_middle = !fin;
+        }
+        if fin {
+            frame[pos] = op | 0b1000_0000;
+        } else {
+            frame[pos] = op;
+        }
+        pos += 1;
+        if pkt.len() <= 125 {
+            frame[pos] = (pkt.len() as u8) | 0b1000_000;
+            pos += 1;
+        } else if pkt.len() <= u16::max_value() as usize {
+            frame[pos] = 126 | 0b1000_000;
+            pos += 1;
+            BigEndian::write_u16(&mut frame[pos..pos+2], pkt.len() as u16);
+            pos += 2;
+        } else {
+            frame[pos] = 127 | 0b1000_000;
+            pos += 1;
+            BigEndian::write_u64(&mut frame[pos..pos+8], pkt.len() as u64);
+            pos += 8;
+        }
+        let mask = ::rand::random::<u32>();
+        BigEndian::write_u32(&mut frame[pos..pos+4], mask);
+        BigEndian::write_u32(mask_bytes, mask);
+        // self.curframe_len = (pos+4) as u8;
+        pos+4
     }
 
     /// You should call this in a loop until you get WSPacket::None.
@@ -178,7 +384,7 @@ impl WebSocket {
 
     fn read_packet<'a>(&mut self, htp: &'a mut Httpc) -> ::Result<WSPacket<'a>> {
         let slice = htp.peek_body(&self.id, &mut self.recv_lover);
-        if let Some((fin, op, mut pos,len)) = self.parse_packet(&slice[self.recv_lover..]) {
+        if let Some((fin, op, mut pos, mut len)) = self.parse_packet(&slice[self.recv_lover..]) {
             pos += self.recv_lover;
             self.recv_lover += pos + len;
             match op {
@@ -186,8 +392,12 @@ impl WebSocket {
                     if op != 0 && !fin {
                         self.cur_op = 1;
                     }
-                    let s = ::std::str::from_utf8(&slice[pos..pos+len])?;
-                    return Ok(WSPacket::Text(fin,s));
+                    if let Ok(s) = ::std::str::from_utf8(&slice[pos..pos+len]) {
+                        return Ok(WSPacket::Text(fin,s));
+                    } else {
+                        self.state = State::Finish;
+                        return Err(::Error::WebSocketParse);
+                    }
                 }
                 _ if self.cur_op == 2 || op == 2 => {
                     if op != 0 && !fin {
@@ -197,10 +407,16 @@ impl WebSocket {
                 }
                 8 => {
                     if !self.closing {
-                        // send close
                         self.closing = true;
                     }
-                    return Ok(WSPacket::Close::<'a>(&slice[pos..pos+len]));
+                    if len >= 2 {
+                        let v = BigEndian::read_u16(&slice[pos..pos+2]);
+                        pos += 2;
+                        len -= 2;
+                        return Ok(WSPacket::Close::<'a>(Some(v),&slice[pos..pos+len]));
+                    } else {
+                        return Ok(WSPacket::Close::<'a>(None,&[]));
+                    }
                 }
                 9 => {
                     return Ok(WSPacket::Ping::<'a>(&slice[pos..pos+len]));
@@ -243,10 +459,31 @@ impl WebSocket {
         None
     }
 
+    fn switch(&mut self, htp: &mut Httpc, resp: ::Response<Vec<u8>>) -> ::Result<()> {
+        if resp.status() != ::StatusCode::SWITCHING_PROTOCOLS {
+            self.stop(htp);
+            return Err(::Error::WebSocketFail(resp));
+        }
+        let mut is_wsupg = false;
+        if let Some(upg) = resp.headers().get(::UPGRADE) {
+            if upg != "websocket" {
+                is_wsupg = true;
+            }
+        }
+        if !is_wsupg {
+            self.stop(htp);
+            return Err(::Error::WebSocketFail(resp));
+        }
+        self.state = State::Active;
+        Ok(())
+    }
+
     /// Perform socket operation.
     pub fn perform(&mut self, htp: &mut Httpc, poll: &Poll) -> ::Result<()> {
         if self.state == State::Active {
-            return Ok(());
+            if self.send_buf.len() > 0 {
+                self.do_send_buf(htp, poll)?;
+            }
         }
         if self.state == State::Done {
             return Err(::Error::Closed);

@@ -82,7 +82,7 @@ impl HttpcImpl {
         self.cons.close_con(id.get_ref().con_id());
     }
 
-    fn get_buf(&mut self) -> Vec<u8> {
+    pub fn get_buf(&mut self) -> Vec<u8> {
         if let Some(buf)  = self.free_bufs.pop_front() {
             buf
         } else {

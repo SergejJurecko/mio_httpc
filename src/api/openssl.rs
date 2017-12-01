@@ -21,7 +21,7 @@ impl CallBuilder {
     pub fn websocket(mut self, httpc: &mut Httpc, poll: &Poll) -> ::Result<::WebSocket> {
         self.cb.websocket();
         let cid = self.call(httpc, poll)?;
-        Ok(::WebSocket::new(cid))
+        Ok(::WebSocket::new(cid, httpc.h.get_buf()))
     }
     pub fn add_root_ca_der(mut self, v: Vec<u8>) -> Self {
         self.cb.add_root_ca(v);

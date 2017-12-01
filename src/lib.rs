@@ -5,8 +5,10 @@
 //! No call will block, not even for DNS resolution as it is implemented internally to avoid blocking.
 //!
 //! mio_httpc requires you specify one of the TLS implementations using features: rustls, native, openssl.
-//!
 //! Default is noop for everything.
+//! 
+//! mio_httpc does a minimal amount of allocation and in general works with buffers you provide and an internal pool
+//! of buffers that get reused on new calls.
 extern crate rand;
 extern crate httparse;
 extern crate tls_api;

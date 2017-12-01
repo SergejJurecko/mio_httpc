@@ -203,8 +203,11 @@ impl CallImpl {
                 return Ok(SendState::Receiving)
             }
             Dir::Receiving(_,true) => {
-                let b = b.unwrap();
-                self.event_send_do::<C>(con, cp, 0, &b[..])
+                if let Some(b) = b {
+                    self.event_send_do::<C>(con, cp, 0, b)
+                } else {
+                    Ok(SendState::WaitReqBody)
+                }
             }
             Dir::SendingHdr(pos) => {
                 let mut buf = ::std::mem::replace(&mut self.buf, Vec::new());
@@ -366,6 +369,8 @@ impl CallImpl {
                         }
                         self.dir = Dir::SendingBody(pos+sz);
                         return Ok(SendState::SentBody(pos+sz));
+                    } else {
+                        return Ok(SendState::SentBody(sz));
                     }
                 }
                 _ => {

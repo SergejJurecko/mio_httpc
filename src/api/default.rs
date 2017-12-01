@@ -38,6 +38,8 @@ impl CallBuilder {
     /// HTTP response headers are always stored in internal buffer.
     /// HTTP response body is stored in internal buffer if no external
     /// buffer is provided.
+    /// 
+    /// For WebSockets this will also be a received fragment size limit!
     pub fn max_response(self, m: usize) -> Self {
         self
     }
