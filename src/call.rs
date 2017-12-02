@@ -68,6 +68,18 @@ impl CallImpl {
         &[]
     }
 
+    pub fn try_truncate(&mut self, off: &mut usize) {
+        if self.body_sz > 0 {
+            if self.buf.len() > self.hdr_sz + *off {
+                return;
+            } else if self.buf.len() > self.hdr_sz {
+                // everything after hdr_sz has been processed
+                self.buf.truncate(self.hdr_sz);
+                *off = 0;
+            }
+        }
+    }
+
     pub fn settings(&self) -> &CallBuilderImpl {
         &self.b
     }
@@ -142,8 +154,8 @@ impl CallImpl {
         if self.b.ws {
             buf.extend(CONNECTION.as_str().as_bytes());
             buf.extend(b": upgrade\r\n");
-            buf.extend(b"sec-websocket-key: ");
             buf.extend(b"upgrade: websocket\r\n");
+            buf.extend(b"sec-websocket-key: ");
             let mut ar = [0u8;16];
             let mut out = [0u8;32];
             LittleEndian::write_u64(&mut ar, ::rand::random::<u64>());
@@ -166,22 +178,25 @@ impl CallImpl {
             }
         }
         if let Some(auth) = self.b.req.uri().authority_part() {
-            if let Some(auth) = auth.as_str().split("@").next() {
-                let mut auth = auth.split(":");
-                if let Some(us) = auth.next() {
-                    if let Some(pw) = auth.next() {
-                        buf.extend(AUTHORIZATION.as_str().as_bytes());
-                        buf.extend(b": Basic ");
-                        let enc_len = BASE64.encode_len(us.len()+1+pw.len());
-                        if BASE64.encode_len(us.len()+1+pw.len()) < 512 {
-                            let mut ar = [0u8;512];
-                            let mut out = [0u8;512];
-                            (&mut ar[..us.len()]).copy_from_slice(us.as_bytes());
-                            (&mut ar[us.len()..us.len()+1]).copy_from_slice(b":");
-                            (&mut ar[us.len()+1..us.len()+1+pw.len()]).copy_from_slice(pw.as_bytes());
-                            BASE64.encode_mut(&ar[..us.len()+1+pw.len()], &mut out[..enc_len]);
-                            buf.extend(&out[..enc_len]);
-                            buf.extend(b"\r\n");
+            let mut auth = auth.as_str().split("@");
+            if let Some(first) = auth.next() {
+                if auth.next().is_some() {
+                    let mut auth = first.split(":");
+                    if let Some(us) = auth.next() {
+                        if let Some(pw) = auth.next() {
+                            buf.extend(AUTHORIZATION.as_str().as_bytes());
+                            buf.extend(b": Basic ");
+                            let enc_len = BASE64.encode_len(us.len()+1+pw.len());
+                            if BASE64.encode_len(us.len()+1+pw.len()) < 512 {
+                                let mut ar = [0u8;512];
+                                let mut out = [0u8;512];
+                                (&mut ar[..us.len()]).copy_from_slice(us.as_bytes());
+                                (&mut ar[us.len()..us.len()+1]).copy_from_slice(b":");
+                                (&mut ar[us.len()+1..us.len()+1+pw.len()]).copy_from_slice(pw.as_bytes());
+                                BASE64.encode_mut(&ar[..us.len()+1+pw.len()], &mut out[..enc_len]);
+                                buf.extend(&out[..enc_len]);
+                                buf.extend(b"\r\n");
+                            }
                         }
                     }
                 }
@@ -217,7 +232,7 @@ impl CallImpl {
                 let hdr_sz = self.hdr_sz;
 
                 let ret = self.event_send_do::<C>(con, cp, 0, &buf[pos..hdr_sz]);
-                // println!("Sent: {}",String::from_utf8(buf.clone())?);
+                // println!("TrySent: {}",String::from_utf8(buf.clone())?);
                 self.buf = buf;
                 if let Dir::SendingBody(_) = self.dir {
                     self.buf.truncate(0);
@@ -479,9 +494,10 @@ impl CallImpl {
                             }
 
                             // If switching protocols body is unlimited
-                            if resp.status() == ::StatusCode::SWITCHING_PROTOCOLS {
+                            if resp.status().as_u16() == 101 {
                                 self.body_sz = usize::max_value();
                                 self.dir = Dir::Receiving(buflen - self.hdr_sz,true);
+                                return Ok(RecvState::Response(resp, ::ResponseBody::Streamed));
                             } else if self.body_sz == 0 {
                                 self.dir == Dir::Done;
                             } else {

@@ -1,6 +1,11 @@
 use ::{CallRef,Call,Httpc,SendState, RecvState, ResponseBody};
 use mio::Poll;
 use byteorder::{BigEndian,ByteOrder};
+use std::ascii::AsciiExt;
+// TODO:
+// cap body for control packets
+// mixing inplace and normal packets is not safe atm.
+
 
 /// WebSocket packet received from server.
 pub enum WSPacket<'a> {
@@ -94,6 +99,20 @@ impl WebSocket {
         }
     }
 
+    pub fn is_active(&self) -> bool {
+        self.state == State::Active
+    }
+
+    /// How many bytes are in send buffer waiting to be sent.
+    /// Does not take into account any send_bin_inplace packets.
+    pub fn sendq_len(&self) -> usize {
+        self.send_buf.len() - self.send_buf_pos
+    }
+
+    pub fn is_ref(&self, r: CallRef) -> bool {
+        self.id.is_ref(r)
+    }
+
     /// For quick comparison with httpc::event response.
     /// If cid is none will return false.
     pub fn is_call(&self, cid: &Option<CallRef>) -> bool {
@@ -114,23 +133,25 @@ impl WebSocket {
         false
     }
 
-    /// Ping server.
-    pub fn ping(&mut self, htp: &mut Httpc, poll: &Poll, body: Option<&[u8]>) -> ::Result<()> {
-        self.send_buf_append(htp, poll, 9, None, true, body)
+    /// Ping server. Body if present is capped at 125 bytes.
+    pub fn ping(&mut self, body: Option<&[u8]>) {
+        self.send_buf_append(9, None, true, body)
     }
 
-    /// A reply to ping or not. Both are valid.
-    pub fn pong(&mut self, htp: &mut Httpc, poll: &Poll, body: Option<&[u8]>) -> ::Result<()> {
-        self.send_buf_append(htp, poll, 10, None, true, body)
+    /// A reply to ping or not. Both are valid. Body if present is capped at 125 bytes.
+    pub fn pong(&mut self, body: Option<&[u8]>) {
+        self.send_buf_append(10, None, true, body)
     }
 
     /// A reply to close or initiate close.
     /// close must be sent by both parties. 
-    pub fn close(&mut self, htp: &mut Httpc, poll: &Poll, status: Option<u16>, body: Option<&[u8]>) -> ::Result<()> {
-        self.send_buf_append(htp, poll, 8, status, true, body)
+    /// Body if present is capped at 125 bytes.
+    pub fn close(&mut self, status: Option<u16>, body: Option<&[u8]>) {
+        self.send_buf_append(8, status, true, body)
     }
 
-    fn send_buf_append(&mut self, htp: &mut Httpc, poll: &Poll, op: u8, status: Option<u16>, fin:bool, body: Option<&[u8]>) -> ::Result<()> {
+    // only append do not send. 
+    fn send_buf_append(&mut self, op: u8, status: Option<u16>, fin:bool, body: Option<&[u8]>) {
         let body_sz = if let Some(body) = body {
             body.len()
         } else { 0 };
@@ -159,8 +180,7 @@ impl WebSocket {
             send_buf.truncate(len - (16 - fsz - status_sz));
         }
         self.send_buf = send_buf;
-
-        self.do_send_buf(htp, poll)
+        // self.do_send_buf(htp, poll)
     }
 
     fn do_send_buf(&mut self, htp: &mut Httpc, poll: &Poll) -> ::Result<()> {
@@ -195,18 +215,18 @@ impl WebSocket {
 
     /// Send text packet. Data gets copied out into an internal buffer, as it must be
     /// masked before sending. 
-    /// On return all, none or some bytes have been delivered to socket.
-    /// Any remaining bytes will be sent on subsequent send_XXX, recv_packet or perform calls.
-    pub fn send_text(&mut self, htp: &mut Httpc, poll: &Poll, fin: bool, pkt: &str) -> ::Result<()> {
-        self.send_buf_append(htp, poll, 1, None, fin, Some(pkt.as_bytes()))
+    /// No bytes will have been sent after calling this. Actual sending is done by recv_packet or perform.
+    pub fn send_text(&mut self, fin: bool, pkt: &str) {
+        self.send_buf_append(1, None, fin, Some(pkt.as_bytes()));
+        // self.do_send_buf(htp,poll)
     }
 
     /// Send binary packet. Data gets copied out into an internal buffer, as it must be
     /// masked before sending.
-    /// On return all, none or some bytes have been delivered to socket.
-    /// Any remaining bytes will be sent on subsequent send_XXX, recv_packet or perform calls.
-    pub fn send_bin(&mut self, htp: &mut Httpc, poll: &Poll, fin: bool, pkt: &[u8]) -> ::Result<()> {
-        self.send_buf_append(htp, poll, 2, None, fin, Some(pkt))
+    /// No bytes will have been sent after calling this. Actual sending is done by recv_packet or perform.
+    pub fn send_bin(&mut self, fin: bool, pkt: &[u8]) {
+        self.send_buf_append(2, None, fin, Some(pkt));
+        // self.do_send_buf(htp,poll)
     }
 
     /// Send websocket packet. It will create a frame for entire size of pkt slice.
@@ -349,15 +369,15 @@ impl WebSocket {
         }
         pos += 1;
         if pkt.len() <= 125 {
-            frame[pos] = (pkt.len() as u8) | 0b1000_000;
+            frame[pos] = (pkt.len() as u8) | 0b1000_0000;
             pos += 1;
         } else if pkt.len() <= u16::max_value() as usize {
-            frame[pos] = 126 | 0b1000_000;
+            frame[pos] = 126 | 0b1000_0000;
             pos += 1;
             BigEndian::write_u16(&mut frame[pos..pos+2], pkt.len() as u16);
             pos += 2;
         } else {
-            frame[pos] = 127 | 0b1000_000;
+            frame[pos] = 127 | 0b1000_0000;
             pos += 1;
             BigEndian::write_u64(&mut frame[pos..pos+8], pkt.len() as u64);
             pos += 8;
@@ -384,6 +404,10 @@ impl WebSocket {
 
     fn read_packet<'a>(&mut self, htp: &'a mut Httpc) -> ::Result<WSPacket<'a>> {
         let slice = htp.peek_body(&self.id, &mut self.recv_lover);
+        // for b in &slice[self.recv_lover..] {
+        //     print!("{} ", b);
+        // }
+        // println!("offset {}",self.recv_lover);
         if let Some((fin, op, mut pos, mut len)) = self.parse_packet(&slice[self.recv_lover..]) {
             pos += self.recv_lover;
             self.recv_lover += pos + len;
@@ -459,15 +483,17 @@ impl WebSocket {
         None
     }
 
-    fn switch(&mut self, htp: &mut Httpc, resp: ::Response<Vec<u8>>) -> ::Result<()> {
-        if resp.status() != ::StatusCode::SWITCHING_PROTOCOLS {
+    fn switch(&mut self, htp: &mut Httpc, poll: &Poll, resp: ::Response<Vec<u8>>) -> ::Result<()> {
+        if resp.status().as_u16() != 101 {
             self.stop(htp);
             return Err(::Error::WebSocketFail(resp));
         }
         let mut is_wsupg = false;
         if let Some(upg) = resp.headers().get(::UPGRADE) {
-            if upg != "websocket" {
-                is_wsupg = true;
+            if let Ok(upg) = upg.to_str() {
+                if "websocket".eq_ignore_ascii_case(upg) {
+                    is_wsupg = true;
+                }
             }
         }
         if !is_wsupg {
@@ -475,6 +501,9 @@ impl WebSocket {
             return Err(::Error::WebSocketFail(resp));
         }
         self.state = State::Active;
+        if self.send_buf.len() > 0 {
+            return self.do_send_buf(htp, poll);
+        }
         Ok(())
     }
 
@@ -484,6 +513,7 @@ impl WebSocket {
             if self.send_buf.len() > 0 {
                 self.do_send_buf(htp, poll)?;
             }
+            htp.try_truncate(&self.id, &mut self.recv_lover);
         }
         if self.state == State::Done {
             return Err(::Error::Closed);
@@ -513,7 +543,7 @@ impl WebSocket {
                 }
             }
         }
-        if self.state == State::InitReceiving {
+        if self.state == State::InitReceiving || self.state == State::Active {
             loop {
                 match htp.call_recv(poll, &mut self.id, None) {
                     RecvState::DoneWithBody(b) => {
@@ -530,8 +560,8 @@ impl WebSocket {
                     }
                     RecvState::Response(r,body) => {
                         match body {
-                            ResponseBody::Sized(0) => {
-                                return self.switch(htp, r);
+                            ResponseBody::Streamed => {
+                                return self.switch(htp, poll, r);
                             }
                             _ => {
                                 self.stop(htp);
@@ -539,9 +569,15 @@ impl WebSocket {
                             }
                         }
                     }
-                    RecvState::Wait => {}
-                    RecvState::Sending => {}
-                    RecvState::ReceivedBody(_) => {}
+                    RecvState::Wait => {
+                        break;
+                    }
+                    RecvState::Sending => {
+                        self.stop(htp);
+                        return Err(::Error::Closed);
+                    }
+                    RecvState::ReceivedBody(_) => {
+                    }
                 }
             }
         }

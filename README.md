@@ -77,5 +77,5 @@ fn main() {
 - [ ] Con pool
 - [x] DNS retries
 - [x] Timeouts
-- [ ] Websockets
+- [x] Websockets
 - [ ] HTTP2

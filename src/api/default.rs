@@ -91,6 +91,8 @@ impl Httpc {
     pub(crate) fn peek_body(&mut self, id: &::Call, off: &mut usize) -> &[u8] {
         &[]
     }
+    pub(crate) fn try_truncate(&mut self, id: &::Call, off: &mut usize) {
+    }
 
     /// Reuse a response buffer for subsequent calls.
     pub fn reuse(&mut self, buf: Vec<u8>) {

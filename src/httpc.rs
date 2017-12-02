@@ -152,6 +152,14 @@ impl HttpcImpl {
         }
         &[]
     }
+    pub fn try_truncate(&mut self, call: &::Call, off: &mut usize) {
+        if call.is_empty() {
+            return;
+        }
+        if let Some(c) = self.calls.get_mut(&call.get_ref()) {
+            return c.try_truncate(off);
+        }
+    }
 
     pub fn call_send<C:TlsConnector>(&mut self, poll: &Poll, call: &mut Call, buf: Option<&[u8]>) -> SendState {
         if call.is_empty() {

@@ -65,6 +65,9 @@ impl Httpc {
     pub(crate) fn peek_body(&mut self, id: &::Call, off: &mut usize) -> &[u8] {
         self.h.peek_body(id, off)
     }
+    pub(crate) fn try_truncate(&mut self, id: &::Call, off: &mut usize) {
+        self.h.try_truncate(id, off);
+    }
     pub fn reuse(&mut self, buf: Vec<u8>) {
         self.h.reuse(buf);
     }
