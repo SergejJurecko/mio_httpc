@@ -1,7 +1,7 @@
 extern crate mio_httpc;
 extern crate mio;
 
-use mio_httpc::{Request,CallBuilder,Httpc,WebSocket,WSPacket};
+use mio_httpc::{Request,CallBuilder,Httpc,WSPacket};
 use mio::{Poll,Events};
 // ws://demos.kaazing.com/echo
 
@@ -68,6 +68,6 @@ fn main() {
         // perform and recv_packet actually send over socket.
         ws.perform(&mut htp, &poll).expect("Call failed");
     }
-    ws.perform(&mut htp, &poll);
+    ws.perform(&mut htp, &poll).expect("failed final perform");
     ws.finish(&mut htp);
 }

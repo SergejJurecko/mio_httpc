@@ -2,10 +2,6 @@ use ::{CallRef,Call,Httpc,SendState, RecvState, ResponseBody};
 use mio::Poll;
 use byteorder::{BigEndian,ByteOrder};
 use std::ascii::AsciiExt;
-// TODO:
-// cap body for control packets
-// mixing inplace and normal packets is not safe atm.
-
 
 /// WebSocket packet received from server.
 pub enum WSPacket<'a> {
@@ -133,21 +129,30 @@ impl WebSocket {
         false
     }
 
+    fn limit_body(limit: usize, body: Option<&[u8]>) -> Option<&[u8]> {
+        if let Some(body) = body {
+            if body.len() > limit {
+                return Some(&body[..limit]);
+            }
+        }
+        body
+    }
+
     /// Ping server. Body if present is capped at 125 bytes.
     pub fn ping(&mut self, body: Option<&[u8]>) {
-        self.send_buf_append(9, None, true, body)
+        self.send_buf_append(9, None, true, Self::limit_body(125, body))
     }
 
     /// A reply to ping or not. Both are valid. Body if present is capped at 125 bytes.
     pub fn pong(&mut self, body: Option<&[u8]>) {
-        self.send_buf_append(10, None, true, body)
+        self.send_buf_append(10, None, true, Self::limit_body(125, body))
     }
 
     /// A reply to close or initiate close.
     /// close must be sent by both parties. 
     /// Body if present is capped at 125 bytes.
     pub fn close(&mut self, status: Option<u16>, body: Option<&[u8]>) {
-        self.send_buf_append(8, status, true, body)
+        self.send_buf_append(8, status, true, Self::limit_body(123, body))
     }
 
     // only append do not send. 
@@ -250,7 +255,7 @@ impl WebSocket {
             self.stop(htp);
             return Err(::Error::Closed);
         }
-        if self.send_buf.len() > 0 {
+        if self.send_buf.len() > 0 && self.send_lover == 0 && self.curframe_pos == 0 {
             self.do_send_buf(htp, poll)?;
             if self.send_buf.len() > 0 {
                 return Ok(0);
