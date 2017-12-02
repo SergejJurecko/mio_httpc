@@ -409,10 +409,6 @@ impl WebSocket {
 
     fn read_packet<'a>(&mut self, htp: &'a mut Httpc) -> ::Result<WSPacket<'a>> {
         let slice = htp.peek_body(&self.id, &mut self.recv_lover);
-        // for b in &slice[self.recv_lover..] {
-        //     print!("{} ", b);
-        // }
-        // println!("offset {}",self.recv_lover);
         if let Some((fin, op, mut pos, mut len)) = self.parse_packet(&slice[self.recv_lover..]) {
             pos += self.recv_lover;
             self.recv_lover += pos + len;

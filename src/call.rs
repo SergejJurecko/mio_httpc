@@ -13,6 +13,7 @@ use ::{SendState,RecvState};
 use ::types::*;
 use data_encoding::BASE64;
 use byteorder::{LittleEndian,ByteOrder};
+use std::ascii::AsciiExt;
 
 #[derive(PartialEq)]
 enum Dir {
@@ -474,14 +475,14 @@ impl CallImpl {
                             }
                             if let Some(ref clh) = resp.headers().get(http::header::CONNECTION) {
                                 if let Ok(clhs) = clh.to_str() {
-                                    if clhs == "close" {
+                                    if "close".eq_ignore_ascii_case(clhs) {
                                         con.to_close = true;
                                     }
                                 }
                             }
                             if let Some(ref clh) = resp.headers().get(http::header::TRANSFER_ENCODING) {
                                 if let Ok(clhs) = clh.to_str() {
-                                    if clhs == "chunked" {
+                                    if "chunked".eq_ignore_ascii_case(clhs) {
                                         self.body_sz = usize::max_value();
                                     } else {
                                         self.b.chunked_parse = false;

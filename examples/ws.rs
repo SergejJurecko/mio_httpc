@@ -68,6 +68,6 @@ fn main() {
         // perform and recv_packet actually send over socket.
         ws.perform(&mut htp, &poll).expect("Call failed");
     }
-    ws.perform(&mut htp, &poll).expect("failed final perform");
+    ws.perform(&mut htp, &poll).expect("can not perform");
     ws.finish(&mut htp);
 }
