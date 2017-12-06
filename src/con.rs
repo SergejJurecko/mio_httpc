@@ -121,7 +121,13 @@ impl Con {
     pub fn reg(&mut self, poll: &Poll, rdy: Ready) -> ::std::io::Result<()> {
         if self.reg_for.is_empty() {
             self.reg_for = rdy;
-            self.register(poll, self.token, self.reg_for, PollOpt::edge())
+            let res = self.register(poll, self.token, self.reg_for, PollOpt::edge());
+            if let &Err(ref e) = &res {
+                if e.kind() == ::std::io::ErrorKind::AlreadyExists {
+                    return self.reg(poll, rdy);
+                }
+            }
+            return res;
         } else {
             self.reg_for = rdy;
             self.reregister(poll, self.token, self.reg_for, PollOpt::edge())
