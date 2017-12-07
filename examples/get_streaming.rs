@@ -79,7 +79,6 @@ fn main() {
                             panic!("Still sending");
                         }
                         RecvState::Wait => {
-                            println!("Wait socket");
                             break;
                         }
                     }

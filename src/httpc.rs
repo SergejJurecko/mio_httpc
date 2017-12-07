@@ -136,7 +136,6 @@ impl HttpcImpl {
         if id >= self.con_offset && id <= (u16::max_value() as usize) {
             id -= self.con_offset;
             if let Some(con) = self.cons.get_con(id) {
-                con.unreg_for(ev.readiness());
                 return Some(CallRef::new(id as u16, 0));
             }
         }
