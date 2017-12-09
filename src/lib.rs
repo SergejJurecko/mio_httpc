@@ -19,8 +19,7 @@ extern crate fnv;
 extern crate http;
 extern crate itoa;
 extern crate data_encoding;
-#[macro_use(quick_error)]
-extern crate quick_error;
+
 #[cfg(test)]
 #[macro_use]
 extern crate matches;
@@ -28,6 +27,7 @@ extern crate matches;
 extern crate core_foundation;
 #[cfg(target_os = "macos")]
 extern crate core_foundation_sys;
+#[macro_use] extern crate failure;
 
 // Because of default implementation does nothing we suppress warnings of nothing going on.
 // One of TLS implementation features must be picked.
@@ -59,99 +59,91 @@ pub use http::status::*;
 pub use http::uri::*;
 pub use http::version::*;
 // pub use http::Extensions;
+// use failure::Error;
 
 pub type Result<T> = ::std::result::Result<T,Error>;
+#[derive(Debug, Fail)]
+pub enum Error {
+    #[fail(display = "IO error: {}", _0)]
+    Io (#[cause] ::std::io::Error ),
 
-quick_error! {
-    #[derive(Debug)]
-    pub enum Error {
-        Io(err: std::io::Error) {
-            description(err.description())
-            from()
-        }
-        Utf8(err: std::str::Utf8Error) {
-            description(err.description())
-            from()
-        }
-        FromUtf8(err: std::string::FromUtf8Error) {
-            description(err.description())
-            from()
-        }
-        Addr(err: std::net::AddrParseError) {
-            description(err.description())
-            from()
-        }
-        Tls(err: tls_api::Error) {
-            description(err.description())
-            from()
-        }
-        Httparse(err: httparse::Error) {
-            description(err.description())
-            from()
-        }
-        Http(err: http::Error) {
-            description(err.description())
-            from()
-        }
-        WebSocketFail(req: http::Response<Vec<u8>>) {
-            display("WebSocket setup failed {:?}",req)
-        }
-        /// Request structure did not contain body and CallSimple was used for POST/PUT.
-        MissingBody {
-            display("Request structure did not contain body and CallSimple was used for POST/PUT.")
-        }
-        /// No call for mio::Token
-        InvalidToken {
-            display("No call for token")
-        }
-        /// Response over max_response limit
-        ResponseTooBig {
-            display("Response over max_response limit")
-        }
-        /// Connection closed.
-        Closed {
-            display("Connection closed")
-        }
-        /// No host found in request
-        NoHost {
-            display("No host found in request")
-        }
-        /// Invalid scheme
-        InvalidScheme {
-            display("Invalid scheme")
-        }
-        /// TLS handshake failed.
-        TlsHandshake {
-            display("Handshake failed")
-        }
-        /// All 0xFFFF slots for connections are full.
-        NoSpace {
-            display("Concurrent connection limit")
-        }
-        /// You must pick one of the features: native, rustls, openssl
-        NoTls {
-            display("You must pick one of the features: native, rustls, openssl")
-        }
-        /// Eror while parsing chunked stream
-        ChunkedParse {
-            display("Error parsing chunked transfer")
-        }
-        /// Eror while parsing chunked stream
-        WebSocketParse {
-            display("Error parsing WebSocket transfer")
-        }
-        /// Chunk was larger than configured CallBuilder::cunked_max_chunk.
-        ChunkOverlimit(v:usize) {
-            display("Chunk was larger than configured CallBuilder::cunked_max_chunk. {}",v)
-        }
+    #[fail(display = "Utf8 error: {}", _0)]
+    Utf8 (#[cause] std::str::Utf8Error ),
+
+    #[fail(display = "FromUtf8 error: {}", _0)]
+    FromUtf8 (#[cause] std::string::FromUtf8Error ),
+
+    #[fail(display = "AddrParseError: {}", _0)]
+    Addr (#[cause] std::net::AddrParseError ),
+
+    #[fail(display = "TlsError: {}", _0)]
+    Tls (#[cause] tls_api::Error),
+
+    #[fail(display = "Httparse error: {}", _0)]
+    Httparse (#[cause] httparse::Error ),
+
+    #[fail(display = "Http error: {}", _0)]
+    Http (#[cause] http::Error ),
+
+    #[fail(display = "WebSocket setup failed")]
+    WebSocketFail(http::Response<Vec<u8>>),
+
+    /// Request structure did not contain body and CallSimple was used for POST/PUT.
+    #[fail(display = "Request structure did not contain body and CallSimple was used for POST/PUT.")]
+    MissingBody,
+    /// No call for mio::Token
+    #[fail(display = "No call for token")]
+    InvalidToken,
+    /// Response over max_response limit
+    #[fail(display = "Response over max_response limit")]
+    ResponseTooBig,
+    /// Connection closed.
+    #[fail(display = "Connection closed")]
+    Closed,
+    /// No host found in request
+    #[fail(display = "No host found in request")]
+    NoHost,
+    /// Invalid scheme
+    #[fail(display = "Invalid scheme")]
+    InvalidScheme,
+    /// TLS handshake failed.
+    #[fail(display = "Handshake failed")]
+    TlsHandshake,
+    /// All 0xFFFF slots for connections are full.
+    #[fail(display = "Concurrent connection limit")]
+    NoSpace,
+    /// You must pick one of the features: native, rustls, openssl
+    #[fail(display = "You must pick one of the features: native, rustls, openssl")]
+    NoTls,
+    /// Eror while parsing chunked stream
+    #[fail(display = "Error parsing chunked transfer")]
+    ChunkedParse,
+    /// Eror while parsing chunked stream
+    #[fail(display = "Error parsing WebSocket transfer")]
+    WebSocketParse,
+    /// Chunk was larger than configured CallBuilder::cunked_max_chunk.
+    #[fail(display = "Chunk was larger than configured CallBuilder::cunked_max_chunk. {}", _0)]
+    ChunkOverlimit(usize),
+}
+
+impl From<std::io::Error> for Error {
+    fn from(e: std::io::Error) -> Self {
+        Error::Io(e)
+    }
+}
+impl From<tls_api::Error> for Error {
+    fn from(e: tls_api::Error) -> Self {
+        Error::Tls(e)
+    }
+}
+impl From<httparse::Error> for Error {
+    fn from(e: httparse::Error) -> Self {
+        Error::Httparse(e)
+    }
+}
+impl From<http::Error> for Error {
+    fn from(e: http::Error) -> Self {
+        Error::Http(e)
     }
 }
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        // assert_eq!(2 + 2, 4);
-        let mut v:Vec<u8> = vec![1,2,3,4,5];
-    }
-}

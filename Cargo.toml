@@ -15,7 +15,6 @@ openssl = ["tls-api-openssl"]
 [dependencies]
 mio = "0.6"
 httparse = "1"
-quick-error = "1"
 byteorder = "1"
 libc = "0.2"
 fnv = "1"
@@ -24,7 +23,7 @@ http = "0.1"
 tls-api = "0.1"
 itoa = "0.3"
 data-encoding = "2.1"
-
+failure = "0.1"
 
 # Do not include directly. Use one of the features.
 tls-api-rustls = { version = "0.1.11", optional = true}

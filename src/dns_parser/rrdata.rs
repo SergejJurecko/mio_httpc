@@ -109,7 +109,7 @@ impl<'a> RRData<'a> {
                     }
                     match str::from_utf8(&rdata[pos..(pos+rdlen)]) {
                         Ok(val) => ret_string.push_str(val),
-                        Err(e) => return Err(Error::TxtDataIsNotUTF8(e)),
+                        Err(e) => return Err(Error::TxtDataIsNotUTF8 { error: e }),
                     }
                     pos += rdlen;
                 }

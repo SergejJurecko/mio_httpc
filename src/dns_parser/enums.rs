@@ -222,7 +222,7 @@ impl QueryType {
             253 => Ok(MAILB),
             254 => Ok(MAILA),
             255 => Ok(All),
-            x => Err(Error::InvalidQueryType(x)),
+            x => Err(Error::InvalidQueryType{ code: x }),
         }
     }
 }
@@ -236,7 +236,7 @@ impl QueryClass {
             3   => Ok(CH),
             4   => Ok(HS),
             255 => Ok(Any),
-            x => Err(Error::InvalidQueryClass(x)),
+            x => Err(Error::InvalidQueryClass { code: x }),
         }
     }
 }
@@ -263,7 +263,7 @@ impl Type {
             28  => Ok(AAAA),
             33  => Ok(SRV),
             41  => Ok(OPT),
-            x => Err(Error::InvalidType(x)),
+            x => Err(Error::InvalidType { code: x }),
         }
     }
 }
@@ -276,7 +276,7 @@ impl Class {
             2   => Ok(CS),
             3   => Ok(CH),
             4   => Ok(HS),
-            x => Err(Error::InvalidClass(x)),
+            x => Err(Error::InvalidClass { code: x }),
         }
     }
 }
