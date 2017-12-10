@@ -75,10 +75,10 @@ impl Httpc {
         self.h.call_close(id);
     }
     pub fn timeout(&mut self) -> Vec<CallRef> {
-        self.h.timeout::<tls_api_openssl::TlsConnector>()
+        self.h.timeout()
     }
     pub fn timeout_extend<C:TlsConnector>(&mut self, out: &mut Vec<CallRef>) {
-        self.h.timeout_extend::<tls_api_openssl::TlsConnector>(out)
+        self.h.timeout_extend(out)
     }
     pub fn event(&mut self, ev: &Event) -> Option<CallRef> {
         self.h.event::<tls_api_openssl::TlsConnector>(ev)

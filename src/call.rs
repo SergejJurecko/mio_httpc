@@ -4,7 +4,7 @@ use std::io::ErrorKind as IoErrorKind;
 use tls_api::{TlsConnector};
 use httparse::{self, Response as ParseResp};
 use http::response::Builder as RespBuilder;
-use http::{self,Version};
+use http::{self,Version,Request};
 use http::header::*;
 use std::str::FromStr;
 use std::time::{Instant,Duration};
@@ -50,6 +50,12 @@ impl CallImpl {
         }
     }
 
+    pub fn empty() -> CallImpl {
+        let mut res = Self::new(CallBuilderImpl::new(Request::new(Vec::new())), Vec::new());
+        res.dir = Dir::Done;
+        res
+    }
+
     #[inline]
     pub fn start_time(&self) -> Instant {
         self.start
@@ -89,8 +95,8 @@ impl CallImpl {
         self.dir == Dir::Done
     }
 
-    pub fn stop(self) -> Vec<u8> {
-        self.buf
+    pub fn stop(self) -> (CallBuilderImpl, Vec<u8>) {
+        (self.b, self.buf)
     }
 
     pub fn duration(&self) -> Duration {

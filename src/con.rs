@@ -1,16 +1,19 @@
 use dns::{self,Dns};
 use dns_cache::DnsCache;
 use tls_api::{TlsConnector,TlsStream,TlsConnectorBuilder,HandshakeError, MidHandshakeTlsStream};
-use ::Result;
+use ::{Result,CallRef};
 use mio::net::{TcpStream};
 use mio::event::Evented;
 use mio::{Token,Ready,PollOpt,Poll};
 use std::net::{SocketAddr, IpAddr};
 use std::str::FromStr;
+use std::time::Instant;
 use http::{Request,Uri};
 use std::io::{Read,Write};
 use ::types::CallParam;
 use fnv::FnvHashMap as HashMap;
+use smallvec::SmallVec;
+use ::call::CallImpl;
 
 fn url_port(url: &Uri) -> Result<u16> {
     if let Some(p) = url.port() {
@@ -41,14 +44,12 @@ fn connect(addr: SocketAddr) -> Result<TcpStream> {
 
 pub struct Con {
     token: Token,
-    // pub req: Request<T>,
-    nuses: usize,
+    after_first: bool,
     reg_for: Ready,
     sock: Option<TcpStream>,
     tls: Option<TlsStream<TcpStream>>,
     mid_tls: Option<MidHandshakeTlsStream<TcpStream>>,
     dns: Option<Dns>,
-    // dns_sock: Option<UdpSocket>,
     con_port: u16,
     closed: bool,
     pub to_close: bool,
@@ -71,7 +72,6 @@ impl Con {
         let dns = if sock.is_none() {
             if let Some(host) = req.uri().host() {
                 rdy = Ready::readable();
-                // dns_sock = Some(r.start_lookup(token.0, host)?);
                 Some(Dns::new(host,dns_timeout)?)
             } else {
                 return Err(::Error::NoHost);
@@ -82,7 +82,7 @@ impl Con {
             closed: false,
             to_close: false,
             reg_for: rdy,
-            nuses: 0,
+            after_first: false,
             token,
             sock,
             dns,
@@ -272,16 +272,63 @@ impl Evented for Con {
     }
 }
 
+struct HostCons {
+    uri: Uri,
+}
+
+impl HostCons {
+    pub fn new(uri: Uri) -> HostCons {
+        HostCons {
+            uri,
+        }
+    }
+}
+use std::hash::{Hash, Hasher};
+impl Hash for HostCons {
+    fn hash<H>(&self, state: &mut H) where H: Hasher {
+        if let Some(host) = self.uri.host() {
+            Hash::hash_slice(host.as_bytes(), state);
+        }
+    }
+}
+impl ::std::borrow::Borrow<str> for HostCons {
+    #[inline]
+    fn borrow(&self) -> &str {
+        self.uri.host().unwrap()
+    }
+}
+
+impl PartialEq for HostCons {
+    fn eq(&self, uri: &HostCons) -> bool {
+        if let Some(host) = self.uri.host() {
+            if let Some(host1) = uri.uri.host() {
+                return host == host1;
+            }
+        }
+        false
+    }
+}
+impl PartialEq<str> for HostCons {
+    fn eq(&self, host1: &str) -> bool {
+        if let Some(host) = self.uri.host() {
+            return host == host1;
+        }
+        false
+    }
+}
+impl Eq for HostCons {}
+
 pub struct ConTable {
-    cons: Vec<Con>,
-    open_cons: HashMap<String,Con>,
+    cons: Vec<(Con,SmallVec<[CallImpl;2]>)>,
+    // cons that can be used for new requests
+    keepalive: HashMap<HostCons,SmallVec<[u16;8]>>,
     empty_slots: usize,
 }
 
 impl ConTable {
     pub fn new() -> ConTable {
         ConTable {
-            open_cons: HashMap::default(),
+            keepalive: HashMap::with_capacity_and_hasher(4, Default::default()),
             cons: Vec::with_capacity(4),
             empty_slots: 0,
         }
@@ -289,25 +336,63 @@ impl ConTable {
 
     pub fn get_con(&mut self, id: usize) -> Option<&mut Con> {
         if id < self.cons.len() {
-            let c = &mut self.cons[id];
+            let c = &mut self.cons[id].0;
             return Some(c);
         }
         None
     }
 
-    pub fn push_con(&mut self, mut c: Con) -> Option<u16> {
+    pub fn timeout_extend(&mut self, now: Instant, out: &mut Vec<CallRef>) {
+        let mut con_id = 0;
+        for &mut (ref mut con, ref mut calls) in self.cons.iter_mut() {
+            let mut call_id = 0;
+            for call in calls.iter_mut() {
+                if !call.is_done() {
+                    if now - call.start_time() >= call.settings().dur {
+                        out.push(CallRef::new(con_id, call_id));
+                    } else if call_id == 0 {
+                        if let Some(host) = call.settings().req.uri().host() {
+                            con.timeout(host);
+                        }
+                    }
+                }
+                call_id += 1;
+            }
+            con_id += 1;
+        }
+    }
+
+    pub fn peek_body(&mut self, con: u16, call: u16, off: &mut usize) -> &[u8] {
+        self.cons[con as usize].1[call as usize].peek_body(off)
+    }
+    pub fn try_truncate(&mut self, con: u16, call:u16, off: &mut usize) {
+        self.cons[con as usize].1[call as usize].try_truncate(off);
+    }
+    pub fn event_send<C:TlsConnector>(&mut self, con: u16, call:u16, cp: &mut CallParam, buf: Option<&[u8]>) -> Result<::SendState> {
+        let conp = &mut self.cons[con as usize];
+        conp.1[call as usize].event_send::<C>(&mut conp.0, cp, buf)
+    }
+    pub fn event_recv<C:TlsConnector>(&mut self, con: u16, call:u16, cp: &mut CallParam, buf: Option<&mut Vec<u8>>) -> Result<::RecvState> {
+        let conp = &mut self.cons[con as usize];
+        conp.1[call as usize].event_recv::<C>(&mut conp.0, cp, buf)
+    }
+
+    pub fn push_con(&mut self, mut c: Con, call: CallImpl) -> Option<u16> {
         if self.cons.len() == (u16::max_value() as usize) {
             return None;
         }
         if self.empty_slots*4 <= self.cons.len() {
             c.token = Token::from(c.token.0 + self.cons.len());
-            self.cons.push(c);
+            let mut v = SmallVec::new();
+            v.push(call);
+            self.cons.push((c,v));
             Some((self.cons.len()-1) as u16)
         } else {
             for i in 0..self.cons.len() {
-                if self.cons[i].closed() {
+                if self.cons[i].0.closed() {
                     c.token = Token::from(c.token.0 + i);
-                    self.cons[i] = c;
+                    self.cons[i].0 = c;
+                    self.cons[i].1.push(call);
                     self.empty_slots -= 1;
                     return Some(i as u16);
                 }
@@ -316,13 +401,51 @@ impl ConTable {
         }
     }
 
-    pub fn close_con(&mut self, pos: u16) {
+    fn extract_call(callid: u16, calls: &mut SmallVec<[CallImpl;2]>) -> CallImpl {
+        let callid = callid as usize;
+        if callid+1 == calls.len() {
+            let res = calls.pop();
+            while calls.last().is_some() {
+                if calls.last().unwrap().is_done() {
+                    let _ = calls.pop();
+                } else {
+                    break;
+                }
+            }
+            res.unwrap()
+        } else {
+            ::std::mem::replace(&mut calls[callid], CallImpl::empty())
+        }
+    }
+
+    pub fn close_call(&mut self, con: u16, call: u16) -> (Vec<u8>, Vec<u8>) {
+        let con = con as usize;
+        let call:CallImpl = Self::extract_call(call, &mut self.cons[con].1);
+        let (builder, call_buf) = call.stop();
+        let (parts, req_buf) = builder.req.into_parts();
+        let uri = parts.uri;
+        // if !self.cons[con].0.to_close && uri.host().is_some() {
+        //     if self.keepalive.contains_key(uri.host().unwrap()) {
+        //         let v = self.keepalive.get_mut(uri.host().unwrap()).unwrap();
+        //         v.push(con as u16);
+        //     } else {
+        //         let mut v = SmallVec::new();
+        //         v.push(con as u16);
+        //         self.keepalive.insert(HostCons::new(uri), v);
+        //     }
+        // } else {
+            self.close_con(con as u16);
+        // }
+        (call_buf, req_buf)
+    }
+
+    fn close_con(&mut self, pos: u16) {
         let pos = pos as usize;
-        self.cons[pos].close();
+        self.cons[pos].0.close();
         self.empty_slots += 1;
         loop {
             if self.cons.last().is_some() {
-                if self.cons.last().unwrap().closed() {
+                if self.cons.last().unwrap().0.closed() {
                     self.empty_slots -= 1;
                     let _ = self.cons.pop();
                 } else {

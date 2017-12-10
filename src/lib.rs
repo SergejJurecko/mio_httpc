@@ -19,6 +19,7 @@ extern crate fnv;
 extern crate http;
 extern crate itoa;
 extern crate data_encoding;
+extern crate smallvec;
 
 #[cfg(test)]
 #[macro_use]
@@ -91,9 +92,9 @@ pub enum Error {
     /// Request structure did not contain body and CallSimple was used for POST/PUT.
     #[fail(display = "Request structure did not contain body and CallSimple was used for POST/PUT.")]
     MissingBody,
-    /// No call for mio::Token
-    #[fail(display = "No call for token")]
-    InvalidToken,
+    // /// No call for mio::Token
+    // #[fail(display = "No call for token")]
+    // InvalidToken,
     /// Response over max_response limit
     #[fail(display = "Response over max_response limit")]
     ResponseTooBig,

@@ -12,7 +12,6 @@ use std::time::{Instant};
 
 pub struct HttpcImpl {
     cache: DnsCache,
-    calls: HashMap<CallRef,CallImpl>,
     timed_out_calls: HashMap<CallRef,CallImpl>,
     con_offset: usize,
     free_bufs: VecDeque<Vec<u8>>,
@@ -28,7 +27,6 @@ impl HttpcImpl {
             timed_out_calls: HashMap::default(),
             last_timeout: Instant::now(),
             cache: DnsCache::new(),
-            calls: HashMap::default(),
             con_offset,
             free_bufs: VecDeque::new(),
             cons: ConTable::new(),
@@ -59,9 +57,9 @@ impl HttpcImpl {
             root_ca,
             b.dns_timeout)?;
         let call = CallImpl::new(b, self.get_buf());
-        if let Some(con_id) = self.cons.push_con(con) {
+        // let cid = con.push_call(call);
+        if let Some(con_id) = self.cons.push_con(con, call) {
             let id = Call::new(con_id, 0);
-            self.calls.insert(id.get_ref(), call);
             Ok(id)
         } else {
             Err(::Error::NoSpace)
@@ -69,17 +67,16 @@ impl HttpcImpl {
     }
 
     pub fn call_close(&mut self, id: Call) {
-        if let Some(call) = self.calls.remove(&id.get_ref()) {
-            self.call_close_detached(id, call);
+        if id.is_empty() {
+            return;
         }
-    }
-
-    fn call_close_detached(&mut self, id: Call, call: CallImpl) {
-        let buf = call.stop();
-        if buf.capacity() > 0 {
-            self.reuse(buf);
+        let (b1, b2) = self.cons.close_call(id.con_id(), id.call_id());
+        if b1.capacity() > 0 || b1.len() > 0 {
+            self.reuse(b1);
         }
-        self.cons.close_con(id.get_ref().con_id());
+        if b2.capacity() > 0 || b2.len() > 0 {
+            self.reuse(b2);
+        }
     }
 
     pub fn get_buf(&mut self) -> Vec<u8> {
@@ -91,44 +88,19 @@ impl HttpcImpl {
         }
     }
 
-    pub fn timeout<C:TlsConnector>(&mut self) -> Vec<CallRef> {
+    pub fn timeout(&mut self) -> Vec<CallRef> {
         let mut out = Vec::new();
-        self.timeout_extend::<C>(&mut out);
+        self.timeout_extend(&mut out);
         out
     }
 
-    pub fn timeout_extend<C:TlsConnector>(&mut self, out: &mut Vec<CallRef>) {
+    pub fn timeout_extend(&mut self, out: &mut Vec<CallRef>) {
         let now = Instant::now();
         if now.duration_since(self.last_timeout).subsec_nanos() < 50_000_000 {
             return;
         }
         self.last_timeout = now;
-        for (k,v) in self.calls.iter() {
-            if v.is_done() {
-                continue;
-            }
-            if now - v.start_time() >= v.settings().dur {
-                out.push(CallRef(k.0));
-            } else {
-                if let Some(con) = self.cons.get_con(k.con_id() as usize) {
-                    if let Some(host) = v.settings().req.uri().host() {
-                        con.timeout(host);
-                    }
-                }
-            }
-        }
-        // let calls = ::std::mem::replace(&mut self.calls, HashMap::default());
-        // let (keepers,gonners) = 
-        //     calls.into_iter().partition(|&(ref k, ref v)| {
-        //         now - v.start_time() >= v.settings().dur
-        //     } );
-        // self.calls = keepers;
-        // if gonners.len() > 0 {
-        //     for (k,v) in gonners.into_iter() {
-        //         out.push(k);
-        //         self.call_close_detached(k,v);
-        //     }
-        // }
+        self.cons.timeout_extend(now, out);
     }
 
     pub fn event<C:TlsConnector>(&mut self, ev: &Event) -> Option<CallRef> {
@@ -146,38 +118,25 @@ impl HttpcImpl {
         if call.is_empty() {
             return &[];
         }
-        if let Some(c) = self.calls.get_mut(&call.get_ref()) {
-            return c.peek_body(off);
-        }
-        &[]
+        self.cons.peek_body(call.con_id(), call.call_id(), off)
     }
     pub fn try_truncate(&mut self, call: &::Call, off: &mut usize) {
         if call.is_empty() {
             return;
         }
-        if let Some(c) = self.calls.get_mut(&call.get_ref()) {
-            return c.try_truncate(off);
-        }
+        self.cons.try_truncate(call.con_id(), call.call_id(), off);
     }
 
     pub fn call_send<C:TlsConnector>(&mut self, poll: &Poll, call: &mut Call, buf: Option<&[u8]>) -> SendState {
         if call.is_empty() {
             return SendState::Done;
         }
-        let cret = if let Some(c) = self.calls.get_mut(&call.get_ref()) {
-            let con = if let Some(con) = self.cons.get_con(call.get_ref().con_id() as usize) {
-                con
-            } else {
-                return SendState::Error(::Error::InvalidToken);
-            };
+        let cret = {
             let mut cp = ::types::CallParam {
                 poll,
                 dns: &mut self.cache,
-                // ev,
             };
-            c.event_send::<C>(con, &mut cp, buf)
-        } else {
-            return SendState::Error(::Error::InvalidToken);
+            self.cons.event_send::<C>(call.con_id(), call.call_id(), &mut cp, buf)
         };
         match cret {
             Ok(SendState::Done) => {
@@ -200,19 +159,12 @@ impl HttpcImpl {
         if call.is_empty() {
             return RecvState::Done;
         }
-        let cret = if let Some(c) = self.calls.get_mut(&call.get_ref()) {
-            let con = if let Some(con) = self.cons.get_con(call.get_ref().con_id() as usize) {
-                con
-            } else {
-                return RecvState::Error(::Error::InvalidToken);
-            };
+        let cret = {
             let mut cp = ::types::CallParam {
                 poll,
                 dns: &mut self.cache,
             };
-            c.event_recv::<C>(con, &mut cp, buf)
-        } else {
-            return RecvState::Error(::Error::InvalidToken);
+            self.cons.event_recv::<C>(call.con_id(), call.call_id(), &mut cp, buf)
         };
         match cret {
             Ok(RecvState::Response(r,::ResponseBody::Sized(0))) => {
