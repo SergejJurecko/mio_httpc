@@ -418,6 +418,16 @@ impl ConTable {
         }
     }
 
+    pub fn check_keepalive(&mut self, host: &str) -> Option<u16> {
+        if self.keepalive.contains_key(host) {
+            let v = self.keepalive.get_mut(host).unwrap();
+            if let Some(con) = v.pop() {
+                return Some(con);
+            }
+        }
+        None
+    }
+
     pub fn close_call(&mut self, con: u16, call: u16) -> (Vec<u8>, Vec<u8>) {
         let con = con as usize;
         let call:CallImpl = Self::extract_call(call, &mut self.cons[con].1);

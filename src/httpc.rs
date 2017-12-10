@@ -48,6 +48,18 @@ impl HttpcImpl {
     }
 
     pub fn call<C:TlsConnector>(&mut self, mut b: CallBuilderImpl, poll: &Poll) -> Result<Call> {
+        let con_id = if let Some(host) = b.req.uri().host() {
+            if let Some(con_id) = self.cons.check_keepalive(host) {
+                Some(con_id)
+            } else {
+                None
+            }
+        } else { None };
+        if let Some(con_id) = con_id {
+            let call = CallImpl::new(b, self.get_buf());
+            let id = Call::new(con_id, 0);
+            return Ok(id);
+        }
         // cons.push_con will set actual mio token
         let root_ca = ::std::mem::replace(&mut b.root_ca, Vec::new());
         let con = Con::new::<C,Vec<u8>>(Token::from(self.con_offset), 
