@@ -13,6 +13,10 @@ impl CallBuilder {
     /// 
     /// If req contains no body, but has content-length set,
     /// it will wait for send body to be provided through Httpc::call_send. 
+    /// mio_httpc will set headers (if they are not already): 
+    /// user-agent, connection, host, auth, content-length
+    /// If you're only executing a one-off call you should set connection: close as default
+    /// is keep-alive.
     pub fn new(req: Request<Vec<u8>>) -> CallBuilder {
         CallBuilder{}
     }
@@ -92,6 +96,11 @@ impl Httpc {
         &[]
     }
     pub(crate) fn try_truncate(&mut self, id: &::Call, off: &mut usize) {
+    }
+
+    /// Number of currently open connections (in active and idle keep-alive state)
+    pub fn open_connections(&self) -> usize {
+        0
     }
 
     /// Reuse a response buffer for subsequent calls.

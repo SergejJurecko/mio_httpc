@@ -21,7 +21,7 @@ rustls is unreliable at the moment. I'm not sure if the issue is rustls or [tls-
 - [x] Chunked encoding download
 - [ ] Chunked encoding upload
 - [x] Basic Auth
-- [ ] Con pool
+- [x] Keep-alive connection pool
 - [x] DNS retries
 - [x] Timeouts
 - [x] Websockets

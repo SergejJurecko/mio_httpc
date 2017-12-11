@@ -33,6 +33,10 @@ impl HttpcImpl {
         }
     }
 
+    pub fn open_connections(&self) -> usize {
+        self.cons.open_cons()
+    }
+
     pub fn reuse(&mut self, mut buf: Vec<u8>) {
         let cap = buf.capacity();
         if cap > BUF_SZ {
@@ -49,7 +53,7 @@ impl HttpcImpl {
 
     pub fn call<C:TlsConnector>(&mut self, mut b: CallBuilderImpl, poll: &Poll) -> Result<Call> {
         let con_id = if let Some(host) = b.req.uri().host() {
-            if let Some(con_id) = self.cons.check_keepalive(host) {
+            if let Some(con_id) = self.cons.try_keepalive(host, poll) {
                 Some(con_id)
             } else {
                 None
@@ -70,7 +74,7 @@ impl HttpcImpl {
             b.dns_timeout)?;
         let call = CallImpl::new(b, self.get_buf());
         // let cid = con.push_call(call);
-        if let Some(con_id) = self.cons.push_con(con, call) {
+        if let Some(con_id) = self.cons.push_con(con, call, poll)? {
             let id = Call::new(con_id, 0);
             Ok(id)
         } else {
@@ -119,7 +123,7 @@ impl HttpcImpl {
         let mut id = ev.token().0;
         if id >= self.con_offset && id <= (u16::max_value() as usize) {
             id -= self.con_offset;
-            if let Some(con) = self.cons.get_con(id) {
+            if let Some(con) = self.cons.get_signalled_con(id) {
                 return Some(CallRef::new(id as u16, 0));
             }
         }

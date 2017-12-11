@@ -44,8 +44,7 @@ impl Dns {
         })
     }
 
-    pub fn check_retry(&mut self, host: &str) {
-        let now = Instant::now();
+    pub fn check_retry(&mut self, now: Instant, host: &str) {
         if now - self.last_send >= self.retry_in {
             let mut pos = self.pos as usize;
             let _ = Self::lookup_on(&self.srvs, &self.sock, &mut pos, host);

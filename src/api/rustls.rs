@@ -68,6 +68,9 @@ impl Httpc {
     pub(crate) fn try_truncate(&mut self, id: &::Call, off: &mut usize) {
         self.h.try_truncate(id, off);
     }
+    pub fn open_connections(&self) -> usize {
+        self.h.open_connections()
+    }
     pub fn reuse(&mut self, buf: Vec<u8>) {
         self.h.reuse(buf);
     }

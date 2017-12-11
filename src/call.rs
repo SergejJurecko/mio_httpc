@@ -50,6 +50,19 @@ impl CallImpl {
         }
     }
 
+    pub fn can_retry(&self) -> bool {
+        match self.dir {
+            Dir::Receiving(sz,_) if sz > 0 => false,
+            Dir::Done => false,
+            Dir::SendingBody(pos) if pos > 0 && self.b.req.body().len() == 0 => false,
+            _ => true,
+        }
+    }
+
+    pub fn set_retry(&mut self) {
+        self.dir = Dir::SendingHdr(0);
+    }
+
     pub fn empty() -> CallImpl {
         let mut res = Self::new(CallBuilderImpl::new(Request::new(Vec::new())), Vec::new());
         res.dir = Dir::Done;
@@ -482,7 +495,7 @@ impl CallImpl {
                             if let Some(ref clh) = resp.headers().get(http::header::CONNECTION) {
                                 if let Ok(clhs) = clh.to_str() {
                                     if "close".eq_ignore_ascii_case(clhs) {
-                                        con.to_close = true;
+                                        con.set_to_close(true);
                                     }
                                 }
                             }

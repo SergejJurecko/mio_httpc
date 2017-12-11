@@ -7,7 +7,7 @@ use mio::event::Evented;
 use mio::{Token,Ready,PollOpt,Poll};
 use std::net::{SocketAddr, IpAddr};
 use std::str::FromStr;
-use std::time::Instant;
+use std::time::{Instant,Duration};
 use http::{Request,Uri};
 use std::io::{Read,Write};
 use ::types::CallParam;
@@ -44,15 +44,17 @@ fn connect(addr: SocketAddr) -> Result<TcpStream> {
 
 pub struct Con {
     token: Token,
-    after_first: bool,
     reg_for: Ready,
     sock: Option<TcpStream>,
     tls: Option<TlsStream<TcpStream>>,
     mid_tls: Option<MidHandshakeTlsStream<TcpStream>>,
     dns: Option<Dns>,
     con_port: u16,
-    closed: bool,
-    pub to_close: bool,
+    is_closed: bool,
+    first_use: bool,
+    // idle: bool,
+    to_close: bool,
+    idle_since: Instant,
     root_ca: Vec<Vec<u8>>,
 }
 
@@ -60,45 +62,85 @@ impl Con {
     pub fn new<C:TlsConnector,T>(token: Token, req: &Request<T>, cache: &mut DnsCache, 
             poll: &Poll, root_ca: Vec<Vec<u8>>, dns_timeout: u64) -> Result<Con> {
         let port = url_port(req.uri())?;
-        let mut sock = None;
+        let sock = Self::sock_from_req(req, cache, port)?;
         let mut rdy = Ready::writable();
-        if let Some(host) = req.uri().host() {
-            if let Some(ip) = cache.find(host) {
-                sock = Some(connect(SocketAddr::new(ip,port))?);
-            } else if let Ok(ip) = IpAddr::from_str(host) {
-                sock = Some(connect(SocketAddr::new(ip,port))?);
-            }
-        }
+
         let dns = if sock.is_none() {
-            if let Some(host) = req.uri().host() {
-                rdy = Ready::readable();
-                Some(Dns::new(host,dns_timeout)?)
-            } else {
-                return Err(::Error::NoHost);
-            }
+            Self::dns_from_req(req, &mut rdy, dns_timeout)?
         } else { None };
         let res = Con {
             con_port: port,
-            closed: false,
+            is_closed: false,
             to_close: false,
             reg_for: rdy,
-            after_first: false,
+            first_use: true,
             token,
             sock,
             dns,
+            // idle: false,
+            idle_since: Instant::now(),
             // dns_sock,
             tls: None,
             mid_tls: None,
             root_ca,
         };
-        res.register(poll, res.token, rdy, PollOpt::edge())?;
         Ok(res)
     }
 
-    pub fn timeout(&mut self, host: &str) {
-        if let Some(ref mut dns) = self.dns {
-            dns.check_retry(host);
+    pub fn update_token(&mut self, poll:&Poll, inc: usize) -> Result<()> {
+        self.token = Token(self.token.0 + inc);
+        self.register(poll, self.token, self.reg_for, PollOpt::edge())?;
+        Ok(())
+    }
+
+    fn dns_from_req<T>(req: &Request<T>, rdy: &mut Ready, dns_timeout: u64) -> Result<Option<Dns>> {
+        if let Some(host) = req.uri().host() {
+            *rdy = Ready::readable();
+            return Ok(Some(Dns::new(host,dns_timeout)?))
         }
+        Err(::Error::NoHost)
+    }
+
+    fn sock_from_req<T>(req: &Request<T>, cache: &mut DnsCache, port: u16) -> Result<Option<TcpStream>> {
+        if let Some(host) = req.uri().host() {
+            if let Some(ip) = cache.find(host) {
+                return Ok(Some(connect(SocketAddr::new(ip,port))?));
+            } else if let Ok(ip) = IpAddr::from_str(host) {
+                return Ok(Some(connect(SocketAddr::new(ip,port))?));
+            }
+        }
+        Ok(None)
+    }
+
+    pub fn retry<C:TlsConnector,T>(&mut self, req: &Request<T>, cache: &mut DnsCache, poll: &Poll, dns_timeout: u64) -> Result<()> {
+        let _ = self.deregister(poll);
+        self.sock = Self::sock_from_req(req, cache, self.con_port)?;
+        self.reg_for = Ready::writable();
+        self.dns = if self.sock.is_none() {
+            Self::dns_from_req(req, &mut self.reg_for, dns_timeout)?
+        } else { None };
+        self.register(poll, self.token, self.reg_for, PollOpt::edge())?;
+        Ok(())
+    }
+
+    pub fn reuse(&mut self, poll: &Poll) -> Result<()> {
+        self.deregister(poll)?;
+        self.reg_for = Ready::writable();
+        self.register(poll, self.token, self.reg_for, PollOpt::edge())?;
+        Ok(())
+    }
+
+    pub fn timeout(&mut self, now:Instant, host: &str) {
+        if let Some(ref mut dns) = self.dns {
+            dns.check_retry(now, host);
+        }
+    }
+    
+    pub fn idle_timeout(&mut self, now:Instant) -> bool {
+        if now - self.idle_since >= Duration::from_secs(60) {
+            return true;
+        }
+        false
     }
 
     pub fn close(&mut self) {
@@ -106,12 +148,39 @@ impl Con {
         self.tls = None;
         // self.dns_sock = None;
         self.dns = None;
-        self.closed = true;
+        self.is_closed = true;
     }
 
     #[inline]
-    pub fn closed(&self) -> bool {
-        self.closed
+    pub fn is_closed(&self) -> bool {
+        self.is_closed
+    }
+    #[inline]
+    pub fn is_first_use(&self) -> bool {
+        self.first_use
+    }
+    // #[inline]
+    // pub fn is_idle(&self) -> bool {
+    //     self.idle
+    // }
+    // #[inline]
+    pub fn set_idle(&mut self, b: bool) {
+        self.first_use = false;
+        if b {
+            self.idle_since = Instant::now();
+        }
+        // self.idle = b;
+    }
+    pub fn first_use_done(&mut self) {
+        self.first_use = false;
+    }
+    #[inline]
+    pub fn set_to_close(&mut self, b: bool) {
+        self.to_close = b;
+    }
+    #[inline]
+    pub fn to_close(&self) -> bool {
+        self.to_close
     }
 
     pub fn reg(&mut self, poll: &Poll, rdy: Ready) -> ::std::io::Result<()> {
@@ -334,8 +403,16 @@ impl ConTable {
         }
     }
 
-    pub fn get_con(&mut self, id: usize) -> Option<&mut Con> {
+    pub fn open_cons(&self) -> usize {
+        self.cons.len()
+    }
+
+    pub fn get_signalled_con(&mut self, id: usize) -> Option<&mut Con> {
         if id < self.cons.len() {
+            if self.cons[id].1.len() == 0 {
+                self.close_con(id as u16);
+                return None;
+            }
             let c = &mut self.cons[id].0;
             return Some(c);
         }
@@ -344,21 +421,36 @@ impl ConTable {
 
     pub fn timeout_extend(&mut self, now: Instant, out: &mut Vec<CallRef>) {
         let mut con_id = 0;
+        let mut cons_to_close:SmallVec<[u16;16]> = SmallVec::new();
         for &mut (ref mut con, ref mut calls) in self.cons.iter_mut() {
             let mut call_id = 0;
+            if con.is_closed() {
+                con_id += 1;
+                continue;
+            }
+            if calls.len() == 0 {
+                if con.idle_timeout(now) {
+                    cons_to_close.push(call_id);
+                }
+                con_id += 1;
+                continue;
+            }
             for call in calls.iter_mut() {
                 if !call.is_done() {
                     if now - call.start_time() >= call.settings().dur {
                         out.push(CallRef::new(con_id, call_id));
                     } else if call_id == 0 {
                         if let Some(host) = call.settings().req.uri().host() {
-                            con.timeout(host);
+                            con.timeout(now, host);
                         }
                     }
                 }
                 call_id += 1;
             }
             con_id += 1;
+        }
+        for toclose in cons_to_close {
+            self.close_con(toclose);
         }
     }
 
@@ -369,35 +461,42 @@ impl ConTable {
         self.cons[con as usize].1[call as usize].try_truncate(off);
     }
     pub fn event_send<C:TlsConnector>(&mut self, con: u16, call:u16, cp: &mut CallParam, buf: Option<&[u8]>) -> Result<::SendState> {
-        let conp = &mut self.cons[con as usize];
-        conp.1[call as usize].event_send::<C>(&mut conp.0, cp, buf)
+        let call = call as usize;
+        let con = con as usize;
+        let conp = &mut self.cons[con];
+        let res = conp.1[call].event_send::<C>(&mut conp.0, cp, buf);
+        if res.is_err() && !conp.0.is_first_use() && conp.1[call].can_retry() {
+            let dns_to = conp.1[call].settings().dns_timeout;
+            conp.0.retry::<C,Vec<u8>>(&conp.1[call].settings().req, cp.dns, cp.poll, dns_to)?;
+        }
+        res
     }
     pub fn event_recv<C:TlsConnector>(&mut self, con: u16, call:u16, cp: &mut CallParam, buf: Option<&mut Vec<u8>>) -> Result<::RecvState> {
         let conp = &mut self.cons[con as usize];
         conp.1[call as usize].event_recv::<C>(&mut conp.0, cp, buf)
     }
 
-    pub fn push_con(&mut self, mut c: Con, call: CallImpl) -> Option<u16> {
+    pub fn push_con(&mut self, mut c: Con, call: CallImpl, poll:&Poll) -> Result<Option<u16>> {
         if self.cons.len() == (u16::max_value() as usize) {
-            return None;
+            return Ok(None);
         }
         if self.empty_slots*4 <= self.cons.len() {
-            c.token = Token::from(c.token.0 + self.cons.len());
+            c.update_token(poll, self.cons.len())?;
             let mut v = SmallVec::new();
             v.push(call);
             self.cons.push((c,v));
-            Some((self.cons.len()-1) as u16)
+            Ok(Some((self.cons.len()-1) as u16))
         } else {
             for i in 0..self.cons.len() {
-                if self.cons[i].0.closed() {
-                    c.token = Token::from(c.token.0 + i);
+                if self.cons[i].0.is_closed() {
+                    c.update_token(poll,i)?;
                     self.cons[i].0 = c;
                     self.cons[i].1.push(call);
                     self.empty_slots -= 1;
-                    return Some(i as u16);
+                    return Ok(Some(i as u16));
                 }
             }
-            return None;
+            return Ok(None);
         }
     }
 
@@ -418,12 +517,21 @@ impl ConTable {
         }
     }
 
-    pub fn check_keepalive(&mut self, host: &str) -> Option<u16> {
+    pub fn try_keepalive(&mut self, host: &str, poll: &Poll) -> Option<u16> {
+        let mut con_to_close = 0xFFFF;
         if self.keepalive.contains_key(host) {
             let v = self.keepalive.get_mut(host).unwrap();
             if let Some(con) = v.pop() {
-                return Some(con);
+                self.cons[con as usize].0.set_idle(false);
+                if self.cons[con as usize].0.reuse(poll).is_ok() {
+                    return Some(con);
+                } else {
+                    con_to_close = con;
+                }
             }
+        }
+        if con_to_close != 0xFFFF {
+            self.close_con(con_to_close);
         }
         None
     }
@@ -434,28 +542,36 @@ impl ConTable {
         let (builder, call_buf) = call.stop();
         let (parts, req_buf) = builder.req.into_parts();
         let uri = parts.uri;
-        // if !self.cons[con].0.to_close && uri.host().is_some() {
-        //     if self.keepalive.contains_key(uri.host().unwrap()) {
-        //         let v = self.keepalive.get_mut(uri.host().unwrap()).unwrap();
-        //         v.push(con as u16);
-        //     } else {
-        //         let mut v = SmallVec::new();
-        //         v.push(con as u16);
-        //         self.keepalive.insert(HostCons::new(uri), v);
-        //     }
-        // } else {
+        if !self.cons[con].0.to_close && uri.host().is_some() {
+            if self.cons[con].1.len() == 0 {
+                self.cons[con].0.set_idle(true);
+            } else {
+                self.cons[con].0.first_use_done();
+            }
+            if self.keepalive.contains_key(uri.host().unwrap()) {
+                let v = self.keepalive.get_mut(uri.host().unwrap()).unwrap();
+                v.push(con as u16);
+            } else {
+                let mut v = SmallVec::new();
+                v.push(con as u16);
+                self.keepalive.insert(HostCons::new(uri), v);
+            }
+        } else {
             self.close_con(con as u16);
-        // }
+        }
         (call_buf, req_buf)
     }
 
     fn close_con(&mut self, pos: u16) {
         let pos = pos as usize;
+        if self.cons[pos].0.is_closed() {
+            return;
+        }
         self.cons[pos].0.close();
         self.empty_slots += 1;
         loop {
             if self.cons.last().is_some() {
-                if self.cons.last().unwrap().0.closed() {
+                if self.cons.last().unwrap().0.is_closed() {
                     self.empty_slots -= 1;
                     let _ = self.cons.pop();
                 } else {
