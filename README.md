@@ -7,9 +7,7 @@ It uses [http crate](https://crates.io/crates/http) for Request/Response types.
 
 mio_httpc requires you specify one of the TLS implementations using features: rustls, native, openssl. Not picking any feature will NOT work, as all calls will be no-op.
 
-**Documentation**
-
-https://docs.rs/mio_httpc/0.2.0/mio_httpc/
+[Documentation](https://docs.rs/mio_httpc/)
 
 
 **WARNING**
