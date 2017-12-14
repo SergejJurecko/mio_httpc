@@ -24,6 +24,11 @@ enum Dir {
     Done,
 }
 
+enum TransferEncoding {
+    Identity,
+    Chunked,
+}
+
 pub struct CallImpl {
     b: CallBuilderImpl,
     start: Instant,
@@ -32,6 +37,7 @@ pub struct CallImpl {
     body_sz: usize,
     dir: Dir,
     chunked: ChunkIndex, 
+    send_encoding: TransferEncoding,
 }
 
 impl CallImpl {
@@ -40,13 +46,12 @@ impl CallImpl {
         CallImpl {
             dir: Dir::SendingHdr(0),
             start: Instant::now(),
-            // chunked_resp: Vec::new(),
             b,
             buf,
             hdr_sz: 0,
             body_sz: 0,
             chunked: ChunkIndex::new(),
-            // resp: None,
+            send_encoding: TransferEncoding::Identity,
         }
     }
 
@@ -161,6 +166,14 @@ impl CallImpl {
         } else if let Some(cl) = cl {
             if let Ok(cl1) = cl.to_str() {
                 self.body_sz = usize::from_str(cl1).unwrap();
+            }
+        }
+        if let Some(ref clh) = self.b.req.headers().get(http::header::TRANSFER_ENCODING) {
+            if let Ok(clhs) = clh.to_str() {
+                if "chunked".eq_ignore_ascii_case(clhs) {
+                    self.send_encoding = TransferEncoding::Chunked;
+                    self.body_sz = usize::max_value();
+                }
             }
         }
         if None == self.b.req.headers().get(USER_AGENT) {

@@ -1,11 +1,11 @@
 [package]
 name = "mio_httpc"
-version = "0.2.0"
+version = "0.2.1"
 authors = ["sergej jurecko <sergej.jurecko@gmail.com>"]
 description = "mio_httpc is a fully async http client running on top of mio only."
 repository = "https://github.com/SergejJurecko/mio_httpc"
 readme = "README.md"
-keywords = ["mio", "http", "client", "async"]
+keywords = ["mio", "http", "client", "async", "websocket"]
 categories = ["network-programming"]
 license = "MIT/Apache-2.0"
 
