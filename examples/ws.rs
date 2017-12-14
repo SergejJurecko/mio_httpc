@@ -36,25 +36,29 @@ fn main() {
 
             if ws.is_call(&cref) {
                 if ws.is_active() {
-                    match ws.recv_packet(&mut htp, &poll).expect("Failed recv") {
-                        WSPacket::Pong(_) => {
-                            println!("Got pong!");
-                        }
-                        WSPacket::Ping(_) => {
-                            println!("Got ping!");
-                            ws.pong(None);
-                        }
-                        WSPacket::None => {}
-                        WSPacket::Close(_,_) => {
-                            println!("Got close!");
-                            ws.close(None, None);
-                            break 'outer;
-                        }
-                        WSPacket::Text(fin,txt) => {
-                            println!("Got text={}, fin={}",txt,fin);
-                        }
-                        WSPacket::Binary(fin,b) => {
-                            println!("Got bin={}B, fin={}",b.len(),fin);
+                    loop {
+                        match ws.recv_packet(&mut htp, &poll).expect("Failed recv") {
+                            WSPacket::Pong(_) => {
+                                println!("Got pong!");
+                            }
+                            WSPacket::Ping(_) => {
+                                println!("Got ping!");
+                                ws.pong(None);
+                            }
+                            WSPacket::None => {
+                                break;
+                            }
+                            WSPacket::Close(_,_) => {
+                                println!("Got close!");
+                                ws.close(None, None);
+                                break 'outer;
+                            }
+                            WSPacket::Text(fin,txt) => {
+                                println!("Got text={}, fin={}",txt,fin);
+                            }
+                            WSPacket::Binary(fin,b) => {
+                                println!("Got bin={}B, fin={}",b.len(),fin);
+                            }
                         }
                     }
                 } else {

@@ -105,6 +105,7 @@ impl WebSocket {
         self.state == State::Done
     }
 
+    /// True if websocket is established. False if still initiating or closed.
     pub fn is_active(&self) -> bool {
         self.state == State::Active
     }
@@ -216,6 +217,12 @@ impl WebSocket {
     /// If any other call returns error, you should always call finish afterwards.
     pub fn finish(mut self, htp: &mut Httpc) {
         self.stop(htp);
+    }
+
+    /// Actually close connection and replace self with an empty websocket.
+    pub fn finish_replace(&mut self, htp: &mut Httpc) {
+        let mut s = ::std::mem::replace(self, Self::empty());
+        s.stop(htp);
     }
 
     fn stop(&mut self, htp: &mut Httpc) {
