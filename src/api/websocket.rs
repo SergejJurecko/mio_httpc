@@ -66,6 +66,7 @@ pub struct WebSocket {
     id: Call,
     state: State,
     send_lover: usize,
+    // offset in buffer of packets returned.
     recv_lover: usize,
     cur_op: u8,
     closing: bool,
@@ -425,9 +426,11 @@ impl WebSocket {
     }
 
     fn read_packet<'a>(&mut self, htp: &'a mut Httpc) -> ::Result<WSPacket<'a>> {
+        // We can only return one packet at a time, but we can receive multiple packets at the same time.
+        // So we use recv_lover as a receive buffer offset.
+        // peek_body will fix recv_lover and set it to 0 if everything has been read from buffer.
         let slice = htp.peek_body(&self.id, &mut self.recv_lover);
-        if let Some((fin, op, mut pos, mut len)) = self.parse_packet(&slice[self.recv_lover..]) {
-            pos += self.recv_lover;
+        if let Some((fin, op, mut pos, mut len)) = self.parse_packet(slice) {
             self.recv_lover += pos + len;
             match op {
                 _ if self.cur_op == 1 || op == 1 => {

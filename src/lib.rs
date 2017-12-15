@@ -195,4 +195,3 @@ impl From<std::string::FromUtf8Error> for Error {
         Error::FromUtf8(e)
     }
 }
-

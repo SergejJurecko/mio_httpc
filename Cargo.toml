@@ -1,6 +1,6 @@
 [package]
 name = "mio_httpc"
-version = "0.2.1"
+version = "0.2.2"
 authors = ["sergej jurecko <sergej.jurecko@gmail.com>"]
 description = "mio_httpc is a fully async http client running on top of mio only."
 repository = "https://github.com/SergejJurecko/mio_httpc"
