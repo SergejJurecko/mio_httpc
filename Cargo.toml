@@ -8,6 +8,8 @@ readme = "README.md"
 keywords = ["mio", "http", "client", "async", "websocket"]
 categories = ["network-programming"]
 license = "MIT/Apache-2.0"
+documentation = "http://docs.rs/mio_httpc"
+homepage = "https://github.com/SergejJurecko/mio_httpc"
 
 [features]
 # Default does not work.
