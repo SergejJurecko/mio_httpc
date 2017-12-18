@@ -73,7 +73,6 @@ impl HttpcImpl {
             root_ca,
             b.dns_timeout)?;
         let call = CallImpl::new(b, self.get_buf());
-        // let cid = con.push_call(call);
         if let Some(con_id) = self.cons.push_con(con, call, poll)? {
             let id = Call::new(con_id, 0);
             Ok(id)

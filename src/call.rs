@@ -390,6 +390,8 @@ impl CallImpl {
                     } else if ie.kind() == IoErrorKind::WouldBlock {
                         con.reg(cp.poll, Ready::writable())?;
                         return Ok(SendState::Wait);
+                    } else {
+                        return Err(::Error::Closed);
                     }
                 }
                 &Ok(sz) if sz > 0 => {
