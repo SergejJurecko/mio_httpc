@@ -14,7 +14,7 @@ mio_httpc requires you specify one of the TLS implementations using features: ru
 
 openssl and native backends work well.
 
-rustls is unreliable at the moment. I'm not sure if the issue is rustls or [tls-api-rustls](https://crates.io/crates/tls-api-rustls).
+rustls is waiting for an issue with [tls-api-rustls](https://crates.io/crates/tls-api-rustls) to be resolved.
 
 
 ## TODO
