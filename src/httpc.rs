@@ -23,6 +23,8 @@ const BUF_SZ:usize = 4096*2;
 
 impl HttpcImpl {
     pub fn new(con_offset: usize) -> HttpcImpl {
+        ::types::tp();
+        panic!("ok");
         HttpcImpl {
             timed_out_calls: HashMap::default(),
             last_timeout: Instant::now(),

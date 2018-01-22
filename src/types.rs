@@ -4,17 +4,121 @@ use http::{Request,Response};
 use std::time::Duration;
 use httpc::HttpcImpl;
 use tls_api::{TlsConnector};
+use pest::Parser;
 
+#[derive(Parser)]
+#[grammar = "auth.pest"] // relative to src
+pub struct AuthParser;
+
+#[derive(Debug,Eq,PartialEq,Clone,Copy)]
 pub enum DigestAlg {
     Md5,
     Md5Ses,
 }
+#[derive(Debug,Eq,PartialEq,Clone,Copy)]
+pub enum DigestQop {
+    Auth,
+    AuthInt,
+}
 
 pub struct AuthDigest<'a> {
     realm: &'a str,
-    qop: &'a str,
+    qop: DigestQop,
     nonce: &'a str,
+    opaque: &'a str,
     alg: DigestAlg,
+    stale: bool,
+}
+
+impl<'a> AuthDigest<'a> {
+    pub fn parse(s: &'a str) ->  ::Result<AuthDigest<'a>> {
+        let mut realm = "";
+        let mut nonce = "";
+        let mut opaque = "";
+        let mut qop = DigestQop::Auth;
+        let mut stale = false;
+        let mut alg = DigestAlg::Md5;
+        if let Ok(pairs) = AuthParser::parse(Rule::auth,s) {
+            for pair in pairs {
+                for inner_pair in pair.into_inner() {
+                    match inner_pair.as_rule() {
+                        Rule::auth_type => {
+                            for inner_pair in inner_pair.into_inner() {
+                                let s = inner_pair.into_span().as_str();
+                                if !s.eq_ignore_ascii_case("digest") {
+                                    return Err(::Error::AuthenticateParse);
+                                }
+                                break;
+                            }
+                        }
+                        Rule::realm => {
+                            for inner_pair in inner_pair.into_inner() {
+                                realm = inner_pair.into_span().as_str();
+                                break;
+                            }
+                        }
+                        Rule::qop => {
+                            for inner_pair in inner_pair.into_inner() {
+                                let s = inner_pair.into_span().as_str();
+                                if s.eq_ignore_ascii_case("auth") {
+                                    qop = DigestQop::Auth;
+                                } else if s.eq_ignore_ascii_case("auth-int") {
+                                    qop = DigestQop::AuthInt;
+                                }
+                                break;
+                            }
+                        }
+                        Rule::nonce => {
+                            for inner_pair in inner_pair.into_inner() {
+                                nonce = inner_pair.into_span().as_str();
+                                break;
+                            }
+                        }
+                        Rule::opaque => {
+                            for inner_pair in inner_pair.into_inner() {
+                                opaque = inner_pair.into_span().as_str();
+                                break;
+                            }
+                        }
+                        Rule::stale => {
+                            for inner_pair in inner_pair.into_inner() {
+                                let s = inner_pair.into_span().as_str();
+                                if s.eq_ignore_ascii_case("true") {
+                                    stale = true;
+                                } else {
+                                    stale = false;
+                                }
+                                break;
+                            }
+                        }
+                        Rule::algorithm => {
+                            for inner_pair in inner_pair.into_inner() {
+                                let a = inner_pair.into_span().as_str();
+                                if a.eq_ignore_ascii_case("md5") {
+                                    alg = DigestAlg::Md5;
+                                } else if a.eq_ignore_ascii_case("md5-sess") {
+                                    alg = DigestAlg::Md5Ses;
+                                }
+                                break;
+                            }
+                        }
+                        _ => {
+                        }
+                    }
+                    // println!("Text:    {}", inner_pair.clone().into_span().as_str());
+                }
+            }
+            return Ok(AuthDigest {
+                realm,
+                nonce,
+                opaque,
+                alg,
+                stale,
+                qop,
+            });
+        }
+        Err(::Error::AuthenticateParse)
+    }
 }
 
 pub struct ChunkIndex {

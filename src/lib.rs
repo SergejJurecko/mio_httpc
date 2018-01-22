@@ -64,6 +64,9 @@ extern crate itoa;
 extern crate data_encoding;
 extern crate smallvec;
 extern crate md5;
+extern crate pest;
+#[macro_use]
+extern crate pest_derive;
 
 #[cfg(test)]
 #[macro_use]
@@ -73,6 +76,7 @@ extern crate core_foundation;
 #[cfg(target_os = "macos")]
 extern crate core_foundation_sys;
 #[macro_use] extern crate failure;
+
 
 // Because of default implementation does nothing we suppress warnings of nothing going on.
 // One of TLS implementation features must be picked.
@@ -167,6 +171,9 @@ pub enum Error {
     /// Eror while parsing chunked stream
     #[fail(display = "Error parsing WebSocket transfer")]
     WebSocketParse,
+    /// Eror while parsing chunked stream
+    #[fail(display = "Error parsing WWW-Authenticate header")]
+    AuthenticateParse,
     /// Chunk was larger than configured CallBuilder::cunked_max_chunk.
     #[fail(display = "Chunk was larger than configured CallBuilder::cunked_max_chunk. {}", _0)]
     ChunkOverlimit(usize),
