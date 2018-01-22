@@ -133,10 +133,18 @@ impl<S, T> io::Read for TlsStream<S, T>
             return Ok(r);
         }
 
-        self.session.read_tls(&mut self.stream)?;
-        self.session.process_new_packets()
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-        self.session.read(buf)
+        loop {
+            self.session.read_tls(&mut self.stream)?;
+            self.session.process_new_packets()
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+            match self.session.read(buf) {
+                Ok(0) => {
+                    // No plaintext available yet.
+                    continue;
+                }
+                rc @ _ => return rc
+            };
+        }
     }
 }
 

@@ -36,6 +36,12 @@ rustls is waiting for an issue with [tls-api-rustls](https://crates.io/crates/tl
 
 ```
 cargo run --example get --features "native" -- "https://edition.cnn.com"
+
+// or
+cargo run --example get --features "openssl" -- "https://edition.cnn.com"
+
+// or
+cargo run --example get --features "rustls webpki-roots" -- "https://edition.cnn.com"
 ```
 
 ```rust
