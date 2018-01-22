@@ -14,6 +14,7 @@ use ::types::*;
 use data_encoding::BASE64;
 use byteorder::{LittleEndian,ByteOrder};
 use std::ascii::AsciiExt;
+use md5;
 
 #[derive(PartialEq)]
 enum Dir {

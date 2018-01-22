@@ -1,4 +1,4 @@
-use http::{Request};
+use http::{Request,Response};
 use ::types::CallBuilderImpl;
 use mio::{Poll,Event};
 use tls_api::{TlsConnector};
@@ -75,6 +75,12 @@ impl CallBuilder {
     /// 
     /// Maximum amount of time a call should last.
     pub fn timeout_ms(self, d: u64) -> Self {
+        self
+    }
+
+    /// Use a previous response to create request. This is useful for 
+    /// redirects or http digest authorization responses.
+    pub fn prev_resp(self, v: Response<Vec<u8>>) -> Self {
         self
     }
 }

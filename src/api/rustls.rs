@@ -1,5 +1,6 @@
-extern crate tls_api_rustls;
-use http::{Request};
+// extern crate tls_api_rustls;
+use tls_api;
+use http::{Request,Response};
 use ::types::CallBuilderImpl;
 use mio::{Poll,Event};
 use tls_api::{TlsConnector};
@@ -16,7 +17,7 @@ impl CallBuilder {
         }
     }
     pub fn call(self, httpc: &mut Httpc, poll: &Poll) -> ::Result<Call> {
-        httpc.call::<tls_api_rustls::TlsConnector>(self.cb, poll)
+        httpc.call::<tls_api::rustls::TlsConnector>(self.cb, poll)
     }
     pub fn websocket(mut self, httpc: &mut Httpc, poll: &Poll) -> ::Result<::WebSocket> {
         self.cb.websocket();
@@ -45,6 +46,10 @@ impl CallBuilder {
     }
     pub fn timeout_ms(mut self, d: u64) -> Self {
         self.cb.timeout_ms(d);
+        self
+    }
+    pub fn prev_resp(mut self, v: Response<Vec<u8>>) -> Self {
+        self.cb.prev_resp(v);
         self
     }
 }
@@ -84,12 +89,12 @@ impl Httpc {
         self.h.timeout_extend(out)
     }
     pub fn event(&mut self, ev: &Event) -> Option<CallRef> {
-        self.h.event::<tls_api_rustls::TlsConnector>(ev)
+        self.h.event::<tls_api::rustls::TlsConnector>(ev)
     }
     pub fn call_send(&mut self, poll: &Poll, id: &mut Call, buf: Option<&[u8]>) -> ::SendState {
-        self.h.call_send::<tls_api_rustls::TlsConnector>(poll, id, buf)
+        self.h.call_send::<tls_api::rustls::TlsConnector>(poll, id, buf)
     }
     pub fn call_recv(&mut self, poll: &Poll, id: &mut Call, buf: Option<&mut Vec<u8>>) -> ::RecvState {
-        self.h.call_recv::<tls_api_rustls::TlsConnector>(poll, id, buf)
+        self.h.call_recv::<tls_api::rustls::TlsConnector>(poll, id, buf)
     }
 }

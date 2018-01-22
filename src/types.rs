@@ -1,9 +1,21 @@
 use dns_cache::DnsCache;
 use mio::{Poll};
-use http::{Request};
+use http::{Request,Response};
 use std::time::Duration;
 use httpc::HttpcImpl;
 use tls_api::{TlsConnector};
+
+pub enum DigestAlg {
+    Md5,
+    Md5Ses,
+}
+
+pub struct AuthDigest<'a> {
+    realm: &'a str,
+    qop: &'a str,
+    nonce: &'a str,
+    alg: DigestAlg,
+}
 
 pub struct ChunkIndex {
     // offset is num bytes from header
@@ -123,6 +135,8 @@ pub struct CallBuilderImpl {
     pub root_ca: Vec<Vec<u8>>,
     pub dns_timeout: u64,
     pub ws: bool,
+    pub presp: Option<Response<Vec<u8>>>,
+    // pub digest: bool,
 }
 
 #[allow(dead_code)]
@@ -137,6 +151,8 @@ impl CallBuilderImpl {
             root_ca: Vec::new(),
             dns_timeout: 100,
             ws: false,
+            presp: None,
+            // digest: false,
         }
     }
     pub fn call<C:TlsConnector>(self, httpc: &mut HttpcImpl, poll: &Poll) -> ::Result<::Call> {
@@ -158,6 +174,10 @@ impl CallBuilderImpl {
         self.max_response = m;
         self
     }
+    // pub fn digest_auth(&mut self, b: bool) -> &mut Self {
+    //     self.digest = b;
+    //     self
+    // }
     pub fn chunked_parse(&mut self, b: bool) -> &mut Self {
         self.chunked_parse = b;
         self
@@ -168,6 +188,10 @@ impl CallBuilderImpl {
     }
     pub fn timeout_ms(&mut self, v: u64) -> &mut Self {
         self.dur = Duration::from_millis(v);
+        self
+    }
+    pub fn prev_resp(&mut self, v: Response<Vec<u8>>) -> &mut Self {
+        self.presp = Some(v);
         self
     }
 }

@@ -54,7 +54,7 @@
 
 extern crate rand;
 extern crate httparse;
-extern crate tls_api;
+// extern crate tls_api;
 extern crate mio;
 extern crate byteorder;
 extern crate libc;
@@ -63,6 +63,7 @@ extern crate http;
 extern crate itoa;
 extern crate data_encoding;
 extern crate smallvec;
+extern crate md5;
 
 #[cfg(test)]
 #[macro_use]
@@ -81,17 +82,18 @@ extern crate core_foundation_sys;
 mod dns_cache;
 #[allow(dead_code,unused_variables)]
 mod dns;
-#[allow(dead_code)]
+#[allow(dead_code,unused_imports)]
 mod dns_parser;
 #[allow(dead_code,unused_variables)]
 mod con;
 #[allow(dead_code,unused_variables)]
 mod httpc;
-#[allow(dead_code,unused_variables)]
+#[allow(dead_code,unused_variables,unused_imports)]
 mod call;
 #[allow(dead_code,unused_variables)]
 mod api;
 mod types;
+mod tls_api;
 
 pub use api::*;
 pub use http::{Error as HttpError};

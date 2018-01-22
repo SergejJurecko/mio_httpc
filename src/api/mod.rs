@@ -137,7 +137,7 @@ impl CallRef {
 pub fn extract_body(r: &mut ::http::Response<Vec<u8>>) -> Vec<u8> {
     ::std::mem::replace(r.body_mut(), Vec::new())
 }
-
+#[allow(unused_imports)]
 mod websocket;
 pub use self::websocket::*;
 

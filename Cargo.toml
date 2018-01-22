@@ -10,15 +10,13 @@ categories = ["network-programming"]
 license = "MIT/Apache-2.0"
 documentation = "http://docs.rs/mio_httpc"
 homepage = "https://github.com/SergejJurecko/mio_httpc"
+build = "build.rs"
 
 [features]
 # Default does not work.
 default = []
-
-# Must pick one and only one!
-rustls = ["tls-api-rustls"]
-native = ["tls-api-native-tls"]
-openssl = ["tls-api-openssl"]
+native = ["native-tls"]
+# rustls = ["webpki-roots"]
 
 [dependencies]
 mio = "0.6"
@@ -28,16 +26,18 @@ libc = "0.2"
 fnv = "1"
 rand = "0.3"
 http = "0.1"
-tls-api = "0.1"
+# tls-api = "0.1"
 itoa = "0.3"
 data-encoding = "2.1"
 failure = "0.1"
 smallvec = "0.6"
+md5 = "0.3"
 
-# Do not include directly. Use one of the features.
-tls-api-rustls = { version = "0.1.11", optional = true}
-tls-api-native-tls = { version = "0.1.11", optional = true}
-tls-api-openssl = { version = "0.1.11", optional = true}
+webpki-roots = {version = "0.13", optional = true}
+rustls = { version = "0.11", features = ["dangerous_configuration"], optional = true}
+openssl      = { version = "0.10.*", optional = true, features = ["v102", "v110"] }
+native-tls   = { version = "0.*", optional = true}
+
 
 [target.'cfg(target_os = "macos")'.dependencies]
 core-foundation = "0.4"

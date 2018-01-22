@@ -5,7 +5,7 @@ No call will block, not even for DNS resolution as it is implemented internally 
 
 It uses [http crate](https://crates.io/crates/http) for Request/Response types.
 
-mio_httpc requires you specify one of the TLS implementations using features: rustls, native, openssl. Not picking any feature will NOT work, as all calls will be no-op.
+mio_httpc requires you specify one of the TLS implementations using features: native, openssl and "rustls webpki-roots". Not picking any feature will NOT work, as all calls will be no-op.
 
 [Documentation](https://docs.rs/mio_httpc/)
 
