@@ -219,17 +219,25 @@ impl CallImpl {
                     if let Some(us) = auth.next() {
                         if let Some(pw) = auth.next() {
                             buf.extend(AUTHORIZATION.as_str().as_bytes());
-                            buf.extend(b": Basic ");
-                            let enc_len = BASE64.encode_len(us.len()+1+pw.len());
-                            if BASE64.encode_len(us.len()+1+pw.len()) < 512 {
-                                let mut ar = [0u8;512];
-                                let mut out = [0u8;512];
-                                (&mut ar[..us.len()]).copy_from_slice(us.as_bytes());
-                                (&mut ar[us.len()..us.len()+1]).copy_from_slice(b":");
-                                (&mut ar[us.len()+1..us.len()+1+pw.len()]).copy_from_slice(pw.as_bytes());
-                                BASE64.encode_mut(&ar[..us.len()+1+pw.len()], &mut out[..enc_len]);
-                                buf.extend(&out[..enc_len]);
-                                buf.extend(b"\r\n");
+                            if let Some(ref prev) = self.b.presp {
+                                // ...
+                            }
+                            if self.b.digest {
+                                buf.extend(b": Digest ");
+                                // ....
+                            } else {
+                                buf.extend(b": Basic ");
+                                let enc_len = BASE64.encode_len(us.len()+1+pw.len());
+                                if BASE64.encode_len(us.len()+1+pw.len()) < 512 {
+                                    let mut ar = [0u8;512];
+                                    let mut out = [0u8;512];
+                                    (&mut ar[..us.len()]).copy_from_slice(us.as_bytes());
+                                    (&mut ar[us.len()..us.len()+1]).copy_from_slice(b":");
+                                    (&mut ar[us.len()+1..us.len()+1+pw.len()]).copy_from_slice(pw.as_bytes());
+                                    BASE64.encode_mut(&ar[..us.len()+1+pw.len()], &mut out[..enc_len]);
+                                    buf.extend(&out[..enc_len]);
+                                    buf.extend(b"\r\n");
+                                }
                             }
                         }
                     }

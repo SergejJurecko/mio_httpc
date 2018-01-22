@@ -44,7 +44,7 @@ impl CallBuilder {
     /// buffer is provided.
     /// 
     /// For WebSockets this will also be a received fragment size limit!
-    pub fn max_response(self, m: usize) -> Self {
+    pub fn max_response(self, _m: usize) -> Self {
         self
     }
 
@@ -53,34 +53,39 @@ impl CallBuilder {
     /// Starting point of dns packet resends if nothing received.
     /// Every next resend timeout is 2x the previous one but stops at 1s.
     /// So for 100ms: 100ms, 200ms, 400ms, 800ms, 1000ms, 1000ms...
-    pub fn dns_retry_ms(self, n: u64) -> Self {
+    pub fn dns_retry_ms(self, _n: u64) -> Self {
         self
     }
 
     /// Default true.
     /// 
     /// Configurable because it entails copying the data stream.
-    pub fn chunked_parse(self, b: bool) -> Self {
+    pub fn chunked_parse(self, _b: bool) -> Self {
         self
     }
 
     /// Default 32K
     /// 
     /// Max size of chunk in a chunked transfer.
-    pub fn chunked_max_chunk(self, v: usize) -> Self {
+    pub fn chunked_max_chunk(self, _v: usize) -> Self {
         self
     }
 
     /// Default 60s
     /// 
     /// Maximum amount of time a call should last.
-    pub fn timeout_ms(self, d: u64) -> Self {
+    pub fn timeout_ms(self, _d: u64) -> Self {
         self
     }
 
     /// Use a previous response to create request. This is useful for 
     /// redirects or http digest authorization responses.
-    pub fn prev_resp(self, v: Response<Vec<u8>>) -> Self {
+    pub fn prev_resp(self, _v: Response<Vec<u8>>) -> Self {
+        self
+    }
+
+    /// Use digest authentication.
+    pub fn digest_auth(self, _v: bool) -> Self {
         self
     }
 }

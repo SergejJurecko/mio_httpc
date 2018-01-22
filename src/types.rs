@@ -240,7 +240,7 @@ pub struct CallBuilderImpl {
     pub dns_timeout: u64,
     pub ws: bool,
     pub presp: Option<Response<Vec<u8>>>,
-    // pub digest: bool,
+    pub digest: bool,
 }
 
 #[allow(dead_code)]
@@ -256,7 +256,7 @@ impl CallBuilderImpl {
             dns_timeout: 100,
             ws: false,
             presp: None,
-            // digest: false,
+            digest: false,
         }
     }
     pub fn call<C:TlsConnector>(self, httpc: &mut HttpcImpl, poll: &Poll) -> ::Result<::Call> {
@@ -278,10 +278,10 @@ impl CallBuilderImpl {
         self.max_response = m;
         self
     }
-    // pub fn digest_auth(&mut self, b: bool) -> &mut Self {
-    //     self.digest = b;
-    //     self
-    // }
+    pub fn digest_auth(&mut self, b: bool) -> &mut Self {
+        self.digest = b;
+        self
+    }
     pub fn chunked_parse(&mut self, b: bool) -> &mut Self {
         self.chunked_parse = b;
         self

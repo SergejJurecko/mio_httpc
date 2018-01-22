@@ -10,13 +10,6 @@ mio_httpc requires you specify one of the TLS implementations using features: na
 [Documentation](https://docs.rs/mio_httpc/)
 
 
-**WARNING**
-
-openssl and native backends work well.
-
-rustls is waiting for an issue with [tls-api-rustls](https://crates.io/crates/tls-api-rustls) to be resolved.
-
-
 ## TODO
 
 - [x] Basic API

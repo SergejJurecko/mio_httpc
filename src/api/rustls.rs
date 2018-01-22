@@ -52,6 +52,10 @@ impl CallBuilder {
         self.cb.prev_resp(v);
         self
     }
+    pub fn digest_auth(mut self, v: bool) -> Self {
+        self.cb.digest_auth(v);
+        self
+    }
 }
 
 pub struct Httpc {
