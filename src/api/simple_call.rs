@@ -41,6 +41,7 @@ impl SimpleCall {
                 ::std::mem::replace(rs.body_mut(), rb);
                 return Some(rs);
             }
+            return Some(rs);
         }
         None
     }
