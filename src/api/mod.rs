@@ -56,7 +56,8 @@ pub enum RecvState {
     ReceivedBody(usize),
     /// Request is done with body.
     DoneWithBody(Vec<u8>),
-    /// We are not done sending request yet.
+    /// We are not done sending request yet. State may switch back to sending
+    /// if we are following redirects or need to send request again due to digest auth.
     Sending,
     /// Request is done, body has been returned or
     /// there is no response body.
@@ -64,6 +65,7 @@ pub enum RecvState {
     /// Nothing yet to return.
     Wait,
 }
+
 
 /// Call structure.
 #[derive(Debug, PartialEq)] // much fewer derives then ref on purpose. We want a single instance.
@@ -106,6 +108,7 @@ impl Call {
         *self = Call::empty();
     }
 }
+
 
 // I wish...Need httpc.
 // impl Drop for Call {

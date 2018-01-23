@@ -4,14 +4,14 @@ use std::io::ErrorKind as IoErrorKind;
 use tls_api::{TlsConnector};
 use httparse::{self, Response as ParseResp};
 use http::response::Builder as RespBuilder;
-use http::{self,Version,Request};
+use http::{self,Version,Request,Uri};
 use http::header::*;
 use std::str::FromStr;
 use std::time::{Instant,Duration};
 use std::io::{Read,Write};
 use ::{SendState,RecvState};
 use ::types::*;
-use data_encoding::BASE64;
+use data_encoding::{BASE64,HEXLOWER};
 use byteorder::{LittleEndian,ByteOrder};
 use std::ascii::AsciiExt;
 use md5;
@@ -136,14 +136,18 @@ impl CallImpl {
         Ok(orig_len)
     }
 
-    fn fill_send_req(&mut self, buf: &mut Vec<u8>) {
-        buf.extend(self.b.req.method().as_str().as_bytes());
-        buf.extend(b" ");
-        buf.extend(self.b.req.uri().path().as_bytes());
-        if let Some(q) = self.b.req.uri().query() {
+    fn extend_full_path(buf: &mut Vec<u8>, uri: &Uri) {
+        buf.extend(uri.path().as_bytes());
+        if let Some(q) = uri.query() {
             buf.extend(b"?");
             buf.extend(q.as_bytes());
         }
+    }
+
+    fn fill_send_req(&mut self, buf: &mut Vec<u8>) {
+        buf.extend(self.b.req.method().as_str().as_bytes());
+        buf.extend(b" ");
+        Self::extend_full_path(buf, self.b.req.uri());
         buf.extend(b" HTTP/1.1\r\n");
         for (k,v) in self.b.req.headers().iter() {
             // if k == CONNECTION && self.b.ws {
@@ -218,14 +222,95 @@ impl CallImpl {
                     let mut auth = first.split(":");
                     if let Some(us) = auth.next() {
                         if let Some(pw) = auth.next() {
-                            buf.extend(AUTHORIZATION.as_str().as_bytes());
-                            if let Some(ref prev) = self.b.presp {
-                                // ...
-                            }
                             if self.b.digest {
-                                buf.extend(b": Digest ");
-                                // ....
+                                if self.b.auth.hdr.len() > 0 {
+                                    if let Ok(dig) = ::types::AuthDigest::parse(self.b.auth.hdr.as_str()) {
+                                        buf.extend(AUTHORIZATION.as_str().as_bytes());
+                                        buf.extend(b": Digest ");
+                                        buf.extend(b"username=\"");
+                                        buf.extend(us.as_bytes());
+                                        buf.extend(b"\", ");
+                                        buf.extend(b"realm=\"");
+                                        buf.extend(dig.realm.as_bytes());
+                                        buf.extend(b"\", ");
+                                        if dig.qop != DigestQop::None {
+                                            buf.extend(b"qop=");
+                                            buf.extend(dig.qop.as_bytes());
+                                            buf.extend(b", ");
+                                        }
+                                        buf.extend(b"uri=\"");
+                                        Self::extend_full_path(buf, self.b.req.uri());
+                                        buf.extend(b"\", ");
+                                        buf.extend(b"opaque=\"");
+                                        buf.extend(dig.opaque.as_bytes());
+                                        buf.extend(b"\", ");
+                                        buf.extend(b"nonce=\"");
+                                        buf.extend(dig.nonce.as_bytes());
+                                        buf.extend(b"\", ");
+                                        let cnoncebin = ::rand::random::<[u8;32]>();
+                                        let mut cnonce = [0u8;64];
+                                        let cnonce_len = BASE64.encode_len(cnoncebin.len());
+                                        BASE64.encode_mut(&cnoncebin, &mut cnonce[..cnonce_len]);
+                                        buf.extend(b"cnonce=\"");
+                                        buf.extend(&cnonce[..cnonce_len]);
+                                        buf.extend(b"\", ");
+                                        // For now only a single request per www auth data
+                                        buf.extend(b"nc=00000001");
+                                        // buf.extend(&cnonce[..enc_len]);
+                                        buf.extend(b", ");
+                                        let mut ha1 = [0u8;32];
+                                        let mut ha2 = [0u8;32];
+                                        let mut md5 = md5::Context::new();
+                                        md5.consume(us.as_bytes());
+                                        md5.consume(":");
+                                        md5.consume(dig.realm.as_bytes());
+                                        md5.consume(":");
+                                        md5.consume(pw.as_bytes());
+                                        let d = md5.compute();
+                                        HEXLOWER.encode_mut(&d.0, &mut ha1);
+                                        if dig.alg == DigestAlg::MD5Ses {
+                                            let mut md5 = md5::Context::new();
+                                            md5.consume(&ha1);
+                                            md5.consume(":");
+                                            md5.consume(dig.nonce.as_bytes());
+                                            md5.consume(":");
+                                            md5.consume(&cnonce[..cnonce_len]);
+                                            let d = md5.compute();
+                                            HEXLOWER.encode_mut(&d.0, &mut ha1);
+                                        }
+                                        if dig.qop == DigestQop::Auth || dig.qop == DigestQop::None {
+                                            let mut md5 = md5::Context::new();
+                                            md5.consume(self.b.req.method().as_str().as_bytes());
+                                            md5.consume(":");
+                                            md5.consume(self.b.req.uri().path().as_bytes());
+                                            if let Some(q) = self.b.req.uri().query() {
+                                                md5.consume(b"?");
+                                                md5.consume(q.as_bytes());
+                                            }
+                                            let d = md5.compute();
+                                            HEXLOWER.encode_mut(&d.0, &mut ha2);
+                                        }
+                                        let mut md5 = md5::Context::new();
+                                        md5.consume(&ha1);
+                                        md5.consume(":");
+                                        md5.consume(dig.nonce.as_bytes());
+                                        if dig.qop != DigestQop::None {
+                                            md5.consume(":00000001:");
+                                            md5.consume(&cnonce[..cnonce_len]);
+                                            md5.consume(":");
+                                            md5.consume(dig.qop.as_bytes());
+                                        }
+                                        md5.consume(":");
+                                        md5.consume(&ha2);
+                                        let d = md5.compute();
+                                        HEXLOWER.encode_mut(&d.0, &mut ha1);
+                                        buf.extend(b"response=\"");
+                                        buf.extend(&ha1);
+                                        buf.extend(b"\"\r\n");
+                                    }
+                                }
                             } else {
+                                buf.extend(AUTHORIZATION.as_str().as_bytes());
                                 buf.extend(b": Basic ");
                                 let enc_len = BASE64.encode_len(us.len()+1+pw.len());
                                 if BASE64.encode_len(us.len()+1+pw.len()) < 512 {
@@ -301,13 +386,13 @@ impl CallImpl {
         }
     }
 
-    pub fn event_recv<C:TlsConnector>(&mut self, 
+    pub(crate) fn event_recv<C:TlsConnector>(&mut self, 
             con: &mut Con,
             cp: &mut CallParam, 
-            b: Option<&mut Vec<u8>>) -> ::Result<RecvState> {
+            b: Option<&mut Vec<u8>>) -> ::Result<RecvStateInt> {
         match self.dir {
             Dir::Done => {
-                return Ok(RecvState::Done);
+                return Ok(RecvStateInt::Done);
             }
             Dir::Receiving(rec_pos,_) => {
                 if self.hdr_sz == 0 || b.is_none() || self.b.chunked_parse {
@@ -322,28 +407,28 @@ impl CallImpl {
                             ::std::ptr::copy(src, dst, self.body_sz);
                         }
                         buf.truncate(self.body_sz);
-                        return Ok(RecvState::DoneWithBody(buf));
+                        return Ok(RecvStateInt::DoneWithBody(buf));
                     }
                     let mut ret = self.event_rec_do::<C>(con, cp, true, &mut buf);
 
                     if self.b.chunked_parse && self.hdr_sz > 0 {
                         match ret {
                             Err(_) => {}
-                            Ok(RecvState::Error(_)) => {}
-                            Ok(RecvState::Response(_,_)) => {}
+                            // Ok(RecvStateInt::Error(_)) => {}
+                            Ok(RecvStateInt::Response(_,_)) => {}
                             _ if b.is_some() => {
                                 let b = b.unwrap();
                                 let nc = self.chunked.push_to(self.hdr_sz, &mut buf, b)?;
                                 if nc == 0 {
-                                    ret = Ok(RecvState::Wait);
+                                    ret = Ok(RecvStateInt::Wait);
                                 } else {
-                                    ret = Ok(RecvState::ReceivedBody(nc));
+                                    ret = Ok(RecvStateInt::ReceivedBody(nc));
                                 }
                             }
                             _ if Dir::Done == self.dir => {
                                 let mut b = Vec::with_capacity(buf.len());
                                 self.chunked.push_to(self.hdr_sz, &mut buf, &mut b)?;
-                                ret = Ok(RecvState::DoneWithBody(b));
+                                ret = Ok(RecvStateInt::DoneWithBody(b));
                             }
                             _ => {}
                         }
@@ -358,7 +443,7 @@ impl CallImpl {
                         (&mut b).extend(&self.buf[self.hdr_sz..]);
                         if rec_pos >= self.body_sz {
                             self.dir = Dir::Done;
-                            return Ok(RecvState::ReceivedBody(self.buf.len() - self.hdr_sz));
+                            return Ok(RecvStateInt::ReceivedBody(self.buf.len() - self.hdr_sz));
                         }
                         self.buf.truncate(self.hdr_sz);
                     }
@@ -366,10 +451,10 @@ impl CallImpl {
                 }
             }
             Dir::SendingBody(_) => {
-                Ok(RecvState::Sending)
+                Ok(RecvStateInt::Sending)
             }
             Dir::SendingHdr(_) => {
-                Ok(RecvState::Sending)
+                Ok(RecvStateInt::Sending)
             }
         }
     }
@@ -443,7 +528,7 @@ impl CallImpl {
             con: &mut Con,
             cp: &mut CallParam, 
             internal: bool, 
-            buf: &mut Vec<u8>) -> ::Result<RecvState> {
+            buf: &mut Vec<u8>) -> ::Result<RecvStateInt> {
         let mut orig_len = self.reserve_space(internal, buf)?;
         let mut io_ret;
         let mut entire_sz = 0;
@@ -461,7 +546,7 @@ impl CallImpl {
                         buf.truncate(orig_len);
                         con.reg(cp.poll, Ready::readable())?;
                         if entire_sz == 0 {
-                            return Ok(RecvState::Wait);
+                            return Ok(RecvStateInt::Wait);
                         }
                         break;
                     }
@@ -537,11 +622,33 @@ impl CallImpl {
                                 self.b.chunked_parse = false;
                             }
 
+                            let status_code = resp.status().as_u16();
+                            let auth_info = if status_code == 401 {
+                                if let Some(ref clh) = resp.headers().get(http::header::WWW_AUTHENTICATE) {
+                                    if let Ok(s) = clh.to_str() {
+                                        let mut auth_type = s.split_whitespace();
+                                        if let Some(auth_type) = auth_type.next() {
+                                            if auth_type.eq_ignore_ascii_case("digest") {
+                                                if ::types::AuthDigest::parse(s).is_ok() {
+                                                    self.dir == Dir::Done;
+                                                    Some(AuthenticateInfo::new(String::from(s)))
+                                                    // return Ok(RecvStateInt::DigestAuth(resp,::AuthenticateInfo::new(String::from(s))));
+                                                } else { None }
+                                            } else if auth_type.eq_ignore_ascii_case("basic") && self.b.digest {
+                                                return Ok(RecvStateInt::BasicAuth);
+                                            } else { None }
+                                        } else { None }
+                                    } else { None }
+                                } else { None }
+                            } else { None };
+                            if let Some(auth_info) = auth_info {
+                                return Ok(RecvStateInt::DigestAuth(resp,auth_info));
+                            }
                             // If switching protocols body is unlimited
-                            if resp.status().as_u16() == 101 {
+                            if status_code == 101 {
                                 self.body_sz = usize::max_value();
                                 self.dir = Dir::Receiving(buflen - self.hdr_sz,true);
-                                return Ok(RecvState::Response(resp, ::ResponseBody::Streamed));
+                                return Ok(RecvStateInt::Response(resp, ::ResponseBody::Streamed));
                             } else if self.body_sz == 0 {
                                 self.dir == Dir::Done;
                             } else {
@@ -551,13 +658,13 @@ impl CallImpl {
                                 if self.chunked.check_done(self.b.max_chunk, &buf[self.hdr_sz..])? {
                                     self.dir = Dir::Done;
                                 }
-                                return Ok(RecvState::Response(resp, ::ResponseBody::Streamed));
+                                return Ok(RecvStateInt::Response(resp, ::ResponseBody::Streamed));
                             } else {
-                                return Ok(RecvState::Response(resp, ::ResponseBody::Sized(self.body_sz)));
+                                return Ok(RecvStateInt::Response(resp, ::ResponseBody::Sized(self.body_sz)));
                             }
                         }
                         Ok(httparse::Status::Partial) => {
-                            return Ok(RecvState::Wait);
+                            return Ok(RecvStateInt::Wait);
                         }
                         Err(e) => {
                             return Err(From::from(e));
@@ -584,7 +691,7 @@ impl CallImpl {
                             self.dir = Dir::Receiving(pos + bytes_rec, duplex);
                         }
                     }
-                    return Ok(RecvState::ReceivedBody(bytes_rec));
+                    return Ok(RecvStateInt::ReceivedBody(bytes_rec));
                 }
             }
             Err(e) => {

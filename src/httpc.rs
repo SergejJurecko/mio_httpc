@@ -85,13 +85,15 @@ impl HttpcImpl {
         if id.is_empty() {
             return;
         }
-        let (b1, b2) = self.cons.close_call(id.con_id(), id.call_id());
+        self.call_close_int(id);
+    }
+
+    fn call_close_int(&mut self, id: Call) -> CallBuilderImpl {
+        let (builder, b1) = self.cons.close_call(id.con_id(), id.call_id());
         if b1.capacity() > 0 || b1.len() > 0 {
             self.reuse(b1);
         }
-        if b2.capacity() > 0 || b2.len() > 0 {
-            self.reuse(b2);
-        }
+        builder
     }
 
     pub fn get_buf(&mut self) -> Vec<u8> {
@@ -182,24 +184,68 @@ impl HttpcImpl {
             self.cons.event_recv::<C>(call.con_id(), call.call_id(), &mut cp, buf)
         };
         match cret {
-            Ok(RecvState::Response(r,::ResponseBody::Sized(0))) => {
+            Ok(RecvStateInt::Response(r,::ResponseBody::Sized(0))) => {
                 self.call_close(Call(call.0));
                 call.invalidate();
                 return RecvState::Response(r,::ResponseBody::Sized(0));
             }
-            Ok(RecvState::Done) => {
+            Ok(RecvStateInt::Done) => {
                 self.call_close(Call(call.0));
                 call.invalidate();
                 return RecvState::Done;
             }
-            Ok(RecvState::DoneWithBody(body)) => {
+            Ok(RecvStateInt::DoneWithBody(body)) => {
                 self.call_close(Call(call.0));
                 call.invalidate();
                 return RecvState::DoneWithBody(body);
             }
-            Ok(er) => {
-                return er;
+            Ok(RecvStateInt::DigestAuth(r,d)) => {
+                let mut b = self.call_close_int(Call(call.0));
+                call.invalidate();
+                if b.auth.hdr.len() > 0 {
+                    // If an attempt was already made once, return response.
+                    return RecvState::Response(r,::ResponseBody::Sized(0));
+                }
+                b.auth(d);
+                match self.call::<C>(b, poll) {
+                    Ok(nc) => {
+                        call.0 = nc.0;
+                        return RecvState::Sending;
+                    }
+                    Err(e) => {
+                        return RecvState::Error(e);
+                    }
+                }
             }
+            Ok(RecvStateInt::BasicAuth) => {
+                let mut b = self.call_close_int(Call(call.0));
+                call.invalidate();
+                b.digest_auth(false);
+                match self.call::<C>(b, poll) {
+                    Ok(nc) => {
+                        call.0 = nc.0;
+                        return RecvState::Sending;
+                    }
+                    Err(e) => {
+                        return RecvState::Error(e);
+                    }
+                }
+            }
+            Ok(RecvStateInt::Sending) => {
+                return RecvState::Sending;
+            }
+            Ok(RecvStateInt::ReceivedBody(b)) => {
+                return RecvState::ReceivedBody(b);
+            }
+            Ok(RecvStateInt::Wait) => {
+                return RecvState::Wait;
+            }
+            Ok(RecvStateInt::Response(a,b)) => {
+                return RecvState::Response(a,b);
+            }
+            // Ok(RecvStateInt::Error(e)) => {
+            //     return RecvState::Error(e);
+            // }
             Err(e) => {
                 self.call_close(Call(call.0));
                 call.invalidate();

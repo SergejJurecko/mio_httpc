@@ -5,7 +5,7 @@ use mio_httpc::{Request,CallBuilder,Httpc,SimpleCall};
 use mio::{Poll,Events};
 
 fn do_call(htp: &mut Httpc, poll: &Poll, req: Request<Vec<u8>>) {
-    let call = CallBuilder::new(req).timeout_ms(500).call(htp, &poll).expect("Call start failed");
+    let call = CallBuilder::new(req).timeout_ms(500).digest_auth(true).call(htp, &poll).expect("Call start failed");
     let mut call = SimpleCall::from(call);
 
     let to = ::std::time::Duration::from_millis(100);

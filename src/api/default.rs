@@ -1,10 +1,11 @@
-use http::{Request,Response};
+use http::{Request};
 use ::types::CallBuilderImpl;
 use mio::{Poll,Event};
 use tls_api::{TlsConnector};
 use ::{Result,WebSocket,Call, CallRef, SendState, RecvState};
 
 /// Used to start a call and get a Call for it.
+#[derive(Debug)]
 pub struct CallBuilder {
 }
 
@@ -78,13 +79,15 @@ impl CallBuilder {
         self
     }
 
-    /// Use a previous response to create request. This is useful for 
-    /// redirects or http digest authorization responses.
-    pub fn prev_resp(self, _v: Response<Vec<u8>>) -> Self {
-        self
-    }
+    // /// If server using digest authentication, you will get AuthenticateInfo on first call.
+    // /// You must supply it to second call.
+    // pub fn auth(&mut self, _v: ::AuthenticateInfo) -> &mut Self {
+    //     self
+    // }
 
-    /// Use digest authentication.
+    /// Use digest authentication. If you know server is using digest auth you REALLY should set it to true.
+    /// If server is using basic authentication and you set digest_auth to true, mio_httpc will retry with basic.
+    /// If not set, basic auth is assumed which is very insecure.
     pub fn digest_auth(self, _v: bool) -> Self {
         self
     }

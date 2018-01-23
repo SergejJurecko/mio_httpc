@@ -123,7 +123,10 @@ impl SimpleCall {
                         }
                     }
                     RecvState::Wait => {}
-                    RecvState::Sending => {}
+                    RecvState::Sending => {
+                        self.state = State::Sending;
+                        return self.perform(htp, poll);
+                    }
                     RecvState::ReceivedBody(_s) => {}
                 }
             }

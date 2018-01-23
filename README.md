@@ -17,6 +17,7 @@ mio_httpc requires you specify one of the TLS implementations using features: na
 - [x] Chunked encoding download
 - [ ] Chunked encoding upload
 - [x] Basic Auth
+- [x] Digest Auth
 - [x] Keep-alive connection pool
 - [x] DNS retries
 - [x] Timeouts

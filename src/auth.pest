@@ -5,7 +5,7 @@ qword = _{ "\"" ~ string ~ "\"" }
 
 auth_type = { ^"Digest" | ^"Basic" }
 alg = { "\"" ~ (^"md5" | ^"md5-ses") ~ "\"" }
-qop_type = { "\"" ~ ^"auth" | ^"auth-int" ~ "\"" }
+qop_type = { "\"" ~ ((^"auth" | ^"auth-int") ~ ","?)+ ~ "\"" }
 bool = { ^"true" | ^"false" }
 
 realm = { ^"realm" ~ "=" ~ qword}

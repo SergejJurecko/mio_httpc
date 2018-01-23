@@ -1,11 +1,12 @@
 // extern crate tls_api_openssl;
 use tls_api;
-use http::{Request,Response};
+use http::{Request};
 use ::types::CallBuilderImpl;
 use mio::{Poll,Event};
 use tls_api::{TlsConnector};
 use ::{Result,Call,CallRef};
 
+#[derive(Debug)]
 pub struct CallBuilder {
     cb: CallBuilderImpl,
 }
@@ -48,14 +49,14 @@ impl CallBuilder {
         self.cb.timeout_ms(d);
         self
     }
-    pub fn prev_resp(mut self, v: Response<Vec<u8>>) -> Self {
-        self.cb.prev_resp(v);
-        self
-    }
     pub fn digest_auth(mut self, v: bool) -> Self {
         self.cb.digest_auth(v);
         self
     }
+    // pub fn auth(&mut self, v: ::AuthenticateInfo) -> &mut Self {
+    //     self.cb.auth(v);
+    //     self
+    // }
 }
 
 pub struct Httpc {

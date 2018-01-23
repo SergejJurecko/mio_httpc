@@ -1,43 +1,80 @@
 use dns_cache::DnsCache;
 use mio::{Poll};
-use http::{Request,Response};
+use http::{Request};
 use std::time::Duration;
 use httpc::HttpcImpl;
 use tls_api::{TlsConnector};
 use pest::Parser;
 
+#[derive(Debug)]
+pub(crate) enum RecvStateInt {
+    // Error(::Error),
+    Response(::http::Response<Vec<u8>>,::ResponseBody),
+    DigestAuth(::http::Response<Vec<u8>>,AuthenticateInfo),
+    ReceivedBody(usize),
+    DoneWithBody(Vec<u8>),
+    Sending,
+    Done,
+    Wait,
+    BasicAuth,
+}
+
 #[derive(Parser)]
 #[grammar = "auth.pest"] // relative to src
-pub struct AuthParser;
+struct AuthParser;
 
 #[derive(Debug,Eq,PartialEq,Clone,Copy)]
 pub enum DigestAlg {
-    Md5,
-    Md5Ses,
+    MD5,
+    MD5Ses,
+    // TODO use: https://github.com/malept/crypto-hash
+    // Once they update to openssl 0.10.
+    // Sha256,
+    // Sha256Ses
+    // Sha512,
+    // Sha512Ses
 }
 #[derive(Debug,Eq,PartialEq,Clone,Copy)]
 pub enum DigestQop {
     Auth,
     AuthInt,
+    None,
+}
+
+impl DigestQop {
+    pub fn as_bytes(&self) -> &[u8] {
+        match *self {
+            DigestQop::Auth => {
+                b"auth"
+            }
+            DigestQop::AuthInt => {
+                b"auth-int"
+            }
+            DigestQop::None => {
+                b"auth"
+            }
+        }
+    }
 }
 
 pub struct AuthDigest<'a> {
-    realm: &'a str,
-    qop: DigestQop,
-    nonce: &'a str,
-    opaque: &'a str,
-    alg: DigestAlg,
-    stale: bool,
+    pub realm: &'a str,
+    pub qop: DigestQop,
+    pub nonce: &'a str,
+    pub opaque: &'a str,
+    pub alg: DigestAlg,
+    pub stale: bool,
 }
 
 impl<'a> AuthDigest<'a> {
     pub fn parse(s: &'a str) ->  ::Result<AuthDigest<'a>> {
+        // println!("Digest in {}",s);
         let mut realm = "";
         let mut nonce = "";
         let mut opaque = "";
-        let mut qop = DigestQop::Auth;
+        let mut qop = DigestQop::None;
         let mut stale = false;
-        let mut alg = DigestAlg::Md5;
+        let mut alg = DigestAlg::MD5;
         if let Ok(pairs) = AuthParser::parse(Rule::auth,s) {
             for pair in pairs {
                 for inner_pair in pair.into_inner() {
@@ -60,9 +97,9 @@ impl<'a> AuthDigest<'a> {
                         Rule::qop => {
                             for inner_pair in inner_pair.into_inner() {
                                 let s = inner_pair.into_span().as_str();
-                                if s.eq_ignore_ascii_case("auth") {
+                                if s.eq_ignore_ascii_case("\"auth\"") {
                                     qop = DigestQop::Auth;
-                                } else if s.eq_ignore_ascii_case("auth-int") {
+                                } else if s.eq_ignore_ascii_case("\"auth-int\"") {
                                     qop = DigestQop::AuthInt;
                                 }
                                 break;
@@ -95,9 +132,9 @@ impl<'a> AuthDigest<'a> {
                             for inner_pair in inner_pair.into_inner() {
                                 let a = inner_pair.into_span().as_str();
                                 if a.eq_ignore_ascii_case("md5") {
-                                    alg = DigestAlg::Md5;
+                                    alg = DigestAlg::MD5;
                                 } else if a.eq_ignore_ascii_case("md5-sess") {
-                                    alg = DigestAlg::Md5Ses;
+                                    alg = DigestAlg::MD5Ses;
                                 }
                                 break;
                             }
@@ -105,9 +142,9 @@ impl<'a> AuthDigest<'a> {
                         _ => {
                         }
                     }
-                    // println!("Text:    {}", inner_pair.clone().into_span().as_str());
                 }
             }
+            // println!("Digest out {} {} {} {:?} {:?}",realm,nonce,opaque,alg,qop);
             return Ok(AuthDigest {
                 realm,
                 nonce,
@@ -118,6 +155,27 @@ impl<'a> AuthDigest<'a> {
             });
         }
         Err(::Error::AuthenticateParse)
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct AuthenticateInfo {
+    pub(crate) nc: usize,
+    pub(crate) hdr: String,
+}
+
+impl AuthenticateInfo {
+    pub(crate) fn empty() -> AuthenticateInfo {
+        AuthenticateInfo {
+            nc: 0,
+            hdr: String::new(),
+        }
+    }
+    pub(crate) fn new(s: String) -> AuthenticateInfo {
+        AuthenticateInfo {
+            hdr: s,
+            nc: 0,
+        }
     }
 }
 
@@ -230,6 +288,7 @@ pub struct CallParam<'a> {
 }
 
 /// Start configure call.
+#[derive(Debug)]
 pub struct CallBuilderImpl {
     pub req: Request<Vec<u8>>,
     pub chunked_parse: bool,
@@ -239,7 +298,7 @@ pub struct CallBuilderImpl {
     pub root_ca: Vec<Vec<u8>>,
     pub dns_timeout: u64,
     pub ws: bool,
-    pub presp: Option<Response<Vec<u8>>>,
+    pub(crate) auth: AuthenticateInfo,
     pub digest: bool,
 }
 
@@ -255,7 +314,7 @@ impl CallBuilderImpl {
             root_ca: Vec::new(),
             dns_timeout: 100,
             ws: false,
-            presp: None,
+            auth: AuthenticateInfo::empty(),
             digest: false,
         }
     }
@@ -279,7 +338,9 @@ impl CallBuilderImpl {
         self
     }
     pub fn digest_auth(&mut self, b: bool) -> &mut Self {
-        self.digest = b;
+        if self.auth.hdr.len() == 0 {
+            self.digest = b;
+        }
         self
     }
     pub fn chunked_parse(&mut self, b: bool) -> &mut Self {
@@ -294,8 +355,9 @@ impl CallBuilderImpl {
         self.dur = Duration::from_millis(v);
         self
     }
-    pub fn prev_resp(&mut self, v: Response<Vec<u8>>) -> &mut Self {
-        self.presp = Some(v);
+    pub(crate) fn auth(&mut self, v: AuthenticateInfo) -> &mut Self {
+        self.digest = true;
+        self.auth = v;
         self
     }
 }

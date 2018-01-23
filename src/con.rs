@@ -10,7 +10,7 @@ use std::str::FromStr;
 use std::time::{Instant,Duration};
 use http::{Request,Uri};
 use std::io::{Read,Write};
-use ::types::CallParam;
+use ::types::{CallParam,RecvStateInt};
 use fnv::FnvHashMap as HashMap;
 use smallvec::SmallVec;
 use ::call::CallImpl;
@@ -342,47 +342,42 @@ impl Evented for Con {
 }
 
 struct HostCons {
-    uri: Uri,
+    // uri: Uri,
+    host: SmallVec<[u8;32]>,
 }
 
 impl HostCons {
-    pub fn new(uri: Uri) -> HostCons {
+    pub fn new(uri: &[u8]) -> HostCons {
+        let mut sv = SmallVec::new();
+        sv.extend_from_slice(uri);
         HostCons {
-            uri,
+            host: sv,
         }
     }
 }
 use std::hash::{Hash, Hasher};
 impl Hash for HostCons {
     fn hash<H>(&self, state: &mut H) where H: Hasher {
-        if let Some(host) = self.uri.host() {
-            Hash::hash_slice(host.as_bytes(), state);
-        }
+        Hash::hash_slice(&self.host, state);
     }
 }
 impl ::std::borrow::Borrow<str> for HostCons {
     #[inline]
     fn borrow(&self) -> &str {
-        self.uri.host().unwrap()
+        unsafe {
+            ::std::str::from_utf8_unchecked(&self.host)
+        }
     }
 }
 
 impl PartialEq for HostCons {
     fn eq(&self, uri: &HostCons) -> bool {
-        if let Some(host) = self.uri.host() {
-            if let Some(host1) = uri.uri.host() {
-                return host == host1;
-            }
-        }
-        false
+        self.host == uri.host
     }
 }
 impl PartialEq<str> for HostCons {
     fn eq(&self, host1: &str) -> bool {
-        if let Some(host) = self.uri.host() {
-            return host == host1;
-        }
-        false
+        self.host.as_slice() == host1.as_bytes()
     }
 }
 impl Eq for HostCons {}
@@ -471,7 +466,7 @@ impl ConTable {
         }
         res
     }
-    pub fn event_recv<C:TlsConnector>(&mut self, con: u16, call:u16, cp: &mut CallParam, buf: Option<&mut Vec<u8>>) -> Result<::RecvState> {
+    pub(crate) fn event_recv<C:TlsConnector>(&mut self, con: u16, call:u16, cp: &mut CallParam, buf: Option<&mut Vec<u8>>) -> Result<RecvStateInt> {
         let conp = &mut self.cons[con as usize];
         conp.1[call as usize].event_recv::<C>(&mut conp.0, cp, buf)
     }
@@ -536,30 +531,33 @@ impl ConTable {
         None
     }
 
-    pub fn close_call(&mut self, con: u16, call: u16) -> (Vec<u8>, Vec<u8>) {
+    pub fn close_call(&mut self, con: u16, call: u16) -> (::types::CallBuilderImpl, Vec<u8>) {
         let con = con as usize;
         let call:CallImpl = Self::extract_call(call, &mut self.cons[con].1);
         let (builder, call_buf) = call.stop();
-        let (parts, req_buf) = builder.req.into_parts();
-        let uri = parts.uri;
-        if !self.cons[con].0.to_close && uri.host().is_some() {
-            if self.cons[con].1.len() == 0 {
-                self.cons[con].0.set_idle(true);
+        // let (parts, req_buf) = builder.req.into_parts();
+        // let uri = parts.uri;
+        {
+            let uri = builder.req.uri();
+            if !self.cons[con].0.to_close && uri.host().is_some() {
+                if self.cons[con].1.len() == 0 {
+                    self.cons[con].0.set_idle(true);
+                } else {
+                    self.cons[con].0.first_use_done();
+                }
+                if self.keepalive.contains_key(uri.host().unwrap()) {
+                    let v = self.keepalive.get_mut(uri.host().unwrap()).unwrap();
+                    v.push(con as u16);
+                } else {
+                    let mut v = SmallVec::new();
+                    v.push(con as u16);
+                    self.keepalive.insert(HostCons::new(uri.host().unwrap().as_bytes()), v);
+                }
             } else {
-                self.cons[con].0.first_use_done();
+                self.close_con(con as u16);
             }
-            if self.keepalive.contains_key(uri.host().unwrap()) {
-                let v = self.keepalive.get_mut(uri.host().unwrap()).unwrap();
-                v.push(con as u16);
-            } else {
-                let mut v = SmallVec::new();
-                v.push(con as u16);
-                self.keepalive.insert(HostCons::new(uri), v);
-            }
-        } else {
-            self.close_con(con as u16);
         }
-        (call_buf, req_buf)
+        (builder, call_buf)
     }
 
     fn close_con(&mut self, pos: u16) {
