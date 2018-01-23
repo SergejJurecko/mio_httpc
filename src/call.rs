@@ -268,7 +268,7 @@ impl CallImpl {
                                         md5.consume(pw.as_bytes());
                                         let d = md5.compute();
                                         HEXLOWER.encode_mut(&d.0, &mut ha1);
-                                        if dig.alg == DigestAlg::MD5Ses {
+                                        if dig.alg == DigestAlg::MD5Sess {
                                             let mut md5 = md5::Context::new();
                                             md5.consume(&ha1);
                                             md5.consume(":");

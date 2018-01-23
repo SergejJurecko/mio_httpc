@@ -12,7 +12,7 @@
 //! ```
 //! extern crate mio_httpc;
 //! extern crate mio;
-
+//!
 //! use mio_httpc::{Request,CallBuilder,Httpc,SimpleCall};
 //! use mio::{Poll,Events};
 //!
@@ -20,10 +20,10 @@
 //! let mut htp = Httpc::new(10);
 //! let mut req = Request::builder();
 //! let req = req.uri("https://www.reddit.com").body(Vec::new())?;
-
+//!
 //! let call = CallBuilder::new(req).timeout_ms(500).call(&mut htp, &poll)?;
 //! let mut call = SimpleCall::from(call);
-
+//!
 //! let to = ::std::time::Duration::from_millis(100);
 //! 'outer: loop {
 //!     let mut events = Events::with_capacity(8);
@@ -51,6 +51,8 @@
 //!    }
 //! }
 //! ```
+#![doc(html_root_url = "https://docs.rs/mio_httpc")]
+#![crate_name = "mio_httpc"]
 
 extern crate rand;
 extern crate httparse;

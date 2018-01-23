@@ -1,15 +1,18 @@
 whitespace = _{ " " | "\t" | "\r" | "\n" }
 
+quote = _{ "\"" }
 string = @{(!("\"" | "\\") ~ any)*}
-qword = _{ "\"" ~ string ~ "\"" }
+qword = _{ quote ~ string ~ quote }
 
 auth_type = { ^"Digest" | ^"Basic" }
-alg = { "\"" ~ (^"md5" | ^"md5-ses") ~ "\"" }
-qop_type = { "\"" ~ ((^"auth" | ^"auth-int") ~ ","?)+ ~ "\"" }
+alg = { ^"md5-sess" | ^"md5" }
+qop_opts = { ^"auth-int" | ^"auth" }
+qop_seq = _{ (qop_opts ~ ","?)+ }
+qop_str = _{ quote ~ qop_seq ~ quote }
 bool = { ^"true" | ^"false" }
 
 realm = { ^"realm" ~ "=" ~ qword}
-qop = { ^"qop" ~ "=" ~ qop_type}
+qop = { ^"qop" ~ "=" ~ qop_str}
 nonce = { ^"nonce" ~ "=" ~ qword}
 opaque = { ^"opaque"  ~ "=" ~ qword}
 algorithm = { ^"algorithm" ~ "=" ~ alg}

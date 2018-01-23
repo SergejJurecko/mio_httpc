@@ -26,7 +26,7 @@ struct AuthParser;
 #[derive(Debug,Eq,PartialEq,Clone,Copy)]
 pub enum DigestAlg {
     MD5,
-    MD5Ses,
+    MD5Sess,
     // TODO use: https://github.com/malept/crypto-hash
     // Once they update to openssl 0.10.
     // Sha256,
@@ -97,12 +97,13 @@ impl<'a> AuthDigest<'a> {
                         Rule::qop => {
                             for inner_pair in inner_pair.into_inner() {
                                 let s = inner_pair.into_span().as_str();
-                                if s.eq_ignore_ascii_case("\"auth\"") {
+                                if s.eq_ignore_ascii_case("auth") {
                                     qop = DigestQop::Auth;
-                                } else if s.eq_ignore_ascii_case("\"auth-int\"") {
+                                    break;
+                                } else if s.eq_ignore_ascii_case("auth-int") {
                                     qop = DigestQop::AuthInt;
+                                    continue;
                                 }
-                                break;
                             }
                         }
                         Rule::nonce => {
@@ -134,7 +135,7 @@ impl<'a> AuthDigest<'a> {
                                 if a.eq_ignore_ascii_case("md5") {
                                     alg = DigestAlg::MD5;
                                 } else if a.eq_ignore_ascii_case("md5-sess") {
-                                    alg = DigestAlg::MD5Ses;
+                                    alg = DigestAlg::MD5Sess;
                                 }
                                 break;
                             }
@@ -362,3 +363,13 @@ impl CallBuilderImpl {
     }
 }
 
+#[test]
+pub fn test_auth() {
+    let s = "Digest realm=\"http-auth@example.org\", qop=\"auth-int , auth\", algorithm=MD5-sess, nonce=\"7ypf/xlj9XXwfDPEoM4URrv/xwf94BcCAzFZH4GiTo0v\", opaque=\"FQhe/qaU925kfnzjCev0ciny7QMkPqMAFRtzCUYo5tdS\"";
+    AuthParser::parse(Rule::auth,s).unwrap();
+    let da = AuthDigest::parse(s).unwrap();
+    assert_eq!(da.realm,"http-auth@example.org");
+    assert_eq!(da.nonce,"7ypf/xlj9XXwfDPEoM4URrv/xwf94BcCAzFZH4GiTo0v");
+    assert_eq!(da.qop,DigestQop::Auth);
+    assert_eq!(da.alg,DigestAlg::MD5Sess);
+}

@@ -39,7 +39,6 @@ impl SimpleCall {
         if let Some(mut rs) = r {
             if let Some(rb) = b {
                 ::std::mem::replace(rs.body_mut(), rb);
-                return Some(rs);
             }
             return Some(rs);
         }
