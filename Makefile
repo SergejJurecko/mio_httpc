@@ -7,7 +7,7 @@ check:
 	cargo check
 	cargo check --features="openssl"
 	cargo check --features="native"
-	cargo check --features="rustls webpki-roots"	
+	cargo check --features="rtls"
 
 run_cnn:
 	cargo run --example get --features "native" -- "https://edition.cnn.com"

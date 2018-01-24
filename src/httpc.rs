@@ -6,7 +6,7 @@ use tls_api::{TlsConnector};
 use std::collections::VecDeque;
 use call::{CallImpl};
 use types::*;
-use fnv::FnvHashMap as HashMap;
+// use fnv::FnvHashMap as HashMap;
 use ::{SendState,RecvState,CallRef,Call};
 use std::time::{Instant};
 

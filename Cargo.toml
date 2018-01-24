@@ -1,6 +1,6 @@
 [package]
 name = "mio_httpc"
-version = "0.2.6"
+version = "0.3.0"
 authors = ["sergej jurecko <sergej.jurecko@gmail.com>"]
 description = "mio_httpc is a fully async http client running on top of mio only."
 repository = "https://github.com/SergejJurecko/mio_httpc"
@@ -16,7 +16,7 @@ build = "build.rs"
 # Default does not work.
 default = []
 native = ["native-tls"]
-# rustls = ["webpki-roots"]
+rtls = ["webpki-roots", "webpki", "rustls"]
 
 [dependencies]
 mio = "0.6"
@@ -34,8 +34,9 @@ md5 = "0.3"
 pest = "1"
 pest_derive = "1"
 
-webpki-roots = {version = "0.13", optional = true}
-rustls = { version = "0.11", features = ["dangerous_configuration"], optional = true}
+webpki = {version = "^0.18.0-alpha", optional = true}
+webpki-roots = {version = "0.14", optional = true}
+rustls = { version = "0.12", features = ["dangerous_configuration"], optional = true}
 openssl      = { version = "0.10.*", optional = true, features = ["v102", "v110"] }
 native-tls   = { version = "0.*", optional = true}
 

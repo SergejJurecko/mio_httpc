@@ -1,5 +1,6 @@
 extern crate rustls;
 extern crate webpki_roots;
+extern crate webpki;
 
 use std::io;
 use std::result;
@@ -192,7 +193,7 @@ impl<S, T> tls_api::TlsStreamImpl<S> for TlsStream<S, T>
     }
 
     fn get_alpn_protocol(&self) -> Option<Vec<u8>> {
-        self.session.get_alpn_protocol().map(String::into_bytes)
+        self.session.get_alpn_protocol().map(|s| Vec::from(s.as_bytes()))
     }
 }
 
@@ -280,13 +281,16 @@ impl tls_api::TlsConnector for TlsConnector {
         -> result::Result<tls_api::TlsStream<S>, tls_api::HandshakeError<S>>
             where S : io::Read + io::Write + fmt::Debug + Send + 'static
     {
-        let tls_stream = TlsStream {
-            stream: stream,
-            session: rustls::ClientSession::new(&self.0, domain),
-            write_skip: 0,
-        };
+        if let Ok(domain) = webpki::DNSNameRef::try_from_ascii_str(domain) {
+            let tls_stream = TlsStream {
+                stream,
+                session: rustls::ClientSession::new(&self.0, domain),
+                write_skip: 0,
+            };
 
-        tls_stream.complete_handleshake_mid()
+            return tls_stream.complete_handleshake_mid();
+        }
+        Err(tls_api::HandshakeError::Failure(Error::new_other("invalid domain")))
     }
 
     fn danger_connect_without_providing_domain_for_certificate_verification_and_server_name_indication<S>(
@@ -305,7 +309,7 @@ impl tls_api::TlsConnector for TlsConnector {
                 &self,
                 _roots: &rustls::RootCertStore,
                 _presented_certs: &[rustls::Certificate],
-                _dns_name: &str,
+                _dns_name: webpki::DNSNameRef,
                 _ocsp_response: &[u8])
                     -> result::Result<rustls::ServerCertVerified, rustls::TLSError>
             {
@@ -315,10 +319,14 @@ impl tls_api::TlsConnector for TlsConnector {
 
         client_config.dangerous().set_certificate_verifier(Arc::new(NoCertificateVerifier));
 
-        let tls_stream = TlsStream {
-            stream: stream,
-            session: rustls::ClientSession::new(&Arc::new(client_config), "ignore"),
-            write_skip: 0,
+        let tls_stream = if let Ok(domain) = webpki::DNSNameRef::try_from_ascii_str("ignore") {
+            TlsStream {
+                stream: stream,
+                session: rustls::ClientSession::new(&Arc::new(client_config), domain),
+                write_skip: 0,
+            }
+        } else {
+            return Err(tls_api::HandshakeError::Failure(Error::new_other("invalid domain")));
         };
 
         tls_stream.complete_handleshake_mid()
@@ -331,7 +339,7 @@ impl tls_api::TlsConnector for TlsConnector {
 
 impl TlsAcceptorBuilder {
     pub fn from_certs_and_key(certs: &[&[u8]], key: &[u8]) -> Result<TlsAcceptorBuilder> {
-        let mut config = rustls::ServerConfig::new();
+        let mut config = rustls::ServerConfig::new(rustls::NoClientAuth::new());
         let certs = certs.into_iter().map(|c| rustls::Certificate(c.to_vec())).collect();
         config.set_single_cert(certs, rustls::PrivateKey(key.to_vec()));
         Ok(TlsAcceptorBuilder(config))
