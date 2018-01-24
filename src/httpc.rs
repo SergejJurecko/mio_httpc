@@ -12,7 +12,7 @@ use std::time::{Instant};
 
 pub struct HttpcImpl {
     cache: DnsCache,
-    timed_out_calls: HashMap<CallRef,CallImpl>,
+    // timed_out_calls: HashMap<CallRef,CallImpl>,
     con_offset: usize,
     free_bufs: VecDeque<Vec<u8>>,
     cons: ConTable,
@@ -24,7 +24,7 @@ const BUF_SZ:usize = 4096*2;
 impl HttpcImpl {
     pub fn new(con_offset: usize) -> HttpcImpl {
         HttpcImpl {
-            timed_out_calls: HashMap::default(),
+            // timed_out_calls: HashMap::default(),
             last_timeout: Instant::now(),
             cache: DnsCache::new(),
             con_offset,
@@ -38,6 +38,9 @@ impl HttpcImpl {
     }
 
     pub fn reuse(&mut self, mut buf: Vec<u8>) {
+        if self.free_bufs.len() > 5 {
+            return;
+        }
         let cap = buf.capacity();
         if cap > BUF_SZ {
             unsafe {

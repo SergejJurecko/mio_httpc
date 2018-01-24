@@ -646,6 +646,7 @@ impl CallImpl {
                             }
                             // If switching protocols body is unlimited
                             if status_code == 101 {
+                                con.set_to_close(true);
                                 self.body_sz = usize::max_value();
                                 self.dir = Dir::Receiving(buflen - self.hdr_sz,true);
                                 return Ok(RecvStateInt::Response(resp, ::ResponseBody::Streamed));

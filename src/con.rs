@@ -537,6 +537,7 @@ impl ConTable {
         let (builder, call_buf) = call.stop();
         // let (parts, req_buf) = builder.req.into_parts();
         // let uri = parts.uri;
+        // println!("close_call {} {} {}",con, self.cons[con].0.to_close, self.cons.len());
         {
             let uri = builder.req.uri();
             if !self.cons[con].0.to_close && uri.host().is_some() {

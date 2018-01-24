@@ -28,8 +28,10 @@ fn do_call(htp: &mut Httpc, poll: &Poll, req: Request<Vec<u8>>) {
                     // println!("done req");
                     // println!("Resp={:?}",resp);
                     let v = mio_httpc::extract_body(&mut resp);
-                    if let Ok(s) = String::from_utf8(v) {
+                    if let Ok(s) = String::from_utf8(v.clone()) {
                         println!("Body: {}",s);
+                    } else {
+                        println!("Non utf8 body sized: {}",v.len());
                     }
                     break 'outer;
                 }
