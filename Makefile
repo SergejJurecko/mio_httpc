@@ -1,7 +1,7 @@
 all:
 	cargo build --features="openssl"
 	cargo build --features="native"
-	cargo build --features="rustls"	
+	cargo build --features="rtls"
 
 check:
 	cargo check
