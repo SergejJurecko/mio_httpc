@@ -6,13 +6,12 @@ use std::io;
 use std::result;
 use std::fmt;
 use std::sync::Arc;
-use std::mem;
 use std::str;
 
 use tls_api;
 use tls_api::Result;
 use tls_api::Error;
-
+use tls_api::rustls::rustls::Session;
 
 pub struct TlsConnectorBuilder(pub rustls::ClientConfig);
 pub struct TlsConnector(pub Arc<rustls::ClientConfig>);
@@ -155,16 +154,46 @@ impl<S, T> io::Write for TlsStream<S, T>
         T : rustls::Session + 'static,
 {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        // Flush previously written data
-        self.session.write_tls(&mut self.stream)?;
-
-        // Must write the same buffer after previous failure
-        let r = self.session.write(&buf[self.write_skip..])?;
-        self.write_skip += r;
-
-        self.session.write_tls(&mut self.stream)?;
-
-        Ok(mem::replace(&mut self.write_skip, 0))
+        let mut rd_offset = self.write_skip;
+        let mut nsent = 0;
+        loop {
+            let wrote = if rd_offset < buf.len() {
+                self.session.write(&buf[rd_offset..])?
+            } else { 0 };
+            self.write_skip += wrote;
+            rd_offset += wrote;
+            if self.write_skip > 0 {
+                loop {
+                    match self.session.write_tls(&mut self.stream) {
+                        Ok(0) => {
+                            return Ok(0);
+                        }
+                        Ok(_) => { // we can not rely on returned bytes, as TLS adds its own data
+                            if !self.session.wants_write() {
+                                nsent += self.write_skip;
+                                self.write_skip = 0;
+                            }
+                            break;
+                        }
+                        Err(e) => {
+                            if e.kind() == ::std::io::ErrorKind::Interrupted {
+                                continue;
+                            } else if e.kind() == ::std::io::ErrorKind::WouldBlock {
+                                if nsent == 0 {
+                                    return Err(e);
+                                } else {
+                                    return Ok(nsent);
+                                }
+                            }
+                            return Err(e);
+                        }
+                    }
+                }
+            } else {
+                break;
+            }
+        }
+        Ok(nsent)
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -282,11 +311,12 @@ impl tls_api::TlsConnector for TlsConnector {
             where S : io::Read + io::Write + fmt::Debug + Send + 'static
     {
         if let Ok(domain) = webpki::DNSNameRef::try_from_ascii_str(domain) {
-            let tls_stream = TlsStream {
+            let mut tls_stream = TlsStream {
                 stream,
                 session: rustls::ClientSession::new(&self.0, domain),
                 write_skip: 0,
             };
+            tls_stream.session.set_buffer_limit(16*1024);
 
             return tls_stream.complete_handleshake_mid();
         }
@@ -320,9 +350,11 @@ impl tls_api::TlsConnector for TlsConnector {
         client_config.dangerous().set_certificate_verifier(Arc::new(NoCertificateVerifier));
 
         let tls_stream = if let Ok(domain) = webpki::DNSNameRef::try_from_ascii_str("ignore") {
+            let mut session = rustls::ClientSession::new(&Arc::new(client_config), domain);
+            session.set_buffer_limit(16*1024);
             TlsStream {
                 stream: stream,
-                session: rustls::ClientSession::new(&Arc::new(client_config), domain),
+                session,
                 write_skip: 0,
             }
         } else {
@@ -381,11 +413,12 @@ impl tls_api::TlsAcceptor for TlsAcceptor {
             -> result::Result<tls_api::TlsStream<S>, tls_api::HandshakeError<S>>
         where S : io::Read + io::Write + fmt::Debug + Send + 'static
     {
-        let tls_stream = TlsStream {
+        let mut tls_stream = TlsStream {
             stream: stream,
             session: rustls::ServerSession::new(&self.0),
             write_skip: 0,
         };
+        tls_stream.session.set_buffer_limit(16*1024);
 
         tls_stream.complete_handleshake_mid()
     }
