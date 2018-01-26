@@ -9,7 +9,7 @@
 //! of buffers that get reused on new calls.
 //! 
 //! 
-//! ```
+//! ```no_run
 //! extern crate mio_httpc;
 //! extern crate mio;
 //!
@@ -73,10 +73,6 @@ extern crate pest_derive;
 #[cfg(test)]
 #[macro_use]
 extern crate matches;
-#[cfg(target_os = "macos")]
-extern crate core_foundation;
-#[cfg(target_os = "macos")]
-extern crate core_foundation_sys;
 #[macro_use] extern crate failure;
 
 
@@ -140,6 +136,8 @@ pub enum Error {
     #[fail(display = "WebSocket setup failed")]
     WebSocketFail(http::Response<Vec<u8>>),
 
+    #[fail(display = "Sync call timed out")]
+    TimeOut,
     /// Request structure did not contain body and CallSimple was used for POST/PUT.
     #[fail(display = "Request structure did not contain body and CallSimple was used for POST/PUT.")]
     MissingBody,

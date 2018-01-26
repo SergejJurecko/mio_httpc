@@ -146,6 +146,8 @@ pub use self::websocket::*;
 
 mod simple_call;
 pub use self::simple_call::*;
+mod sync;
+pub use self::sync::*;
 
 #[cfg(not(any(feature="rustls", feature="native", feature="openssl")))]
 mod default;

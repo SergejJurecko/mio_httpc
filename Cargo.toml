@@ -40,10 +40,5 @@ rustls = { version = "0.12", features = ["dangerous_configuration"], optional = 
 openssl      = { version = "0.10.*", optional = true, features = ["v102", "v110"] }
 native-tls   = { version = "0.*", optional = true}
 
-
-[target.'cfg(target_os = "macos")'.dependencies]
-core-foundation = "0.4"
-core-foundation-sys = "0.4"
-
 [dev-dependencies]
 matches = "0.1"
