@@ -26,7 +26,19 @@ mio_httpc requires you specify one of the TLS implementations using features: na
 
 ## EXAMPLES
 
-**Basic get**
+**Sync call**
+
+```rust
+extern crate mio_httpc;
+use mio_httpc::SyncCall;
+ 
+ // One line blocking call.
+ 
+ let (status, hdrs, body) = SyncCall::new().timeout_ms(5000).get(uri).expect("Request failed");
+ 
+```
+
+**Basic async get**
 
 ```
 cargo run --example get --features "native" -- "https://edition.cnn.com"
