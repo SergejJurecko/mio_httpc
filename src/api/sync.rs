@@ -1,5 +1,7 @@
 //! Simplest possible call interface. Will block until complete.
 //! 
+//! # Examples
+//! 
 //! ```no_run
 //! let resp:(u16,HeaderMap<HeaderValue>,Vec<u8>) = SyncCall::new().timeout_ms(5000).get("https://www.reddit.com");
 //! ```

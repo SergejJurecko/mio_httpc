@@ -8,6 +8,7 @@
 //! mio_httpc does a minimal amount of allocation and in general works with buffers you provide and an internal pool
 //! of buffers that get reused on new calls.
 //! 
+//! # Examples
 //! 
 //! ```no_run
 //! extern crate mio_httpc;
@@ -50,6 +51,16 @@
 //!        }
 //!    }
 //! }
+//! ```
+//! 
+//! ```no_run
+//! extern crate mio_httpc;
+//! use mio_httpc::SyncCall;
+//! 
+//! // One line blocking call.
+//! 
+//! let (status, hdrs, body) = SyncCall::new().timeout_ms(5000).get(uri).expect("Request failed");
+//! 
 //! ```
 #![doc(html_root_url = "https://docs.rs/mio_httpc")]
 #![crate_name = "mio_httpc"]
