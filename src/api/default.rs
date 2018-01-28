@@ -91,6 +91,13 @@ impl CallBuilder {
     pub fn digest_auth(self, _v: bool) -> Self {
         self
     }
+
+    /// Default 4.
+    ///
+    /// How many redirects to follow. 0 to disable.
+    pub fn max_redirects(self, _v: u8) -> Self {
+        self
+    }
 }
 
 /// Send requests, receive responses.

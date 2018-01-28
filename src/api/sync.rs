@@ -44,16 +44,18 @@ impl<'a> SyncCall<'a> {
         self.max_resp = max_resp;
         self
     }
-    /// Write body directly to file
-    pub fn to_file(mut self, path: &'a str) -> Self {
-        self.tofile = path;
-        self
-    }
-    /// Read POST/PUT from file
-    pub fn from_file(mut self, path: &'a str) -> Self {
-        self.fromfile = path;
-        self
-    }
+    // TODO:
+    // /// Write body directly to file
+    // pub fn to_file(mut self, path: &'a str) -> Self {
+    //     self.tofile = path;
+    //     self
+    // }
+    // /// Read POST/PUT from file
+    // pub fn from_file(mut self, path: &'a str) -> Self {
+    //     self.fromfile = path;
+    //     self
+    // }
+
     /// Execute GET to uri
     pub fn get(self, uri: &str) -> Response {
         self.exec(uri, "GET", &[])
@@ -65,6 +67,18 @@ impl<'a> SyncCall<'a> {
     /// Execute PUT to uri with body. If from_file set buf is ignored.
     pub fn put(self, uri: &str, buf: &[u8]) -> Response {
         self.exec(uri, "PUT", buf)
+    }
+    /// Execute OPTIONS to uri
+    pub fn options(self, uri: &str) -> Response {
+        self.exec(uri, "OPTIONS", &[])
+    }
+    /// Execute DELETE to uri
+    pub fn delete(self, uri: &str, buf: &[u8]) -> Response {
+        self.exec(uri, "DELETE", buf)
+    }
+    /// Execute HEAD to uri
+    pub fn heae(self, uri: &str) -> Response {
+        self.exec(uri, "HEAD", &[])
     }
 
     fn exec(self, uri: &str, method: &'static str, body: &[u8]) -> Response {

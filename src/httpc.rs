@@ -1,14 +1,14 @@
 use mio::{Token,Poll,Event};
 use dns_cache::DnsCache;
 use con::{Con,ConTable};
-use ::Result;
 use tls_api::{TlsConnector};
 use std::collections::VecDeque;
 use call::{CallImpl};
 use types::*;
 // use fnv::FnvHashMap as HashMap;
-use ::{SendState,RecvState,CallRef,Call};
+use ::{Result,Response,SendState,RecvState,CallRef,Call};
 use std::time::{Instant};
+use std::str::FromStr;
 
 pub struct HttpcImpl {
     cache: DnsCache,
@@ -202,6 +202,25 @@ impl HttpcImpl {
                 call.invalidate();
                 return RecvState::DoneWithBody(body);
             }
+            Ok(RecvStateInt::Redirect(r)) => {
+                let mut b = self.call_close_int(Call(call.0));
+                call.invalidate();
+                if b.max_redirects > 0 {
+                    b.max_redirects -= 1;
+                }
+                if Self::fix_location(&r, &mut b) {
+                    match self.call::<C>(b, poll) {
+                        Ok(nc) => {
+                            call.0 = nc.0;
+                            return RecvState::Sending;
+                        }
+                        Err(e) => {
+                            return RecvState::Error(e);
+                        }
+                    }
+                }
+                return RecvState::Response(r,::ResponseBody::Sized(0));
+            }
             Ok(RecvStateInt::DigestAuth(r,d)) => {
                 let mut b = self.call_close_int(Call(call.0));
                 call.invalidate();
@@ -255,6 +274,74 @@ impl HttpcImpl {
                 return RecvState::Error(e); 
             }
         }
+    }
+
+    fn fix_location(r: &Response<Vec<u8>>, b: &mut CallBuilderImpl) -> bool {
+        if let Some(ref clh) = r.headers().get(::http::header::LOCATION) {
+            if let Ok(s) = clh.to_str() {
+                if let Ok(nuri) = ::http::Uri::from_str(s) {
+                    let mut s128 = [0u8;128];
+                    let mut svec = Vec::new();
+                    let uri_len = if nuri.scheme_part().is_some() {
+                        *b.req.uri_mut() = nuri;
+                        return true;
+                    } else {
+                        let old_uri = b.req.uri();
+                        let scheme = old_uri.scheme_part().unwrap();
+                        let auth = old_uri.authority_part().unwrap();
+                        let path = nuri.path();
+                        let (quer,quer_len) = if let Some(q) = old_uri.query() {
+                            (q,q.len()+1)
+                        } else {
+                            ("",0)
+                        };
+                        let uri_len = scheme.as_str().len() + 
+                            "://".len() + 
+                            auth.as_str().len() +
+                            path.len() +
+                            quer_len;
+                        if uri_len <= 128 {
+                            let mut pos = 0;
+                            s128[pos..pos+scheme.as_str().len()].copy_from_slice(scheme.as_str().as_bytes());
+                            pos += scheme.as_str().len();
+                            s128[pos..pos+3].copy_from_slice(b"://");
+                            pos += 3;
+                            s128[pos..pos+auth.as_str().len()].copy_from_slice(auth.as_str().as_bytes());
+                            pos += auth.as_str().len();
+                            s128[pos..pos+path.len()].copy_from_slice(&path.as_bytes());
+                            pos += path.len();
+                            if quer_len > 0 {
+                                s128[pos..pos+1].copy_from_slice(b"?");
+                                pos += 1;
+                                s128[pos..pos+quer_len].copy_from_slice(&quer.as_bytes());
+                            }
+                        } else {
+                            svec.extend(scheme.as_str().as_bytes());
+                            svec.extend(b"://");
+                            svec.extend(auth.as_str().as_bytes());
+                            svec.extend(path.as_bytes());
+                            if quer_len > 0 {
+                                svec.extend(b"?");
+                                svec.extend(quer.as_bytes());
+                            }
+                        }
+                        uri_len
+                    };
+                    let slice:&[u8] = if uri_len <= 128 {
+                        &s128[..uri_len]
+                    } else {
+                        &svec
+                    };
+                    if let Ok(s) = ::std::str::from_utf8(slice) {
+                        if let Ok(nuri) = ::http::Uri::from_str(s) {
+                            *b.req.uri_mut() = nuri;
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        false
     }
 }
 

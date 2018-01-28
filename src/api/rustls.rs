@@ -49,6 +49,10 @@ impl CallBuilder {
         self.cb.timeout_ms(d);
         self
     }
+    pub fn max_redirects(mut self, v: u8) -> Self {
+        self.cb.max_redirects(v);
+        self
+    }
     // pub fn auth(&mut self, v: ::AuthenticateInfo) -> &mut Self {
     //     self.cb.auth(v);
     //     self

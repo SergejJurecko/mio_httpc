@@ -17,6 +17,7 @@ pub(crate) enum RecvStateInt {
     Done,
     Wait,
     BasicAuth,
+    Redirect(::http::Response<Vec<u8>>),
 }
 
 #[derive(Parser)]
@@ -301,6 +302,7 @@ pub struct CallBuilderImpl {
     pub ws: bool,
     pub(crate) auth: AuthenticateInfo,
     pub digest: bool,
+    pub max_redirects: u8,
 }
 
 #[allow(dead_code)]
@@ -317,6 +319,7 @@ impl CallBuilderImpl {
             ws: false,
             auth: AuthenticateInfo::empty(),
             digest: false,
+            max_redirects: 4,
         }
     }
     pub fn call<C:TlsConnector>(self, httpc: &mut HttpcImpl, poll: &Poll) -> ::Result<::Call> {
@@ -354,6 +357,10 @@ impl CallBuilderImpl {
     }
     pub fn timeout_ms(&mut self, v: u64) -> &mut Self {
         self.dur = Duration::from_millis(v);
+        self
+    }
+    pub fn max_redirects(&mut self, v: u8) -> &mut Self {
+        self.max_redirects = v;
         self
     }
     pub(crate) fn auth(&mut self, v: AuthenticateInfo) -> &mut Self {

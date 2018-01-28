@@ -650,6 +650,12 @@ impl CallImpl {
                                 self.body_sz = usize::max_value();
                                 self.dir = Dir::Receiving(buflen - self.hdr_sz,true);
                                 return Ok(RecvStateInt::Response(resp, ::ResponseBody::Streamed));
+                            } else if status_code >= 300 && status_code < 400 {
+                                return Ok(RecvStateInt::Redirect(resp));
+                                // if let Some(ref clh) = resp.headers().get(http::header::LOCATION) {
+                                //     if let Ok(s) = clh.to_str() {
+                                //     }
+                                // }
                             } else if self.body_sz == 0 {
                                 self.dir == Dir::Done;
                             } else {
