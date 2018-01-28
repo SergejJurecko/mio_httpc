@@ -12,7 +12,7 @@ mio_httpc requires you specify one of the TLS implementations using features: na
 [Documentation](https://docs.rs/mio_httpc/)
 
 
-## TODO
+## TODO/FEATURE LIST
 
 - [x] Basic API
 - [x] Configurable TLS backend
@@ -20,6 +20,7 @@ mio_httpc requires you specify one of the TLS implementations using features: na
 - [ ] Chunked encoding upload
 - [x] Basic Auth
 - [x] Digest Auth
+- [x] Automatic redirects
 - [x] Keep-alive connection pool
 - [x] DNS retries
 - [x] Timeouts
