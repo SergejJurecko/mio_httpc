@@ -1,6 +1,8 @@
 
 mio_httpc is an async http client that runs on top of mio only. 
 
+For convenience it also provides a SyncCall interface. This is a simple one-line HTTP client operation.
+
 No call will block (except SyncCall), not even for DNS resolution as it is implemented internally to avoid blocking.
 
 It uses [http crate](https://crates.io/crates/http) for Request/Response types.

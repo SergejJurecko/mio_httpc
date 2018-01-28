@@ -1,16 +1,9 @@
-//! Simplest possible call interface. Will block until complete.
-//! 
-//! # Examples
-//! 
-//! ```no_run
-//! let resp:(u16,HeaderMap<HeaderValue>,Vec<u8>) = SyncCall::new().timeout_ms(5000).get("https://www.reddit.com");
-//! ```
-
 use ::{Request,CallBuilder,Httpc,SimpleCall, HeaderMap, HeaderValue};
 use mio::{Poll,Events};
 
 type Response = ::Result<(u16, HeaderMap<HeaderValue>, Vec<u8>)>;
 
+/// Simplest possible call interface. Will block until complete.
 pub struct SyncCall<'a> {
     max_resp: usize,
     hdrs: &'a [(&'a str, &'a str)],

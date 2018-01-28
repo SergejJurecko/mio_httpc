@@ -1,6 +1,8 @@
 //! mio_httpc is an async http client that runs on top of mio only. 
 //! 
-//! No call will block, not even for DNS resolution as it is implemented internally to avoid blocking.
+//! For convenience it also provides a SyncCall interface. This is a simple one-line HTTP client operation.
+//! 
+//! No call will block (except SyncCall), not even for DNS resolution as it is implemented internally to avoid blocking.
 //!
 //! mio_httpc requires you specify one of the TLS implementations using features: rustls, native, openssl.
 //! Default is noop for everything.
