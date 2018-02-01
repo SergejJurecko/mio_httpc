@@ -303,6 +303,7 @@ pub struct CallBuilderImpl {
     pub(crate) auth: AuthenticateInfo,
     pub digest: bool,
     pub max_redirects: u8,
+    pub gzip: bool,
 }
 
 #[allow(dead_code)]
@@ -320,6 +321,7 @@ impl CallBuilderImpl {
             auth: AuthenticateInfo::empty(),
             digest: false,
             max_redirects: 4,
+            gzip: true,
         }
     }
     pub fn call<C:TlsConnector>(self, httpc: &mut HttpcImpl, poll: &Poll) -> ::Result<::Call> {
@@ -349,6 +351,10 @@ impl CallBuilderImpl {
     }
     pub fn chunked_parse(&mut self, b: bool) -> &mut Self {
         self.chunked_parse = b;
+        self
+    }
+    pub fn gzip(&mut self, b: bool) -> &mut Self {
+        self.gzip = b;
         self
     }
     pub fn chunked_max_chunk(&mut self, v: usize) -> &mut Self {

@@ -25,6 +25,7 @@ mio_httpc requires you specify one of the TLS implementations using features: na
 - [x] DNS retries
 - [x] Timeouts
 - [x] Websockets
+- [x] gzip body decoding
 - [ ] HTTP2
 
 ## EXAMPLES

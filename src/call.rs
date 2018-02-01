@@ -15,6 +15,7 @@ use data_encoding::{BASE64,HEXLOWER};
 use byteorder::{LittleEndian,ByteOrder};
 use std::ascii::AsciiExt;
 use md5;
+use libflate::gzip::{Decoder};
 
 #[derive(PartialEq)]
 enum Dir {
@@ -188,6 +189,10 @@ impl CallImpl {
             buf.extend(b" ");
             buf.extend((env!("CARGO_PKG_VERSION")).as_bytes());
             buf.extend(b"\r\n");
+        }
+        if self.b.gzip {
+            buf.extend(ACCEPT_ENCODING.as_str().as_bytes());
+            buf.extend(b": gzip\r\n");
         }
         if self.b.ws {
             buf.extend(CONNECTION.as_str().as_bytes());
@@ -386,6 +391,16 @@ impl CallImpl {
         }
     }
 
+    fn maybe_gunzip(&self, buf: Vec<u8>) -> ::Result<Vec<u8>> {
+        if self.b.gzip {
+            let mut d = Decoder::new(&buf[..])?;
+            let mut buf = Vec::new();
+            d.read_to_end(&mut buf)?;
+            return Ok(buf);
+        }
+        Ok(buf)
+    }
+
     pub(crate) fn event_recv<C:TlsConnector>(&mut self, 
             con: &mut Con,
             cp: &mut CallParam, 
@@ -395,7 +410,7 @@ impl CallImpl {
                 return Ok(RecvStateInt::Done);
             }
             Dir::Receiving(rec_pos,_) => {
-                if self.hdr_sz == 0 || b.is_none() || self.b.chunked_parse {
+                if self.hdr_sz == 0 || b.is_none() || self.b.chunked_parse || self.b.gzip {
                     let mut buf = ::std::mem::replace(&mut self.buf, Vec::new());
                     // Have we already received everything?
                     // Move body data to beginning of buffer
@@ -407,7 +422,7 @@ impl CallImpl {
                             ::std::ptr::copy(src, dst, self.body_sz);
                         }
                         buf.truncate(self.body_sz);
-                        return Ok(RecvStateInt::DoneWithBody(buf));
+                        return Ok(RecvStateInt::DoneWithBody(self.maybe_gunzip(buf)?));
                     }
                     let mut ret = self.event_rec_do::<C>(con, cp, true, &mut buf);
 
@@ -416,7 +431,7 @@ impl CallImpl {
                             Err(_) => {}
                             // Ok(RecvStateInt::Error(_)) => {}
                             Ok(RecvStateInt::Response(_,_)) => {}
-                            _ if b.is_some() => {
+                            _ if b.is_some() && !self.b.gzip => {
                                 let b = b.unwrap();
                                 let nc = self.chunked.push_to(self.hdr_sz, &mut buf, b)?;
                                 if nc == 0 {
@@ -428,7 +443,7 @@ impl CallImpl {
                             _ if Dir::Done == self.dir => {
                                 let mut b = Vec::with_capacity(buf.len());
                                 self.chunked.push_to(self.hdr_sz, &mut buf, &mut b)?;
-                                ret = Ok(RecvStateInt::DoneWithBody(b));
+                                ret = Ok(RecvStateInt::DoneWithBody(self.maybe_gunzip(b)?));
                             }
                             _ => {}
                         }
@@ -607,6 +622,19 @@ impl CallImpl {
                                         con.set_to_close(true);
                                     }
                                 }
+                            }
+                            if let Some(ref clh) = resp.headers().get(http::header::CONTENT_ENCODING) {
+                                if let Ok(clhs) = clh.to_str() {
+                                    if !"gzip".eq_ignore_ascii_case(clhs) {
+                                        self.b.gzip = false;
+                                    } else {
+                                        self.b.gzip = true;
+                                    }
+                                } else {
+                                    self.b.gzip = false;
+                                }
+                            } else {
+                                self.b.gzip = false;
                             }
                             if let Some(ref clh) = resp.headers().get(http::header::TRANSFER_ENCODING) {
                                 if let Ok(clhs) = clh.to_str() {

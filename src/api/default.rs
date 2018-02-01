@@ -92,6 +92,12 @@ impl CallBuilder {
         self
     }
 
+    /// Tell server to gzip response and unzip transparently before returning body to client.
+    /// Default is true.
+    pub fn gzip(&mut self, _b: bool) -> &mut Self {
+        self
+    }
+
     /// Default 4.
     ///
     /// How many redirects to follow. 0 to disable.

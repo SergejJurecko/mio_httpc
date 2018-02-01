@@ -53,6 +53,10 @@ impl CallBuilder {
         self.cb.max_redirects(v);
         self
     }
+    pub fn gzip(&mut self, b: bool) -> &mut Self {
+        self.cb.gzip(b);
+        self
+    }
     // pub fn auth(&mut self, v: ::AuthenticateInfo) -> &mut Self {
     //     self.cb.auth(v);
     //     self

@@ -6,6 +6,7 @@ use ::dns_parser;
 use ::dns_parser::{Packet,RRData};
 use rand;
 use std::time::{Instant,Duration};
+use smallvec::SmallVec;
 
 pub(crate) fn dns_parse(buf:&[u8]) -> Option<IpAddr> {
     let packet = Packet::parse(buf).unwrap();
@@ -24,7 +25,7 @@ pub(crate) fn dns_parse(buf:&[u8]) -> Option<IpAddr> {
     None
 }
 pub struct Dns {
-    srvs: [IpAddr;2],
+    srvs: SmallVec<[IpAddr;4]>,
     pub sock: UdpSocket,
     pos: u8,
     last_send: Instant,
@@ -33,10 +34,11 @@ pub struct Dns {
 
 impl Dns {
     pub fn new(host: &str, retry_in: u64) -> ::Result<Dns> {
-        let srvs = get_dns_servers();
+        let mut srvs = SmallVec::with_capacity(2);
+        get_dns_servers(&mut srvs);
         let sock = Self::start_lookup(&srvs[..], host)?;
         Ok(Dns {
-            srvs: srvs,
+            srvs,
             sock,
             pos: 0,
             last_send: Instant::now(),
@@ -118,58 +120,54 @@ impl Dns {
 }
 
 #[cfg(target_os = "macos")]
-pub fn get_dns_servers() -> [IpAddr;2] {
+pub fn get_dns_servers(srvs:  &mut SmallVec<[IpAddr;4]>) {
     let out = ::std::process::Command::new("scutil")
         .arg("--dns")
         .output();
     if let Ok(out) = out {
         if let Ok(s) = String::from_utf8(out.stdout) {
-            return scutil_parse(s);
+            return scutil_parse(srvs,s);
         }
     }
-    get_google()
+    get_google(srvs)
 }
 
 #[cfg(unix)]
 #[cfg(not(target_os = "macos"))]
-pub fn get_dns_servers() -> [IpAddr;2] {
+pub fn get_dns_servers(srvs:  &mut SmallVec<[IpAddr;4]>) {
     if let Ok(mut file) = ::std::fs::File::open("/etc/resolv.conf") {
         let mut contents = String::new();
         use std::io::Read;
         if file.read_to_string(&mut contents).is_ok() {
-            return resolv_parse(contents);
+            return resolv_parse(srvs,contents);
         }
     }
-    get_google()
+    get_google(srvs)
 }
 
 #[cfg(windows)]
-pub fn get_dns_servers() -> Vec<IpAddr> {
+pub fn get_dns_servers(srvs:  &mut SmallVec<[IpAddr;4]>) {
     get_google()
 }
 
-fn get_google() -> [IpAddr;2] {
-    ["8.8.8.8".parse().unwrap(), "8.8.4.4".parse().unwrap()]
+fn get_google(srvs:  &mut SmallVec<[IpAddr;4]>) {
+    srvs.push("8.8.8.8".parse().unwrap());
+    srvs.push("8.8.4.4".parse().unwrap());
+    // ["8.8.8.8".parse().unwrap(), "8.8.4.4".parse().unwrap()]
 }
 
 #[cfg(unix)]
 #[cfg(not(target_os = "macos"))]
-fn resolv_parse(s: String) -> [IpAddr;2] {
+fn resolv_parse(srvs: &mut SmallVec<[IpAddr;4]>, s: String) {
     // let mut out = Vec::with_capacity(2);
-    let z = IpAddr::from(Ipv4Addr::new(0,0,0,0));
-    let mut out = [z, z];
-    let mut pos = 0;
     for line in s.lines() {
         let mut words = line.split_whitespace();
         if let Some(s) = words.next() {
             if s.starts_with("nameserver") {
                 if let Some(s) = words.next() {
                     if let Ok(adr) = s.parse() {
-                        out[pos] = adr;
-                        pos += 1;
-                        if pos >= 2 {
-                            break;
-                        }
+                        // out[pos] = adr;
+                        srvs.push(adr);
                     }
                 }
             }
@@ -178,11 +176,7 @@ fn resolv_parse(s: String) -> [IpAddr;2] {
     out
 }
 
-fn scutil_parse(s: String) -> [IpAddr;2] {
-    // let mut out = Vec::with_capacity(2);
-    let z = IpAddr::from(Ipv4Addr::new(0,0,0,0));
-    let mut out = [z, z];
-    let mut pos = 0;
+fn scutil_parse(srvs:  &mut SmallVec<[IpAddr;4]>, s: String) {
     for line in s.lines() {
         let mut words = line.split_whitespace();
         if let Some(s) = words.next() {
@@ -191,11 +185,7 @@ fn scutil_parse(s: String) -> [IpAddr;2] {
                     if s == ":" {
                         if let Some(s) = words.next() {
                             if let Ok(adr) = s.parse() {
-                                out[pos] = adr;
-                                pos += 1;
-                                if pos >= 2 {
-                                    break;
-                                }
+                                srvs.push(adr);
                             }
                         }
                     }
@@ -203,7 +193,6 @@ fn scutil_parse(s: String) -> [IpAddr;2] {
             }
         }
     }
-    out
 }
 
 
