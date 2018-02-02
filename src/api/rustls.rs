@@ -53,7 +53,7 @@ impl CallBuilder {
         self.cb.max_redirects(v);
         self
     }
-    pub fn gzip(&mut self, b: bool) -> &mut Self {
+    pub fn gzip(mut self, b: bool) -> Self {
         self.cb.gzip(b);
         self
     }

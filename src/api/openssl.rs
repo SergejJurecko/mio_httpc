@@ -53,7 +53,7 @@ impl CallBuilder {
         self.cb.digest_auth(v);
         self
     }
-    pub fn gzip(&mut self, b: bool) -> &mut Self {
+    pub fn gzip(mut self, b: bool) -> Self {
         self.cb.gzip(b);
         self
     }

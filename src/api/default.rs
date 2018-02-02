@@ -94,7 +94,7 @@ impl CallBuilder {
 
     /// Tell server to gzip response and unzip transparently before returning body to client.
     /// Default is true.
-    pub fn gzip(&mut self, _b: bool) -> &mut Self {
+    pub fn gzip(self, _b: bool) -> Self {
         self
     }
 

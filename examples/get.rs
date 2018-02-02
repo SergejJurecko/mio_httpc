@@ -26,7 +26,7 @@ fn do_call(htp: &mut Httpc, poll: &Poll, req: Request<Vec<u8>>) {
                 if call.perform(htp, &poll).expect("Call failed") {
                     let mut resp = call.close().expect("No response");
                     // println!("done req");
-                    // println!("Resp={:?}",resp);
+                    println!("Headers={:?}",resp.headers());
                     let v = mio_httpc::extract_body(&mut resp);
                     if let Ok(s) = String::from_utf8(v.clone()) {
                         println!("Body: {}",s);
