@@ -173,7 +173,6 @@ fn resolv_parse(srvs: &mut SmallVec<[IpAddr;4]>, s: String) {
             }
         }
     }
-    out
 }
 
 fn scutil_parse(srvs:  &mut SmallVec<[IpAddr;4]>, s: String) {
