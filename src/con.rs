@@ -247,8 +247,8 @@ impl Con {
             Err(HandshakeError::Interrupted(mid)) => {
                 self.mid_tls = Some(mid);
             }
-            Err(e) => {
-                return Err(::Error::TlsHandshake);
+            Err(HandshakeError::Failure(e)) => {
+                return Err(::Error::TlsHandshake(e));
             }
         }
         Ok(())

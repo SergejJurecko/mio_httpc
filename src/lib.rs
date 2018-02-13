@@ -171,8 +171,8 @@ pub enum Error {
     #[fail(display = "Invalid scheme")]
     InvalidScheme,
     /// TLS handshake failed.
-    #[fail(display = "Handshake failed")]
-    TlsHandshake,
+    #[fail(display = "Handshake failed {}",_0)]
+    TlsHandshake(#[cause] tls_api::Error),
     /// All 0xFFFF slots for connections are full.
     #[fail(display = "Concurrent connection limit")]
     NoSpace,
