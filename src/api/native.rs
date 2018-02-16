@@ -1,64 +1,66 @@
 // extern crate tls_api_native_tls;
 use tls_api;
-use http::{Request};
-use ::types::CallBuilderImpl;
-use mio::{Poll,Event};
-use tls_api::{TlsConnector};
-use ::Result;
+use http::Request;
+use types::CallBuilderImpl;
+use mio::{Event, Poll};
+use tls_api::TlsConnector;
+use Result;
 
 #[derive(Debug)]
 pub struct CallBuilder {
-    cb: CallBuilderImpl,
+    cb: Option<CallBuilderImpl>,
 }
 
 impl CallBuilder {
     pub fn new(req: Request<Vec<u8>>) -> CallBuilder {
         CallBuilder {
-            cb: CallBuilderImpl::new(req),
+            cb: Some(CallBuilderImpl::new(req)),
         }
     }
-    pub fn call(self, httpc: &mut Httpc, poll: &Poll) -> ::Result<::Call> {
-        httpc.call::<tls_api::native::TlsConnector>(self.cb, poll)
+    pub fn call(&mut self, httpc: &mut Httpc, poll: &Poll) -> ::Result<::Call> {
+        let cb = self.cb.take().unwrap();
+        httpc.call::<tls_api::native::TlsConnector>(cb, poll)
     }
-    pub fn websocket(mut self, httpc: &mut Httpc, poll: &Poll) -> ::Result<::WebSocket> {
-        self.cb.websocket();
-        let cid = self.call(httpc, poll)?;
+    pub fn websocket(&mut self, httpc: &mut Httpc, poll: &Poll) -> ::Result<::WebSocket> {
+        let mut cb = self.cb.take().unwrap();
+        cb.websocket();
+        let cid = httpc.call::<tls_api::native::TlsConnector>(cb, poll)?;
         Ok(::WebSocket::new(cid, httpc.h.get_buf()))
     }
-    pub fn add_root_ca_der(mut self, v: Vec<u8>) -> Self {
-        self.cb.add_root_ca(v);
+    pub fn add_root_ca_der(&mut self, v: Vec<u8>) -> &mut Self {
+        self.cb.as_mut().unwrap().add_root_ca(v);
         self
     }
-    pub fn max_response(mut self, m: usize) -> Self {
-        self.cb.max_response(m);
+    pub fn max_response(&mut self, m: usize) -> &mut Self {
+        self.cb.as_mut().unwrap().max_response(m);
         self
     }
-    pub fn dns_retry_ms(mut self, n: u64) -> Self {
-        self.cb.dns_retry_ms(n);
+    pub fn dns_retry_ms(&mut self, n: u64) -> &mut Self {
+        self.cb.as_mut().unwrap().dns_retry_ms(n);
         self
     }
-    pub fn chunked_parse(mut self, b: bool) -> Self {
-        self.cb.chunked_parse(b);
+    pub fn chunked_parse(&mut self, b: bool) -> &mut Self {
+        self.cb.as_mut().unwrap().chunked_parse(b);
         self
     }
-    pub fn chunked_max_chunk(mut self, v: usize) -> Self {
-        self.cb.chunked_max_chunk(v);
+    pub fn chunked_max_chunk(&mut self, v: usize) -> &mut Self {
+        self.cb.as_mut().unwrap().chunked_max_chunk(v);
         self
     }
-    pub fn timeout_ms(mut self, d: u64) -> Self {
-        self.cb.timeout_ms(d);
+    pub fn timeout_ms(&mut self, d: u64) -> &mut Self {
+        self.cb.as_mut().unwrap().timeout_ms(d);
         self
     }
-    pub fn digest_auth(mut self, v: bool) -> Self {
-        self.cb.digest_auth(v);
+    pub fn digest_auth(&mut self, v: bool) -> &mut Self {
+        self.cb.as_mut().unwrap().digest_auth(v);
         self
     }
-    pub fn gzip(mut self, b: bool) -> Self {
-        self.cb.gzip(b);
+    pub fn gzip(&mut self, b: bool) -> &mut Self {
+        self.cb.as_mut().unwrap().gzip(b);
         self
     }
-    pub fn max_redirects(mut self, v: u8) -> Self {
-        self.cb.max_redirects(v);
+    pub fn max_redirects(&mut self, v: u8) -> &mut Self {
+        self.cb.as_mut().unwrap().max_redirects(v);
         self
     }
 }
@@ -73,7 +75,11 @@ impl Httpc {
             h: ::httpc::HttpcImpl::new(con_offset),
         }
     }
-    pub(crate) fn call<C:TlsConnector>(&mut self, b: CallBuilderImpl, poll: &Poll) -> Result<::Call> {
+    pub(crate) fn call<C: TlsConnector>(
+        &mut self,
+        b: CallBuilderImpl,
+        poll: &Poll,
+    ) -> Result<::Call> {
         self.h.call::<C>(b, poll)
     }
     pub(crate) fn peek_body(&mut self, id: &::Call, off: &mut usize) -> &[u8] {
@@ -94,16 +100,23 @@ impl Httpc {
     pub fn timeout(&mut self) -> Vec<::CallRef> {
         self.h.timeout()
     }
-    pub fn timeout_extend<C:TlsConnector>(&mut self, out: &mut Vec<::CallRef>) {
+    pub fn timeout_extend<C: TlsConnector>(&mut self, out: &mut Vec<::CallRef>) {
         self.h.timeout_extend(out)
     }
     pub fn event(&mut self, ev: &Event) -> Option<::CallRef> {
         self.h.event::<tls_api::native::TlsConnector>(ev)
     }
     pub fn call_send(&mut self, poll: &Poll, id: &mut ::Call, buf: Option<&[u8]>) -> ::SendState {
-        self.h.call_send::<tls_api::native::TlsConnector>(poll, id, buf)
+        self.h
+            .call_send::<tls_api::native::TlsConnector>(poll, id, buf)
     }
-    pub fn call_recv(&mut self, poll: &Poll, id: &mut ::Call, buf: Option<&mut Vec<u8>>) -> ::RecvState {
-        self.h.call_recv::<tls_api::native::TlsConnector>(poll, id, buf)
+    pub fn call_recv(
+        &mut self,
+        poll: &Poll,
+        id: &mut ::Call,
+        buf: Option<&mut Vec<u8>>,
+    ) -> ::RecvState {
+        self.h
+            .call_recv::<tls_api::native::TlsConnector>(poll, id, buf)
     }
 }

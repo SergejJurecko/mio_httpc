@@ -1,11 +1,15 @@
-extern crate mio_httpc;
 extern crate mio;
+extern crate mio_httpc;
 
-use mio_httpc::{Request,CallBuilder,Httpc,SimpleCall};
-use mio::{Poll,Events};
+use mio_httpc::{CallBuilder, Httpc, Request, SimpleCall};
+use mio::{Events, Poll};
 
 fn do_call(htp: &mut Httpc, poll: &Poll, req: Request<Vec<u8>>) {
-    let call = CallBuilder::new(req).timeout_ms(10000).digest_auth(true).call(htp, &poll).expect("Call start failed");
+    let call = CallBuilder::new(req)
+        .timeout_ms(10000)
+        .digest_auth(true)
+        .call(htp, &poll)
+        .expect("Call start failed");
     let mut call = SimpleCall::from(call);
 
     let to = ::std::time::Duration::from_millis(100);
@@ -24,14 +28,14 @@ fn do_call(htp: &mut Httpc, poll: &Poll, req: Request<Vec<u8>>) {
 
             if call.is_call(&cref) {
                 if call.perform(htp, &poll).expect("Call failed") {
-                    let mut resp = call.close().expect("No response");
+                    let mut resp = call.finish().expect("No response");
                     // println!("done req");
-                    println!("Headers={:?}",resp.headers());
+                    println!("Headers={:?}", resp.headers());
                     let v = mio_httpc::extract_body(&mut resp);
                     if let Ok(s) = String::from_utf8(v.clone()) {
-                        println!("Body: {}",s);
+                        println!("Body: {}", s);
                     } else {
-                        println!("Non utf8 body sized: {}",v.len());
+                        println!("Non utf8 body sized: {}", v.len());
                     }
                     break 'outer;
                 }
@@ -46,11 +50,13 @@ fn main() {
     let args: Vec<String> = ::std::env::args().collect();
 
     for i in 1..args.len() {
-        println!("Get {}",args[i].as_str());
+        println!("Get {}", args[i].as_str());
         let mut req = Request::builder();
-        let req = req.uri(args[i].as_str()).body(Vec::new()).expect("can not build request");
+        let req = req.uri(args[i].as_str())
+            .body(Vec::new())
+            .expect("can not build request");
         do_call(&mut htp, &poll, req);
 
-        println!("Open connections={}",htp.open_connections());
+        println!("Open connections={}", htp.open_connections());
     }
 }

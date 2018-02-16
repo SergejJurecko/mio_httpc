@@ -1,8 +1,8 @@
-extern crate mio_httpc;
 extern crate mio;
+extern crate mio_httpc;
 
-use mio_httpc::{Request,CallBuilder,Httpc,WSPacket};
-use mio::{Poll,Events};
+use mio_httpc::{CallBuilder, Httpc, Request, WSPacket};
+use mio::{Events, Poll};
 // ws://demos.kaazing.com/echo
 
 fn main() {
@@ -10,9 +10,13 @@ fn main() {
     let mut htp = Httpc::new(10);
     let mut req = Request::builder();
     let args: Vec<String> = ::std::env::args().collect();
-    let req = req.uri(args[1].as_str()).body(Vec::new()).expect("can not build request");
+    let req = req.uri(args[1].as_str())
+        .body(Vec::new())
+        .expect("can not build request");
 
-    let mut ws = CallBuilder::new(req).websocket(&mut htp, &poll).expect("Call start failed");
+    let mut ws = CallBuilder::new(req)
+        .websocket(&mut htp, &poll)
+        .expect("Call start failed");
 
     let to = ::std::time::Duration::from_millis(800);
     'outer: loop {
@@ -25,7 +29,7 @@ fn main() {
             }
         }
 
-        if events.len() == 0 {
+        if events.is_empty() {
             // ws.ping(None);
             println!("send yo");
             ws.send_text(true, "yo!");
@@ -48,16 +52,16 @@ fn main() {
                             WSPacket::None => {
                                 break;
                             }
-                            WSPacket::Close(_,_) => {
+                            WSPacket::Close(_, _) => {
                                 println!("Got close!");
                                 ws.close(None, None);
                                 break 'outer;
                             }
-                            WSPacket::Text(fin,txt) => {
-                                println!("Got text={}, fin={}",txt,fin);
+                            WSPacket::Text(fin, txt) => {
+                                println!("Got text={}, fin={}", txt, fin);
                             }
-                            WSPacket::Binary(fin,b) => {
-                                println!("Got bin={}B, fin={}",b.len(),fin);
+                            WSPacket::Binary(fin, b) => {
+                                println!("Got bin={}B, fin={}", b.len(), fin);
                             }
                         }
                     }

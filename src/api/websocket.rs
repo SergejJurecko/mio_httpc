@@ -1,6 +1,6 @@
-use ::{CallRef,Call,Httpc,SendState, RecvState, ResponseBody};
+use {Call, CallRef, Httpc, RecvState, ResponseBody, SendState};
 use mio::Poll;
-use byteorder::{BigEndian,ByteOrder};
+use byteorder::{BigEndian, ByteOrder};
 use std::ascii::AsciiExt;
 
 /// WebSocket packet received from server.
@@ -8,9 +8,9 @@ pub enum WSPacket<'a> {
     /// Nothing to return yet.
     None,
     /// (fin,text)
-    Text(bool,&'a str),
+    Text(bool, &'a str),
     /// (fin, bin)
-    Binary(bool,&'a [u8]),
+    Binary(bool, &'a [u8]),
     /// Ping may contain data.
     /// You should send pong back.
     Ping(&'a [u8]),
@@ -19,19 +19,19 @@ pub enum WSPacket<'a> {
     /// (StatusCode,Data)
     /// Close may contain data.
     /// You should call close after receiving this (if you did not already).
-    Close(Option<u16>,&'a [u8]),
+    Close(Option<u16>, &'a [u8]),
 }
 
 impl<'a> WSPacket<'a> {
     fn is_close(&self) -> bool {
         match *self {
-            WSPacket::Close(_,_) => true,
+            WSPacket::Close(_, _) => true,
             _ => false,
         }
     }
 }
 
-#[derive(Debug,Copy,Clone,Eq,PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 enum State {
     InitSending,
     InitReceiving,
@@ -43,9 +43,9 @@ enum State {
 impl State {
     fn is_init(&self) -> bool {
         match *self {
-           State::InitSending =>  true,
-           State::InitReceiving =>  true,
-           _ => false,
+            State::InitSending => true,
+            State::InitReceiving => true,
+            _ => false,
         }
     }
 }
@@ -53,12 +53,12 @@ impl State {
 /// WebSocket interface.
 ///
 /// WebSocket does not send pings/pongs automatically or close replies.
-/// 
+///
 /// If received ping, you should send pong back.
 /// You can also just send pong which will not invoke a response.
 /// You should send ping periodically as you never know if your connection
 /// is actually alive without it.
-/// 
+///
 /// If WSPacket::Close(_) returned you should call close and then finish.
 /// If you want to initiate close, you should call close and wait for WSPacket::Close(_),
 /// then call finish. That is the standard way of closing ws connections.
@@ -73,7 +73,7 @@ pub struct WebSocket {
     send_buf: Vec<u8>,
     send_buf_pos: usize,
     send_middle: bool,
-    curframe: [u8;16],
+    curframe: [u8; 16],
     curframe_len: u8,
     curframe_pos: u8,
 }
@@ -90,7 +90,7 @@ impl WebSocket {
             state: State::InitSending,
             send_lover: 0,
             recv_lover: 0,
-            curframe: [0u8;16],
+            curframe: [0u8; 16],
             curframe_len: 0,
             curframe_pos: 0,
         }
@@ -130,7 +130,7 @@ impl WebSocket {
         false
     }
 
-    /// If using Option<WebSocket> in a struct, you can quickly compare 
+    /// If using Option<WebSocket> in a struct, you can quickly compare
     /// callid from httpc::event. If either is none will return false.
     pub fn is_opt_call(a: &Option<WebSocket>, b: &Option<CallRef>) -> bool {
         if let &Some(ref a) = a {
@@ -161,36 +161,41 @@ impl WebSocket {
     }
 
     /// A reply to close or initiate close.
-    /// close must be sent by both parties. 
+    /// close must be sent by both parties.
     /// Body if present is capped at 125 bytes.
     pub fn close(&mut self, status: Option<u16>, body: Option<&[u8]>) {
         self.send_buf_append(8, status, true, Self::limit_body(123, body))
     }
 
-    // only append do not send. 
-    fn send_buf_append(&mut self, op: u8, status: Option<u16>, fin:bool, body: Option<&[u8]>) {
+    // only append do not send.
+    fn send_buf_append(&mut self, op: u8, status: Option<u16>, fin: bool, body: Option<&[u8]>) {
         let body_sz = if let Some(body) = body {
             body.len()
-        } else { 0 };
+        } else {
+            0
+        };
         let mut send_buf = ::std::mem::replace(&mut self.send_buf, Vec::new());
         let start_pos = send_buf.len();
         send_buf.resize(start_pos + body_sz + 16, 0);
-        let pkt = if let Some(body) = body {
-            body
-        } else {
-            &[]
-        };
-        let mut mask = [0u8;4];
+        let pkt = if let Some(body) = body { body } else { &[] };
+        let mut mask = [0u8; 4];
         let fsz = self.fill_frame(fin, op, pkt, &mut send_buf[start_pos..], &mut mask[..]);
         let mut mask_pos = 0;
         let status_sz = if let Some(status) = status {
-            BigEndian::write_u16(&mut send_buf[start_pos+fsz..], status);
-            Self::mask_inplace(&mask, &mut send_buf[start_pos+fsz..start_pos+fsz+2]);
+            BigEndian::write_u16(&mut send_buf[start_pos + fsz..], status);
+            Self::mask_inplace(&mask, &mut send_buf[start_pos + fsz..start_pos + fsz + 2]);
             mask_pos = 2;
             2
-        } else { 0 };
+        } else {
+            0
+        };
         if let Some(body) = body {
-            Self::mask_to(&mask, mask_pos, body, &mut send_buf[start_pos+fsz+status_sz..]);
+            Self::mask_to(
+                &mask,
+                mask_pos,
+                body,
+                &mut send_buf[start_pos + fsz + status_sz..],
+            );
         }
         if fsz + status_sz < 16 {
             let len = send_buf.len();
@@ -221,7 +226,7 @@ impl WebSocket {
     }
 
     /// Actually close connection and replace self with an empty websocket.
-    pub fn finish_replace(&mut self, htp: &mut Httpc) {
+    pub fn finish_inplace(&mut self, htp: &mut Httpc) {
         let mut s = ::std::mem::replace(self, Self::empty());
         s.stop(htp);
     }
@@ -237,7 +242,7 @@ impl WebSocket {
     }
 
     /// Send text packet. Data gets copied out into an internal buffer, as it must be
-    /// masked before sending. 
+    /// masked before sending.
     /// No bytes will have been sent after calling this. Actual sending is done by recv_packet or perform.
     pub fn send_text(&mut self, fin: bool, pkt: &str) {
         self.send_buf_append(1, None, fin, Some(pkt.as_bytes()));
@@ -254,14 +259,20 @@ impl WebSocket {
 
     /// Send websocket packet. It will create a frame for entire size of pkt slice.
     /// It is assumed slice always starts at unsent data. If pkt was not sent completely
-    /// it will remember how many bytes it has leftover for current packet. You must always use 
+    /// it will remember how many bytes it has leftover for current packet. You must always use
     /// previous result to move pkt slice forward.
-    /// 
+    ///
     /// If starting from the middle, fin is ignored and will be used to start the next packet.
-    /// 
+    ///
     /// inplace send will mask pkt directly and send it. This is the most efficient method but leaves
     /// pkt scrambled.
-    pub fn send_bin_inplace(&mut self, htp: &mut Httpc, poll: &Poll, fin: bool, pkt: &mut [u8]) -> ::Result<usize> {
+    pub fn send_bin_inplace(
+        &mut self,
+        htp: &mut Httpc,
+        poll: &Poll,
+        fin: bool,
+        pkt: &mut [u8],
+    ) -> ::Result<usize> {
         if self.state.is_init() {
             self.perform(htp, poll)?;
             return Ok(0);
@@ -284,8 +295,8 @@ impl WebSocket {
         let mut pkt_offset = 0;
         loop {
             if self.send_lover == 0 && self.curframe_pos == 0 {
-                let mut frame = [0u8;16];
-                let mut mask = [0u8;4];
+                let mut frame = [0u8; 16];
+                let mut mask = [0u8; 4];
                 self.curframe_len = self.fill_frame(fin, 2, pkt, &mut frame, &mut mask) as u8;
                 let len = self.curframe_len as usize;
                 let sent = self.call_send(htp, poll, &frame[0..len])?;
@@ -293,7 +304,7 @@ impl WebSocket {
                     Self::mask_inplace(&mask, &mut pkt[pkt_offset..]);
                     let sent = self.call_send(htp, poll, &pkt[pkt_offset..])?;
                     consumed += sent;
-                    if sent != pkt.len()-pkt_offset {
+                    if sent != pkt.len() - pkt_offset {
                         self.send_lover = pkt.len() - sent - pkt_offset;
                     }
                 } else if sent > 0 {
@@ -316,7 +327,7 @@ impl WebSocket {
                     break;
                 }
             } else {
-                let mut frame = [0u8;16];
+                let mut frame = [0u8; 16];
                 frame.copy_from_slice(&self.curframe[..]);
                 let pos = self.curframe_pos as usize;
                 let len = self.curframe_len as usize;
@@ -340,9 +351,7 @@ impl WebSocket {
                 self.stop(htp);
                 Err(::Error::Closed)
             }
-            SendState::SentBody(sz) => {
-                Ok(sz)
-            }
+            SendState::SentBody(sz) => Ok(sz),
             SendState::Error(e) => {
                 self.stop(htp);
                 Err(From::from(e))
@@ -377,7 +386,14 @@ impl WebSocket {
         }
     }
 
-    fn fill_frame(&mut self, fin: bool, mut op: u8, pkt: &[u8], frame: &mut [u8], mask_bytes: &mut [u8]) -> usize {
+    fn fill_frame(
+        &mut self,
+        fin: bool,
+        mut op: u8,
+        pkt: &[u8],
+        frame: &mut [u8],
+        mask_bytes: &mut [u8],
+    ) -> usize {
         let mut pos = 0;
         if op <= 2 {
             if self.send_middle {
@@ -397,19 +413,19 @@ impl WebSocket {
         } else if pkt.len() <= u16::max_value() as usize {
             frame[pos] = 126 | 0b1000_0000;
             pos += 1;
-            BigEndian::write_u16(&mut frame[pos..pos+2], pkt.len() as u16);
+            BigEndian::write_u16(&mut frame[pos..pos + 2], pkt.len() as u16);
             pos += 2;
         } else {
             frame[pos] = 127 | 0b1000_0000;
             pos += 1;
-            BigEndian::write_u64(&mut frame[pos..pos+8], pkt.len() as u64);
+            BigEndian::write_u64(&mut frame[pos..pos + 8], pkt.len() as u64);
             pos += 8;
         }
         let mask = ::rand::random::<u32>();
-        BigEndian::write_u32(&mut frame[pos..pos+4], mask);
+        BigEndian::write_u32(&mut frame[pos..pos + 4], mask);
         BigEndian::write_u32(mask_bytes, mask);
         // self.curframe_len = (pos+4) as u8;
-        pos+4
+        pos + 4
     }
 
     /// You should call this in a loop until you get WSPacket::None.
@@ -420,7 +436,7 @@ impl WebSocket {
         } else if self.state == State::Done {
             return Err(::Error::Closed);
         } else {
-            self.perform(htp,poll)?;
+            self.perform(htp, poll)?;
         }
         self.read_packet(htp)
     }
@@ -437,8 +453,8 @@ impl WebSocket {
                     if op != 0 && !fin {
                         self.cur_op = 1;
                     }
-                    if let Ok(s) = ::std::str::from_utf8(&slice[pos..pos+len]) {
-                        return Ok(WSPacket::Text(fin,s));
+                    if let Ok(s) = ::std::str::from_utf8(&slice[pos..pos + len]) {
+                        return Ok(WSPacket::Text(fin, s));
                     } else {
                         self.state = State::Finish;
                         return Err(::Error::WebSocketParse);
@@ -448,26 +464,26 @@ impl WebSocket {
                     if op != 0 && !fin {
                         self.cur_op = 2;
                     }
-                    return Ok(WSPacket::Binary::<'a>(fin,&slice[pos..pos+len]));
+                    return Ok(WSPacket::Binary::<'a>(fin, &slice[pos..pos + len]));
                 }
                 8 => {
                     if !self.closing {
                         self.closing = true;
                     }
                     if len >= 2 {
-                        let v = BigEndian::read_u16(&slice[pos..pos+2]);
+                        let v = BigEndian::read_u16(&slice[pos..pos + 2]);
                         pos += 2;
                         len -= 2;
-                        return Ok(WSPacket::Close::<'a>(Some(v),&slice[pos..pos+len]));
+                        return Ok(WSPacket::Close::<'a>(Some(v), &slice[pos..pos + len]));
                     } else {
-                        return Ok(WSPacket::Close::<'a>(None,&[]));
+                        return Ok(WSPacket::Close::<'a>(None, &[]));
                     }
                 }
                 9 => {
-                    return Ok(WSPacket::Ping::<'a>(&slice[pos..pos+len]));
+                    return Ok(WSPacket::Ping::<'a>(&slice[pos..pos + len]));
                 }
                 10 => {
-                    return Ok(WSPacket::Pong::<'a>(&slice[pos..pos+len]));
+                    return Ok(WSPacket::Pong::<'a>(&slice[pos..pos + len]));
                 }
                 _ => {
                     self.state = State::Finish;
@@ -478,17 +494,25 @@ impl WebSocket {
         Ok(WSPacket::None)
     }
 
-    fn parse_packet(&self, pkt: &[u8]) -> Option<(bool, u8,usize,usize)> {
+    fn parse_packet(&self, pkt: &[u8]) -> Option<(bool, u8, usize, usize)> {
         // let mut rdr = Reader::new(Input::from(pkt));
         let mut pos = 0;
-        let b:u8 = *pkt.get(pos)?;
+        let b: u8 = *pkt.get(pos)?;
         pos += 1;
         let fin = ((b & 0b1000_0000) >> 7) == 1;
         let op = b & 0b0000_1111;
-        let b:u8 = *pkt.get(pos)?;
+        let b: u8 = *pkt.get(pos)?;
         pos += 1;
-        let mut len:u64 = (b & 0b0111_1111) as u64;
-        let nb = if len == 126 { len=0; 2 } else if len == 127 { len = 0; 8 } else { 0 };
+        let mut len: u64 = (b & 0b0111_1111) as u64;
+        let nb = if len == 126 {
+            len = 0;
+            2
+        } else if len == 127 {
+            len = 0;
+            8
+        } else {
+            0
+        };
         for i in 0..nb {
             len <<= 8;
             len |= (*pkt.get(pos)?) as u64;
@@ -499,7 +523,7 @@ impl WebSocket {
         }
         let len = len as usize;
         if (len as usize) + pos <= pkt.len() {
-            return Some((fin, op,pos,len));
+            return Some((fin, op, pos, len));
         }
         None
     }
@@ -579,17 +603,15 @@ impl WebSocket {
                         self.stop(htp);
                         return Err(From::from(e));
                     }
-                    RecvState::Response(r,body) => {
-                        match body {
-                            ResponseBody::Streamed => {
-                                return self.switch(htp, poll, r);
-                            }
-                            _ => {
-                                self.stop(htp);
-                                return Err(::Error::Closed);
-                            }
+                    RecvState::Response(r, body) => match body {
+                        ResponseBody::Streamed => {
+                            return self.switch(htp, poll, r);
                         }
-                    }
+                        _ => {
+                            self.stop(htp);
+                            return Err(::Error::Closed);
+                        }
+                    },
                     RecvState::Wait => {
                         break;
                     }
@@ -597,12 +619,10 @@ impl WebSocket {
                         self.stop(htp);
                         return Err(::Error::Closed);
                     }
-                    RecvState::ReceivedBody(_) => {
-                    }
+                    RecvState::ReceivedBody(_) => {}
                 }
             }
         }
         Ok(())
     }
 }
-

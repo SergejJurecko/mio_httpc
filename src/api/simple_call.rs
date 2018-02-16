@@ -18,12 +18,6 @@ pub struct SimpleCall {
 }
 
 impl SimpleCall {
-    /// Replaces self with an empty SimpleCall and returns result if any.
-    pub fn take(&mut self) -> Option<::http::Response<Vec<u8>>> {
-        let out = ::std::mem::replace(self, SimpleCall::empty());
-        out.close()
-    }
-
     pub fn is_ref(&self, r: CallRef) -> bool {
         self.id.is_ref(r)
     }
@@ -32,8 +26,14 @@ impl SimpleCall {
         &self.id
     }
 
+    /// Replaces self with an empty SimpleCall and returns result if any.
+    pub fn finish_inplace(&mut self) -> Option<::http::Response<Vec<u8>>> {
+        let out = ::std::mem::replace(self, SimpleCall::empty());
+        out.finish()
+    }
+
     /// Consume and return response with body.
-    pub fn close(mut self) -> Option<::http::Response<Vec<u8>>> {
+    pub fn finish(mut self) -> Option<::http::Response<Vec<u8>>> {
         let r = self.resp.take();
         let b = self.resp_body.take();
         if let Some(mut rs) = r {
@@ -45,6 +45,13 @@ impl SimpleCall {
         None
     }
 
+    /// Abort and replace self with an empty call.
+    pub fn abort_inplace(&mut self, htp: &mut Httpc) {
+        let out = ::std::mem::replace(self, SimpleCall::empty());
+        htp.call_close(out.id);
+    }
+
+    /// Consume and abort call.
     pub fn abort(self, htp: &mut Httpc) {
         htp.call_close(self.id);
     }

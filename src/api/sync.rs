@@ -1,5 +1,5 @@
-use ::{Request,CallBuilder,Httpc,SimpleCall, HeaderMap, HeaderValue};
-use mio::{Poll,Events};
+use {CallBuilder, HeaderMap, HeaderValue, Httpc, Request, SimpleCall};
+use mio::{Events, Poll};
 
 type Response = ::Result<(u16, HeaderMap<HeaderValue>, Vec<u8>)>;
 
@@ -80,7 +80,7 @@ impl<'a> SyncCall<'a> {
         let mut events = Events::with_capacity(2);
 
         let mut req_builder = Request::builder();
-        for &(k,v) in self.hdrs.iter() {
+        for &(k, v) in self.hdrs.iter() {
             req_builder.header(k, v);
         }
         req_builder.method(method);
@@ -90,7 +90,8 @@ impl<'a> SyncCall<'a> {
             .timeout_ms(self.timeout)
             .max_response(self.max_resp)
             .chunked_parse(true)
-            .digest_auth(true).call(&mut htp, &poll)?;
+            .digest_auth(true)
+            .call(&mut htp, &poll)?;
         let mut call = SimpleCall::from(call);
         loop {
             poll.poll(&mut events, Some(::std::time::Duration::from_millis(100)))?;
@@ -105,12 +106,13 @@ impl<'a> SyncCall<'a> {
 
                 if call.is_call(&cref) {
                     if call.perform(&mut htp, &poll)? {
-                        if let Some(mut resp) = call.close() {
+                        if let Some(mut resp) = call.finish() {
                             let v = ::extract_body(&mut resp);
-                            let hdrs = ::std::mem::replace(resp.headers_mut(), HeaderMap::default());
+                            let hdrs =
+                                ::std::mem::replace(resp.headers_mut(), HeaderMap::default());
                             return Ok((resp.status().as_u16(), hdrs, v));
                         }
-                        return Ok((0, HeaderMap::default(),Vec::new()))
+                        return Ok((0, HeaderMap::default(), Vec::new()));
                     }
                 }
             }
