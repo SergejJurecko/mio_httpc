@@ -1,6 +1,6 @@
-use ::{Call, CallRef, Httpc, SendState, RecvState, ResponseBody};
+use {Call, CallRef, Httpc, RecvState, ResponseBody, SendState};
 
-#[derive(Clone,Copy,PartialEq,Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum State {
     Sending,
     Receiving,
@@ -45,6 +45,10 @@ impl SimpleCall {
         None
     }
 
+    pub fn abort(self, htp: &mut Httpc) {
+        htp.call_close(self.id);
+    }
+
     /// For quick comparison with httpc::event response.
     /// If cid is none will return false.
     pub fn is_call(&self, cid: &Option<CallRef>) -> bool {
@@ -54,7 +58,7 @@ impl SimpleCall {
         false
     }
 
-    /// If using Option<SimpleCall> in a struct, you can quickly compare 
+    /// If using Option<SimpleCall> in a struct, you can quickly compare
     /// callid from httpc::event. If either is none will return false.
     pub fn is_opt_callid(a: &Option<SimpleCall>, b: &Option<CallRef>) -> bool {
         if let &Some(ref a) = a {
@@ -112,7 +116,7 @@ impl SimpleCall {
                         self.state = State::Done;
                         return Err(From::from(e));
                     }
-                    RecvState::Response(r,body) => {
+                    RecvState::Response(r, body) => {
                         self.resp = Some(r);
                         match body {
                             ResponseBody::Sized(0) => {
