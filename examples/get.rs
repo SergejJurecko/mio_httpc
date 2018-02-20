@@ -1,7 +1,7 @@
 extern crate mio;
 extern crate mio_httpc;
 
-use mio_httpc::{CallBuilder, Httpc, Request, SimpleCall};
+use mio_httpc::{CallBuilder, Httpc, HttpcCfg, Request, SimpleCall};
 use mio::{Events, Poll};
 
 fn do_call(htp: &mut Httpc, poll: &Poll, req: Request<Vec<u8>>) {
@@ -44,10 +44,51 @@ fn do_call(htp: &mut Httpc, poll: &Poll, req: Request<Vec<u8>>) {
     }
 }
 
+use std::fs::{read_dir, File, ReadDir};
+use std::ffi::OsStr;
+use std::io::Read;
+
+fn read_certs() -> ::std::io::Result<HttpcCfg> {
+    let mut cfg = HttpcCfg::new();
+    let certs = [OsStr::new("crt"), OsStr::new("pem")];
+    let der = [OsStr::new("der")];
+    for de in read_dir(".")? {
+        let de = de?;
+        match de.path().extension() {
+            Some(ex) if der.contains(&ex) => {
+                let mut file = File::open(de.path())?;
+                let mut contents = Vec::new();
+                file.read_to_end(&mut contents)?;
+                cfg.der_ca.push(contents);
+            }
+            Some(ex) if certs.contains(&ex) => {
+                println!("Adding {:?}", de.path());
+                let mut file = File::open(de.path())?;
+                let mut contents = String::new();
+                file.read_to_string(&mut contents)?;
+                cfg.pem_ca.push(contents.into_bytes());
+            }
+            _ => {}
+        }
+    }
+    Ok(cfg)
+}
+
 fn main() {
     let poll = Poll::new().unwrap();
-    let mut htp = Httpc::new(10);
     let args: Vec<String> = ::std::env::args().collect();
+
+    if let Ok(dl) = read_dir(".") {
+        for d in dl {
+            if let Ok(d) = d {}
+        }
+    }
+    let cfg = if let Ok(cfg) = read_certs() {
+        Some(cfg)
+    } else {
+        None
+    };
+    let mut htp = Httpc::new(10, cfg);
 
     for i in 1..args.len() {
         println!("Get {}", args[i].as_str());

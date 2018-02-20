@@ -27,10 +27,6 @@ impl CallBuilder {
         let cid = httpc.call::<tls_api::native::TlsConnector>(cb, poll)?;
         Ok(::WebSocket::new(cid, httpc.h.get_buf()))
     }
-    pub fn add_root_ca_der(&mut self, v: Vec<u8>) -> &mut Self {
-        self.cb.as_mut().unwrap().add_root_ca(v);
-        self
-    }
     pub fn max_response(&mut self, m: usize) -> &mut Self {
         self.cb.as_mut().unwrap().max_response(m);
         self
@@ -70,9 +66,9 @@ pub struct Httpc {
 }
 
 impl Httpc {
-    pub fn new(con_offset: usize) -> Httpc {
+    pub fn new(con_offset: usize, cfg: Option<::HttpcCfg>) -> Httpc {
         Httpc {
-            h: ::httpc::HttpcImpl::new(con_offset),
+            h: ::httpc::HttpcImpl::new(con_offset, cfg),
         }
     }
     pub(crate) fn call<C: TlsConnector>(

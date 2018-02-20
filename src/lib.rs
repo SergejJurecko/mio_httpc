@@ -1,17 +1,17 @@
-//! mio_httpc is an async http client that runs on top of mio only. 
-//! 
+//! mio_httpc is an async http client that runs on top of mio only.
+//!
 //! For convenience it also provides a SyncCall interface. This is a simple one-line HTTP client operation.
-//! 
+//!
 //! No call will block (except SyncCall), not even for DNS resolution as it is implemented internally to avoid blocking.
 //!
 //! mio_httpc requires you specify one of the TLS implementations using features: rustls, native, openssl.
 //! Default is noop for everything.
-//! 
+//!
 //! mio_httpc does a minimal amount of allocation and in general works with buffers you provide and an internal pool
 //! of buffers that get reused on new calls.
-//! 
+//!
 //! # Examples
-//! 
+//!
 //! ```no_run
 //! extern crate mio_httpc;
 //! extern crate mio;
@@ -54,65 +54,65 @@
 //!    }
 //! }
 //! ```
-//! 
+//!
 //! ```no_run
 //! extern crate mio_httpc;
 //! use mio_httpc::SyncCall;
-//! 
+//!
 //! // One line blocking call.
-//! 
+//!
 //! let (status, hdrs, body) = SyncCall::new().timeout_ms(5000).get(uri).expect("Request failed");
-//! 
+//!
 //! ```
 #![doc(html_root_url = "https://docs.rs/mio_httpc")]
 #![crate_name = "mio_httpc"]
 
-extern crate rand;
 extern crate httparse;
+extern crate rand;
 // extern crate tls_api;
-extern crate mio;
 extern crate byteorder;
-extern crate libc;
+extern crate data_encoding;
 extern crate fnv;
 extern crate http;
 extern crate itoa;
-extern crate data_encoding;
-extern crate smallvec;
+extern crate libc;
+extern crate libflate;
 extern crate md5;
+extern crate mio;
 extern crate pest;
 #[macro_use]
 extern crate pest_derive;
-extern crate libflate;
+extern crate smallvec;
 
+#[macro_use]
+extern crate failure;
 #[cfg(test)]
 #[macro_use]
 extern crate matches;
-#[macro_use] extern crate failure;
-
 
 // Because of default implementation does nothing we suppress warnings of nothing going on.
 // One of TLS implementation features must be picked.
 // #[allow(dead_code,unused_variables)]
 // mod con_table;
-#[allow(dead_code,unused_variables)]
+#[allow(dead_code, unused_variables)]
 mod dns_cache;
-#[allow(dead_code,unused_variables)]
+#[allow(dead_code, unused_variables)]
 mod dns;
-#[allow(dead_code,unused_imports)]
+#[allow(dead_code, unused_imports)]
 mod dns_parser;
-#[allow(dead_code,unused_variables)]
+#[allow(dead_code, unused_variables)]
 mod con;
-#[allow(dead_code,unused_variables)]
+#[allow(dead_code, unused_variables)]
 mod httpc;
-#[allow(dead_code,unused_variables,unused_imports)]
+#[allow(dead_code, unused_variables, unused_imports)]
 mod call;
-#[allow(dead_code,unused_variables)]
+#[allow(dead_code, unused_variables)]
 mod api;
 mod types;
 mod tls_api;
 
 pub use api::*;
-pub use http::{Error as HttpError};
+pub use http::Error as HttpError;
 pub use http::header::*;
 pub use http::method::*;
 pub use http::request::*;
@@ -123,7 +123,7 @@ pub use http::version::*;
 // pub use http::Extensions;
 // use failure::Error;
 
-pub type Result<T> = ::std::result::Result<T,Error>;
+pub type Result<T> = ::std::result::Result<T, Error>;
 #[derive(Debug, Fail)]
 pub enum Error {
     #[fail(display = "IO error: {}", _0)]

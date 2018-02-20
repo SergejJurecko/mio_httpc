@@ -33,10 +33,10 @@ impl CallBuilder {
         Err(::Error::NoTls)
     }
 
-    /// Add custom root ca in DER format
-    pub fn add_root_ca_der(&mut self, v: Vec<u8>) -> &mut Self {
-        self
-    }
+    // /// Add custom root ca in DER format
+    // pub fn add_root_ca_der(&mut self, v: Vec<u8>) -> &mut Self {
+    //     self
+    // }
 
     /// Default 10MB.
     ///
@@ -112,7 +112,7 @@ pub struct Httpc {}
 
 impl Httpc {
     /// Httpc will create connections with mio token in range [con_offset..con_offset+0xFFFF]
-    pub fn new(con_offset: usize) -> Httpc {
+    pub fn new(con_offset: usize, cfg: Option<::HttpcCfg>) -> Httpc {
         Httpc {}
     }
     pub(crate) fn call<C: TlsConnector>(
@@ -140,7 +140,7 @@ impl Httpc {
 
     /// Call periodically to check for call timeouts and DNS retries.
     /// Returns list of calls that have timed out.
-    /// You must execute call_close yourself and timeout will return them
+    /// You must execute call_close yourself (or SimpleCall::abort) and timeout will return them
     /// every time until you do.
     /// (every 100ms for example)
     pub fn timeout(&mut self) -> Vec<CallRef> {

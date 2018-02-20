@@ -76,7 +76,7 @@ impl<'a> SyncCall<'a> {
 
     fn exec(self, uri: &str, method: &'static str, body: &[u8]) -> Response {
         let poll = Poll::new()?;
-        let mut htp = Httpc::new(0);
+        let mut htp = Httpc::new(0, None);
         let mut events = Events::with_capacity(2);
 
         let mut req_builder = Request::builder();

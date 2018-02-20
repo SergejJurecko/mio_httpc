@@ -1,13 +1,13 @@
-use mio::{Token,Poll,Event};
+use mio::{Event, Poll, Token};
 use dns_cache::DnsCache;
-use con::{Con,ConTable};
-use tls_api::{TlsConnector};
+use con::{Con, ConTable};
+use tls_api::TlsConnector;
 use std::collections::VecDeque;
-use call::{CallImpl};
+use call::CallImpl;
 use types::*;
 // use fnv::FnvHashMap as HashMap;
-use ::{Result,Response,SendState,RecvState,CallRef,Call};
-use std::time::{Instant};
+use {Call, CallRef, RecvState, Response, Result, SendState};
+use std::time::Instant;
 use std::str::FromStr;
 
 pub struct HttpcImpl {
@@ -17,13 +17,15 @@ pub struct HttpcImpl {
     free_bufs: VecDeque<Vec<u8>>,
     cons: ConTable,
     last_timeout: Instant,
+    cfg: ::HttpcCfg,
 }
 
-const BUF_SZ:usize = 4096*2;
+const BUF_SZ: usize = 4096 * 2;
 
 impl HttpcImpl {
-    pub fn new(con_offset: usize) -> HttpcImpl {
+    pub fn new(con_offset: usize, cfg: Option<::HttpcCfg>) -> HttpcImpl {
         HttpcImpl {
+            cfg: cfg.unwrap_or_default(),
             // timed_out_calls: HashMap::default(),
             last_timeout: Instant::now(),
             cache: DnsCache::new(),
@@ -48,33 +50,35 @@ impl HttpcImpl {
             }
             buf.shrink_to_fit();
         } else if cap < BUF_SZ {
-            buf.reserve_exact(BUF_SZ-cap);
+            buf.reserve_exact(BUF_SZ - cap);
         }
         buf.truncate(0);
         self.free_bufs.push_front(buf);
     }
 
-    pub fn call<C:TlsConnector>(&mut self, mut b: CallBuilderImpl, poll: &Poll) -> Result<Call> {
+    pub fn call<C: TlsConnector>(&mut self, b: CallBuilderImpl, poll: &Poll) -> Result<Call> {
         let con_id = if let Some(host) = b.req.uri().host() {
             if let Some(con_id) = self.cons.try_keepalive(host, poll) {
                 Some(con_id)
             } else {
                 None
             }
-        } else { None };
+        } else {
+            None
+        };
         if let Some(con_id) = con_id {
             let call = CallImpl::new(b, self.get_buf());
             let id = Call::new(con_id, 0);
             return Ok(id);
         }
         // cons.push_con will set actual mio token
-        let root_ca = ::std::mem::replace(&mut b.root_ca, Vec::new());
-        let con = Con::new::<C,Vec<u8>>(Token::from(self.con_offset), 
-            &b.req, 
-            &mut self.cache, 
-            poll, 
-            root_ca,
-            b.dns_timeout)?;
+        let con = Con::new::<C, Vec<u8>>(
+            Token::from(self.con_offset),
+            &b.req,
+            &mut self.cache,
+            poll,
+            b.dns_timeout,
+        )?;
         let call = CallImpl::new(b, self.get_buf());
         if let Some(con_id) = self.cons.push_con(con, call, poll)? {
             let id = Call::new(con_id, 0);
@@ -100,7 +104,7 @@ impl HttpcImpl {
     }
 
     pub fn get_buf(&mut self) -> Vec<u8> {
-        if let Some(buf)  = self.free_bufs.pop_front() {
+        if let Some(buf) = self.free_bufs.pop_front() {
             buf
         } else {
             let b = Vec::with_capacity(BUF_SZ);
@@ -123,7 +127,7 @@ impl HttpcImpl {
         self.cons.timeout_extend(now, out);
     }
 
-    pub fn event<C:TlsConnector>(&mut self, ev: &Event) -> Option<CallRef> {
+    pub fn event<C: TlsConnector>(&mut self, ev: &Event) -> Option<CallRef> {
         let mut id = ev.token().0;
         if id >= self.con_offset && id <= (u16::max_value() as usize) {
             id -= self.con_offset;
@@ -147,7 +151,12 @@ impl HttpcImpl {
         self.cons.try_truncate(call.con_id(), call.call_id(), off);
     }
 
-    pub fn call_send<C:TlsConnector>(&mut self, poll: &Poll, call: &mut Call, buf: Option<&[u8]>) -> SendState {
+    pub fn call_send<C: TlsConnector>(
+        &mut self,
+        poll: &Poll,
+        call: &mut Call,
+        buf: Option<&[u8]>,
+    ) -> SendState {
         if call.is_empty() {
             return SendState::Done;
         }
@@ -155,8 +164,10 @@ impl HttpcImpl {
             let mut cp = ::types::CallParam {
                 poll,
                 dns: &mut self.cache,
+                cfg: &self.cfg,
             };
-            self.cons.event_send::<C>(call.con_id(), call.call_id(), &mut cp, buf)
+            self.cons
+                .event_send::<C>(call.con_id(), call.call_id(), &mut cp, buf)
         };
         match cret {
             Ok(SendState::Done) => {
@@ -170,12 +181,17 @@ impl HttpcImpl {
             Err(e) => {
                 self.call_close(Call(call.0));
                 call.invalidate();
-                return SendState::Error(e); 
+                return SendState::Error(e);
             }
         }
     }
 
-    pub fn call_recv<C:TlsConnector>(&mut self, poll: &Poll, call: &mut Call, buf: Option<&mut Vec<u8>>) -> RecvState {
+    pub fn call_recv<C: TlsConnector>(
+        &mut self,
+        poll: &Poll,
+        call: &mut Call,
+        buf: Option<&mut Vec<u8>>,
+    ) -> RecvState {
         if call.is_empty() {
             return RecvState::Done;
         }
@@ -183,14 +199,16 @@ impl HttpcImpl {
             let mut cp = ::types::CallParam {
                 poll,
                 dns: &mut self.cache,
+                cfg: &self.cfg,
             };
-            self.cons.event_recv::<C>(call.con_id(), call.call_id(), &mut cp, buf)
+            self.cons
+                .event_recv::<C>(call.con_id(), call.call_id(), &mut cp, buf)
         };
         match cret {
-            Ok(RecvStateInt::Response(r,::ResponseBody::Sized(0))) => {
+            Ok(RecvStateInt::Response(r, ::ResponseBody::Sized(0))) => {
                 self.call_close(Call(call.0));
                 call.invalidate();
-                return RecvState::Response(r,::ResponseBody::Sized(0));
+                return RecvState::Response(r, ::ResponseBody::Sized(0));
             }
             Ok(RecvStateInt::Done) => {
                 self.call_close(Call(call.0));
@@ -219,14 +237,14 @@ impl HttpcImpl {
                         }
                     }
                 }
-                return RecvState::Response(r,::ResponseBody::Sized(0));
+                return RecvState::Response(r, ::ResponseBody::Sized(0));
             }
-            Ok(RecvStateInt::DigestAuth(r,d)) => {
+            Ok(RecvStateInt::DigestAuth(r, d)) => {
                 let mut b = self.call_close_int(Call(call.0));
                 call.invalidate();
                 if b.auth.hdr.len() > 0 {
                     // If an attempt was already made once, return response.
-                    return RecvState::Response(r,::ResponseBody::Sized(0));
+                    return RecvState::Response(r, ::ResponseBody::Sized(0));
                 }
                 b.auth(d);
                 match self.call::<C>(b, poll) {
@@ -262,8 +280,8 @@ impl HttpcImpl {
             Ok(RecvStateInt::Wait) => {
                 return RecvState::Wait;
             }
-            Ok(RecvStateInt::Response(a,b)) => {
-                return RecvState::Response(a,b);
+            Ok(RecvStateInt::Response(a, b)) => {
+                return RecvState::Response(a, b);
             }
             // Ok(RecvStateInt::Error(e)) => {
             //     return RecvState::Error(e);
@@ -271,7 +289,7 @@ impl HttpcImpl {
             Err(e) => {
                 self.call_close(Call(call.0));
                 call.invalidate();
-                return RecvState::Error(e); 
+                return RecvState::Error(e);
             }
         }
     }
@@ -280,7 +298,7 @@ impl HttpcImpl {
         if let Some(ref clh) = r.headers().get(::http::header::LOCATION) {
             if let Ok(s) = clh.to_str() {
                 if let Ok(nuri) = ::http::Uri::from_str(s) {
-                    let mut s128 = [0u8;128];
+                    let mut s128 = [0u8; 128];
                     let mut svec = Vec::new();
                     let uri_len = if nuri.scheme_part().is_some() {
                         *b.req.uri_mut() = nuri;
@@ -290,30 +308,29 @@ impl HttpcImpl {
                         let scheme = old_uri.scheme_part().unwrap();
                         let auth = old_uri.authority_part().unwrap();
                         let path = nuri.path();
-                        let (quer,quer_len) = if let Some(q) = old_uri.query() {
-                            (q,q.len()+1)
+                        let (quer, quer_len) = if let Some(q) = old_uri.query() {
+                            (q, q.len() + 1)
                         } else {
-                            ("",0)
+                            ("", 0)
                         };
-                        let uri_len = scheme.as_str().len() + 
-                            "://".len() + 
-                            auth.as_str().len() +
-                            path.len() +
-                            quer_len;
+                        let uri_len = scheme.as_str().len() + "://".len() + auth.as_str().len()
+                            + path.len() + quer_len;
                         if uri_len <= 128 {
                             let mut pos = 0;
-                            s128[pos..pos+scheme.as_str().len()].copy_from_slice(scheme.as_str().as_bytes());
+                            s128[pos..pos + scheme.as_str().len()]
+                                .copy_from_slice(scheme.as_str().as_bytes());
                             pos += scheme.as_str().len();
-                            s128[pos..pos+3].copy_from_slice(b"://");
+                            s128[pos..pos + 3].copy_from_slice(b"://");
                             pos += 3;
-                            s128[pos..pos+auth.as_str().len()].copy_from_slice(auth.as_str().as_bytes());
+                            s128[pos..pos + auth.as_str().len()]
+                                .copy_from_slice(auth.as_str().as_bytes());
                             pos += auth.as_str().len();
-                            s128[pos..pos+path.len()].copy_from_slice(&path.as_bytes());
+                            s128[pos..pos + path.len()].copy_from_slice(&path.as_bytes());
                             pos += path.len();
                             if quer_len > 0 {
-                                s128[pos..pos+1].copy_from_slice(b"?");
+                                s128[pos..pos + 1].copy_from_slice(b"?");
                                 pos += 1;
-                                s128[pos..pos+quer_len].copy_from_slice(&quer.as_bytes());
+                                s128[pos..pos + quer_len].copy_from_slice(&quer.as_bytes());
                             }
                         } else {
                             svec.extend(scheme.as_str().as_bytes());
@@ -327,7 +344,7 @@ impl HttpcImpl {
                         }
                         uri_len
                     };
-                    let slice:&[u8] = if uri_len <= 128 {
+                    let slice: &[u8] = if uri_len <= 128 {
                         &s128[..uri_len]
                     } else {
                         &svec
@@ -344,4 +361,3 @@ impl HttpcImpl {
         false
     }
 }
-

@@ -1,4 +1,3 @@
-
 /// Used when call is in send request state.
 #[derive(Debug)]
 pub enum SendState {
@@ -17,7 +16,22 @@ pub enum SendState {
     Wait,
 }
 
-#[derive(Debug,Copy,Clone,Eq,PartialEq)]
+/// Top level configuration for mio_http. For now just additional root ssl certificates.
+#[derive(Default)]
+pub struct HttpcCfg {
+    // Extra root certificates in der format
+    pub der_ca: Vec<Vec<u8>>,
+    // Extra root certificates in pem format
+    pub pem_ca: Vec<Vec<u8>>,
+}
+
+impl HttpcCfg {
+    pub fn new() -> HttpcCfg {
+        Default::default()
+    }
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum ResponseBody {
     Sized(usize),
     Streamed,
@@ -25,12 +39,8 @@ pub enum ResponseBody {
 impl ::std::fmt::Display for ResponseBody {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         match *self {
-            ResponseBody::Sized(sz) => {
-                write!(f, "ResponseBody::Sized({})", sz)
-            }
-            ResponseBody::Streamed => {
-                write!(f, "ResponseBody::Streamed")
-            }
+            ResponseBody::Sized(sz) => write!(f, "ResponseBody::Sized({})", sz),
+            ResponseBody::Streamed => write!(f, "ResponseBody::Streamed"),
         }
     }
 }
@@ -49,9 +59,9 @@ impl ResponseBody {
 pub enum RecvState {
     /// Unrecoverable error has occured and call is finished.
     Error(::Error),
-    /// HTTP Response and response body size. 
+    /// HTTP Response and response body size.
     /// If there is a body it will follow, otherwise call is done.
-    Response(::http::Response<Vec<u8>>,ResponseBody),
+    Response(::http::Response<Vec<u8>>, ResponseBody),
     /// How many bytes were received.
     ReceivedBody(usize),
     /// Request is done with body.
@@ -65,7 +75,6 @@ pub enum RecvState {
     /// Nothing yet to return.
     Wait,
 }
-
 
 /// Call structure.
 #[derive(Debug, PartialEq)] // much fewer derives then ref on purpose. We want a single instance.
@@ -109,7 +118,6 @@ impl Call {
     }
 }
 
-
 // I wish...Need httpc.
 // impl Drop for Call {
 //     fn drop(&mut self) {
@@ -119,7 +127,7 @@ impl Call {
 // }
 
 /// Reference to call. Used for matching mio Token with call.
-/// If you have lots of calls, you can use this as a key in a HashMap 
+/// If you have lots of calls, you can use this as a key in a HashMap
 /// (you probably want fnv HashMap).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct CallRef(pub(crate) u32);
@@ -149,9 +157,9 @@ pub use self::simple_call::*;
 mod sync;
 pub use self::sync::*;
 
-#[cfg(not(any(feature="rustls", feature="native", feature="openssl")))]
+#[cfg(not(any(feature = "rustls", feature = "native", feature = "openssl")))]
 mod default;
-#[cfg(not(any(feature="rustls", feature="native", feature="openssl")))]
+#[cfg(not(any(feature = "rustls", feature = "native", feature = "openssl")))]
 pub use self::default::*;
 
 #[cfg(feature = "rustls")]
@@ -168,4 +176,3 @@ pub use self::native::*;
 mod openssl;
 #[cfg(feature = "openssl")]
 pub use self::openssl::*;
-

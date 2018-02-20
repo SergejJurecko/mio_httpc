@@ -1,16 +1,16 @@
 use dns_cache::DnsCache;
-use mio::{Poll};
-use http::{Request};
+use mio::Poll;
+use http::Request;
 use std::time::Duration;
 use httpc::HttpcImpl;
-use tls_api::{TlsConnector};
+use tls_api::TlsConnector;
 use pest::Parser;
 
 #[derive(Debug)]
 pub(crate) enum RecvStateInt {
     // Error(::Error),
-    Response(::http::Response<Vec<u8>>,::ResponseBody),
-    DigestAuth(::http::Response<Vec<u8>>,AuthenticateInfo),
+    Response(::http::Response<Vec<u8>>, ::ResponseBody),
+    DigestAuth(::http::Response<Vec<u8>>, AuthenticateInfo),
     ReceivedBody(usize),
     DoneWithBody(Vec<u8>),
     Sending,
@@ -24,7 +24,7 @@ pub(crate) enum RecvStateInt {
 #[grammar = "auth.pest"] // relative to src
 struct AuthParser;
 
-#[derive(Debug,Eq,PartialEq,Clone,Copy)]
+#[derive(Debug, Eq, PartialEq, Clone, Copy)]
 pub enum DigestAlg {
     MD5,
     MD5Sess,
@@ -35,7 +35,7 @@ pub enum DigestAlg {
     // Sha512,
     // Sha512Ses
 }
-#[derive(Debug,Eq,PartialEq,Clone,Copy)]
+#[derive(Debug, Eq, PartialEq, Clone, Copy)]
 pub enum DigestQop {
     Auth,
     AuthInt,
@@ -45,15 +45,9 @@ pub enum DigestQop {
 impl DigestQop {
     pub fn as_bytes(&self) -> &[u8] {
         match *self {
-            DigestQop::Auth => {
-                b"auth"
-            }
-            DigestQop::AuthInt => {
-                b"auth-int"
-            }
-            DigestQop::None => {
-                b"auth"
-            }
+            DigestQop::Auth => b"auth",
+            DigestQop::AuthInt => b"auth-int",
+            DigestQop::None => b"auth",
         }
     }
 }
@@ -68,7 +62,7 @@ pub struct AuthDigest<'a> {
 }
 
 impl<'a> AuthDigest<'a> {
-    pub fn parse(s: &'a str) ->  ::Result<AuthDigest<'a>> {
+    pub fn parse(s: &'a str) -> ::Result<AuthDigest<'a>> {
         // println!("Digest in {}",s);
         let mut realm = "";
         let mut nonce = "";
@@ -76,73 +70,58 @@ impl<'a> AuthDigest<'a> {
         let mut qop = DigestQop::None;
         let mut stale = false;
         let mut alg = DigestAlg::MD5;
-        if let Ok(pairs) = AuthParser::parse(Rule::auth,s) {
+        if let Ok(pairs) = AuthParser::parse(Rule::auth, s) {
             for pair in pairs {
                 for inner_pair in pair.into_inner() {
                     match inner_pair.as_rule() {
-                        Rule::auth_type => {
-                            for inner_pair in inner_pair.into_inner() {
-                                let s = inner_pair.into_span().as_str();
-                                if !s.eq_ignore_ascii_case("digest") {
-                                    return Err(::Error::AuthenticateParse);
-                                }
+                        Rule::auth_type => for inner_pair in inner_pair.into_inner() {
+                            let s = inner_pair.into_span().as_str();
+                            if !s.eq_ignore_ascii_case("digest") {
+                                return Err(::Error::AuthenticateParse);
+                            }
+                            break;
+                        },
+                        Rule::realm => for inner_pair in inner_pair.into_inner() {
+                            realm = inner_pair.into_span().as_str();
+                            break;
+                        },
+                        Rule::qop => for inner_pair in inner_pair.into_inner() {
+                            let s = inner_pair.into_span().as_str();
+                            if s.eq_ignore_ascii_case("auth") {
+                                qop = DigestQop::Auth;
                                 break;
+                            } else if s.eq_ignore_ascii_case("auth-int") {
+                                qop = DigestQop::AuthInt;
+                                continue;
                             }
-                        }
-                        Rule::realm => {
-                            for inner_pair in inner_pair.into_inner() {
-                                realm = inner_pair.into_span().as_str();
-                                break;
+                        },
+                        Rule::nonce => for inner_pair in inner_pair.into_inner() {
+                            nonce = inner_pair.into_span().as_str();
+                            break;
+                        },
+                        Rule::opaque => for inner_pair in inner_pair.into_inner() {
+                            opaque = inner_pair.into_span().as_str();
+                            break;
+                        },
+                        Rule::stale => for inner_pair in inner_pair.into_inner() {
+                            let s = inner_pair.into_span().as_str();
+                            if s.eq_ignore_ascii_case("true") {
+                                stale = true;
+                            } else {
+                                stale = false;
                             }
-                        }
-                        Rule::qop => {
-                            for inner_pair in inner_pair.into_inner() {
-                                let s = inner_pair.into_span().as_str();
-                                if s.eq_ignore_ascii_case("auth") {
-                                    qop = DigestQop::Auth;
-                                    break;
-                                } else if s.eq_ignore_ascii_case("auth-int") {
-                                    qop = DigestQop::AuthInt;
-                                    continue;
-                                }
+                            break;
+                        },
+                        Rule::algorithm => for inner_pair in inner_pair.into_inner() {
+                            let a = inner_pair.into_span().as_str();
+                            if a.eq_ignore_ascii_case("md5") {
+                                alg = DigestAlg::MD5;
+                            } else if a.eq_ignore_ascii_case("md5-sess") {
+                                alg = DigestAlg::MD5Sess;
                             }
-                        }
-                        Rule::nonce => {
-                            for inner_pair in inner_pair.into_inner() {
-                                nonce = inner_pair.into_span().as_str();
-                                break;
-                            }
-                        }
-                        Rule::opaque => {
-                            for inner_pair in inner_pair.into_inner() {
-                                opaque = inner_pair.into_span().as_str();
-                                break;
-                            }
-                        }
-                        Rule::stale => {
-                            for inner_pair in inner_pair.into_inner() {
-                                let s = inner_pair.into_span().as_str();
-                                if s.eq_ignore_ascii_case("true") {
-                                    stale = true;
-                                } else {
-                                    stale = false;
-                                }
-                                break;
-                            }
-                        }
-                        Rule::algorithm => {
-                            for inner_pair in inner_pair.into_inner() {
-                                let a = inner_pair.into_span().as_str();
-                                if a.eq_ignore_ascii_case("md5") {
-                                    alg = DigestAlg::MD5;
-                                } else if a.eq_ignore_ascii_case("md5-sess") {
-                                    alg = DigestAlg::MD5Sess;
-                                }
-                                break;
-                            }
-                        }
-                        _ => {
-                        }
+                            break;
+                        },
+                        _ => {}
                     }
                 }
             }
@@ -174,10 +153,7 @@ impl AuthenticateInfo {
         }
     }
     pub(crate) fn new(s: String) -> AuthenticateInfo {
-        AuthenticateInfo {
-            hdr: s,
-            nc: 0,
-        }
+        AuthenticateInfo { hdr: s, nc: 0 }
     }
 }
 
@@ -186,21 +162,19 @@ pub struct ChunkIndex {
     offset: usize,
 }
 
-// read chunk by chunk and move data in buffer as it occurs. 
+// read chunk by chunk and move data in buffer as it occurs.
 // does not keep history
 impl ChunkIndex {
     pub fn new() -> ChunkIndex {
-        ChunkIndex {
-            offset: 0,
-        }
+        ChunkIndex { offset: 0 }
     }
 
     // Return true if 0 sized chunk found and stream finished.
-    pub fn check_done(&mut self, max:usize, b: &[u8]) -> ::Result<bool> {
+    pub fn check_done(&mut self, max: usize, b: &[u8]) -> ::Result<bool> {
         let mut off = self.offset;
         // For every chunk, shift bytes back over the NUM\r\n parts
-        while off+4 < b.len() {
-            if let Some((num,next_off)) = self.get_chunk_size(&b[off..])? {
+        while off + 4 < b.len() {
+            if let Some((num, next_off)) = self.get_chunk_size(&b[off..])? {
                 if num > max {
                     return Err(::Error::ChunkOverlimit(num));
                 }
@@ -219,14 +193,14 @@ impl ChunkIndex {
     }
 
     // copy full chunks to dst, move remainder (non-full chunk) back right after hdr.
-    pub fn push_to(&mut self, hdr:usize, src: &mut Vec<u8>, dst: &mut Vec<u8>) -> ::Result<usize> {
+    pub fn push_to(&mut self, hdr: usize, src: &mut Vec<u8>, dst: &mut Vec<u8>) -> ::Result<usize> {
         let mut off = hdr;
         let mut num_copied = 0;
         loop {
-            if let Some((num,next_off)) = self.get_chunk_size(&src[off..])? {
+            if let Some((num, next_off)) = self.get_chunk_size(&src[off..])? {
                 if off + next_off + num + 2 <= src.len() {
-                    dst.extend(&src[off+next_off..off+next_off+num]);
-                    off += next_off+num+2;
+                    dst.extend(&src[off + next_off..off + next_off + num]);
+                    off += next_off + num + 2;
                     num_copied += num;
                     continue;
                 }
@@ -234,11 +208,11 @@ impl ChunkIndex {
             if hdr != off {
                 let sl = src.len();
                 unsafe {
-                    let src_p:*const u8 = src.as_ptr().offset(off as isize);
-                    let dst_p:*mut u8 = src.as_mut_ptr().offset(hdr as isize);
-                    ::std::ptr::copy(src_p, dst_p, sl-off);
+                    let src_p: *const u8 = src.as_ptr().offset(off as isize);
+                    let dst_p: *mut u8 = src.as_mut_ptr().offset(hdr as isize);
+                    ::std::ptr::copy(src_p, dst_p, sl - off);
                 }
-                src.truncate(hdr+sl-off);
+                src.truncate(hdr + sl - off);
                 self.offset = 0;
             }
             break;
@@ -246,12 +220,12 @@ impl ChunkIndex {
         Ok(num_copied)
     }
 
-    fn get_chunk_size(&mut self, b: &[u8]) -> ::Result<Option<(usize,usize)>> {
+    fn get_chunk_size(&mut self, b: &[u8]) -> ::Result<Option<(usize, usize)>> {
         let blen = b.len();
-        let mut num:usize = 0;
+        let mut num: usize = 0;
         for i in 0..blen {
-            if i+1 < blen && b[i] == b'\r' && b[i+1] == b'\n' {
-                return Ok(Some((num,i+2)));
+            if i + 1 < blen && b[i] == b'\r' && b[i + 1] == b'\n' {
+                return Ok(Some((num, i + 2)));
             }
             if let Some(v) = ascii_hex_to_num(b[i]) {
                 if let Some(num1) = num.checked_mul(16) {
@@ -272,12 +246,11 @@ impl ChunkIndex {
     }
 }
 
-fn ascii_hex_to_num(ch: u8) -> Option<usize>
-{
+fn ascii_hex_to_num(ch: u8) -> Option<usize> {
     match ch {
-        b'0' ... b'9' => Some((ch - b'0') as usize),
-        b'a' ... b'f' => Some((ch - b'a' + 10) as usize),
-        b'A' ... b'F' => Some((ch - b'A' + 10) as usize),
+        b'0'...b'9' => Some((ch - b'0') as usize),
+        b'a'...b'f' => Some((ch - b'a' + 10) as usize),
+        b'A'...b'F' => Some((ch - b'A' + 10) as usize),
         _ => None,
     }
 }
@@ -285,6 +258,7 @@ fn ascii_hex_to_num(ch: u8) -> Option<usize>
 pub struct CallParam<'a> {
     pub poll: &'a Poll,
     pub dns: &'a mut DnsCache,
+    pub cfg: &'a ::HttpcCfg,
     // pub con: &'a mut Con,
     // pub ev: &'a Event,
 }
@@ -297,7 +271,7 @@ pub struct CallBuilderImpl {
     pub dur: Duration,
     pub max_response: usize,
     pub max_chunk: usize,
-    pub root_ca: Vec<Vec<u8>>,
+    // pub root_ca: Vec<Vec<u8>>,
     pub dns_timeout: u64,
     pub ws: bool,
     pub(crate) auth: AuthenticateInfo,
@@ -310,12 +284,12 @@ pub struct CallBuilderImpl {
 impl CallBuilderImpl {
     pub fn new(req: Request<Vec<u8>>) -> CallBuilderImpl {
         CallBuilderImpl {
-            max_response: 1024*1024*10,
+            max_response: 1024 * 1024 * 10,
             dur: Duration::from_millis(30000),
-            max_chunk: 32*1024,
+            max_chunk: 32 * 1024,
             req,
             chunked_parse: true,
-            root_ca: Vec::new(),
+            // root_ca: Vec::new(),
             dns_timeout: 100,
             ws: false,
             auth: AuthenticateInfo::empty(),
@@ -324,17 +298,17 @@ impl CallBuilderImpl {
             gzip: true,
         }
     }
-    pub fn call<C:TlsConnector>(self, httpc: &mut HttpcImpl, poll: &Poll) -> ::Result<::Call> {
+    pub fn call<C: TlsConnector>(self, httpc: &mut HttpcImpl, poll: &Poll) -> ::Result<::Call> {
         httpc.call::<C>(self, poll)
     }
     pub fn websocket(&mut self) -> &mut Self {
         self.ws = true;
         self
     }
-    pub fn add_root_ca(&mut self, v: Vec<u8>) -> &mut Self {
-        self.root_ca.push(v);
-        self
-    }
+    // pub fn add_root_ca_der(&mut self, v: Vec<u8>) -> &mut Self {
+    //     self.root_ca.push(v);
+    //     self
+    // }
     pub fn dns_retry_ms(&mut self, n: u64) -> &mut Self {
         self.dns_timeout = n;
         self
@@ -379,10 +353,10 @@ impl CallBuilderImpl {
 #[test]
 pub fn test_auth() {
     let s = "Digest realm=\"http-auth@example.org\", qop=\"auth-int , auth\", algorithm=MD5-sess, nonce=\"7ypf/xlj9XXwfDPEoM4URrv/xwf94BcCAzFZH4GiTo0v\", opaque=\"FQhe/qaU925kfnzjCev0ciny7QMkPqMAFRtzCUYo5tdS\"";
-    AuthParser::parse(Rule::auth,s).unwrap();
+    AuthParser::parse(Rule::auth, s).unwrap();
     let da = AuthDigest::parse(s).unwrap();
-    assert_eq!(da.realm,"http-auth@example.org");
-    assert_eq!(da.nonce,"7ypf/xlj9XXwfDPEoM4URrv/xwf94BcCAzFZH4GiTo0v");
-    assert_eq!(da.qop,DigestQop::Auth);
-    assert_eq!(da.alg,DigestAlg::MD5Sess);
+    assert_eq!(da.realm, "http-auth@example.org");
+    assert_eq!(da.nonce, "7ypf/xlj9XXwfDPEoM4URrv/xwf94BcCAzFZH4GiTo0v");
+    assert_eq!(da.qop, DigestQop::Auth);
+    assert_eq!(da.alg, DigestAlg::MD5Sess);
 }
