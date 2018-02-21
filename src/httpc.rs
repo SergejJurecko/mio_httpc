@@ -222,7 +222,6 @@ impl HttpcImpl {
                 return RecvState::DoneWithBody(body);
             }
             Ok(RecvStateInt::Redirect(r)) => {
-                println!("redirect");
                 let mut b = self.call_close_int(Call(call.0));
                 call.invalidate();
                 if b.max_redirects > 0 {

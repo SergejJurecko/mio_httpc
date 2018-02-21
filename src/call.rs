@@ -595,7 +595,7 @@ impl CallImpl {
                 if self.hdr_sz == 0 {
                     let mut headers = [httparse::EMPTY_HEADER; 32];
                     let mut presp = ParseResp::new(&mut headers);
-                    println!("Got: {}", String::from_utf8(buf.clone())?);
+                    // println!("Got: {}", String::from_utf8(buf.clone())?);
                     let buflen = buf.len();
                     match presp.parse(buf) {
                         Ok(httparse::Status::Complete(hdr_sz)) => {
