@@ -8,7 +8,7 @@ fn do_call(htp: &mut Httpc, poll: &Poll, req: Request<Vec<u8>>) {
     let call = CallBuilder::new(req)
         .timeout_ms(10000)
         .digest_auth(true)
-        .insecure_do_not_verify_domain()
+        // .insecure_do_not_verify_domain()
         .call(htp, &poll)
         .expect("Call start failed");
     let mut call = SimpleCall::from(call);
