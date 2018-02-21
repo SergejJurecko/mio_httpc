@@ -278,6 +278,8 @@ pub struct CallBuilderImpl {
     pub digest: bool,
     pub max_redirects: u8,
     pub gzip: bool,
+    pub insecure: bool,
+    pub reused: bool,
 }
 
 #[allow(dead_code)]
@@ -296,6 +298,8 @@ impl CallBuilderImpl {
             digest: false,
             max_redirects: 4,
             gzip: true,
+            insecure: false,
+            reused: false,
         }
     }
     pub fn call<C: TlsConnector>(self, httpc: &mut HttpcImpl, poll: &Poll) -> ::Result<::Call> {
@@ -341,6 +345,10 @@ impl CallBuilderImpl {
     }
     pub fn max_redirects(&mut self, v: u8) -> &mut Self {
         self.max_redirects = v;
+        self
+    }
+    pub fn insecure(&mut self) -> &mut Self {
+        self.insecure = true;
         self
     }
     pub(crate) fn auth(&mut self, v: AuthenticateInfo) -> &mut Self {

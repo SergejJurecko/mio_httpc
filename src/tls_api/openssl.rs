@@ -1,5 +1,3 @@
-extern crate openssl;
-
 use std::io;
 use std::result;
 use std::fmt;
@@ -8,6 +6,7 @@ use std::fmt;
 use tls_api;
 use tls_api::Error;
 use tls_api::Result;
+use openssl;
 
 pub struct TlsConnectorBuilder(pub openssl::ssl::SslConnectorBuilder);
 pub struct TlsConnector(pub openssl::ssl::SslConnector);
@@ -21,12 +20,12 @@ pub const HAS_ALPN: bool = true;
 #[cfg(not(has_alpn))]
 pub const HAS_ALPN: bool = false;
 
-fn fill_alpn(protocols: &[&[u8]], single: &mut [u8]) {
+fn fill_alpn(protocols: &[&str], single: &mut [u8]) {
     let mut pos = 0;
     for p in protocols {
         single[pos] = p.len() as u8;
         pos += 1;
-        single[pos..pos + p.len()].copy_from_slice(&p[..]);
+        single[pos..pos + p.len()].copy_from_slice(p.as_bytes());
         pos += p.len();
     }
 }
@@ -45,7 +44,7 @@ impl tls_api::TlsConnectorBuilder for TlsConnectorBuilder {
     }
 
     #[cfg(has_alpn)]
-    fn set_alpn_protocols(&mut self, protocols: &[&[u8]]) -> Result<()> {
+    fn set_alpn_protocols(&mut self, protocols: &[&str]) -> Result<()> {
         let mut sz = 0;
         for p in protocols {
             sz += p.len() + 1;
@@ -53,35 +52,35 @@ impl tls_api::TlsConnectorBuilder for TlsConnectorBuilder {
         if sz <= 64 {
             let mut single = [0u8; 64];
             fill_alpn(protocols, &mut single);
-            self.0.set_alpn_protos(&single[..sz]).map_err(Error::new)
+            self.0.set_alpn_protos(&single[..sz])
         } else if sz <= 128 {
             let mut single = [0u8; 128];
             fill_alpn(protocols, &mut single);
-            self.0.set_alpn_protos(&single[..sz]).map_err(Error::new)
+            self.0.set_alpn_protos(&single[..sz])
         } else {
             let mut single = Vec::with_capacity(sz);
             single.resize(sz, 0);
             fill_alpn(protocols, &mut single);
-            self.0.set_alpn_protos(&single[..sz]).map_err(Error::new)
+            self.0.set_alpn_protos(&single[..sz])
         }
     }
 
     #[cfg(not(has_alpn))]
-    fn set_alpn_protocols(&mut self, _protocols: &[&[u8]]) -> Result<()> {
-        Err(Error::new_other("openssl is compiled without alpn"))
+    fn set_alpn_protocols(&mut self, _protocols: &[&str]) -> Result<()> {
+        Err(Error::Other("openssl is compiled without alpn"))
     }
 
     fn add_der_certificate(&mut self, cert: &[u8]) -> Result<&mut Self> {
-        let cert = openssl::x509::X509::from_der(cert).map_err(Error::new)?;
+        let cert = openssl::x509::X509::from_der(cert)?;
 
-        self.0.cert_store_mut().add_cert(cert).map_err(Error::new)?;
+        self.0.cert_store_mut().add_cert(cert)?;
 
         Ok(self)
     }
 
     fn add_pem_certificate(&mut self, cert: &[u8]) -> Result<&mut Self> {
-        let cert = openssl::x509::X509::from_pem(cert).map_err(Error::new)?;
-        self.0.cert_store_mut().add_cert(cert).map_err(Error::new)?;
+        let cert = openssl::x509::X509::from_pem(cert)?;
+        self.0.cert_store_mut().add_cert(cert)?;
         Ok(self)
     }
 
@@ -179,10 +178,10 @@ where
 {
     match e {
         openssl::ssl::HandshakeError::SetupFailure(e) => {
-            tls_api::HandshakeError::Failure(Error::new(e))
+            tls_api::HandshakeError::Failure(From::from(e))
         }
         openssl::ssl::HandshakeError::Failure(e) => {
-            tls_api::HandshakeError::Failure(Error::new(e.into_error()))
+            tls_api::HandshakeError::Failure(From::from(e.into_error()))
         }
         openssl::ssl::HandshakeError::WouldBlock(s) => tls_api::HandshakeError::Interrupted(
             tls_api::MidHandshakeTlsStream::new(MidHandshakeTlsStream(Some(s))),
@@ -196,7 +195,7 @@ impl tls_api::TlsConnector for TlsConnector {
     fn builder() -> Result<TlsConnectorBuilder> {
         openssl::ssl::SslConnector::builder(openssl::ssl::SslMethod::tls())
             .map(TlsConnectorBuilder)
-            .map_err(Error::new)
+            .map_err(From::from)
     }
 
     fn connect<S>(
@@ -229,7 +228,7 @@ impl tls_api::TlsConnector for TlsConnector {
                 cfg.connect("", stream)
             }
             Err(e) => {
-                return Err(tls_api::HandshakeError::Failure(Error::new(e)));
+                return Err(tls_api::HandshakeError::Failure(From::from(e)));
             }
         };
         match cfgr {
@@ -243,24 +242,24 @@ impl tls_api::TlsConnector for TlsConnector {
 
 impl TlsAcceptorBuilder {
     pub fn from_pkcs12(pkcs12: &[u8], password: &str) -> Result<TlsAcceptorBuilder> {
-        let pkcs12 = openssl::pkcs12::Pkcs12::from_der(pkcs12).map_err(Error::new)?;
-        let pkcs12 = pkcs12.parse(password).map_err(Error::new)?;
+        let pkcs12 = openssl::pkcs12::Pkcs12::from_der(pkcs12)?;
+        let pkcs12 = pkcs12.parse(password)?;
 
         let abr = openssl::ssl::SslAcceptor::mozilla_intermediate(openssl::ssl::SslMethod::tls());
         match abr {
             Ok(mut ab) => {
-                ab.set_private_key(&pkcs12.pkey).map_err(Error::new)?;
-                ab.set_certificate(&pkcs12.cert).map_err(Error::new)?;
-                ab.check_private_key().map_err(Error::new)?;
+                ab.set_private_key(&pkcs12.pkey)?;
+                ab.set_certificate(&pkcs12.cert)?;
+                ab.check_private_key()?;
                 if let Some(chain) = pkcs12.chain {
                     for cert in chain.into_iter() {
-                        ab.add_extra_chain_cert(cert).map_err(Error::new)?;
+                        ab.add_extra_chain_cert(cert)?;
                     }
                 }
                 Ok(TlsAcceptorBuilder(ab))
             }
             Err(e) => {
-                return Err(Error::new(e));
+                return Err(From::from(e));
             }
         }
     }
@@ -280,7 +279,7 @@ impl tls_api::TlsAcceptorBuilder for TlsAcceptorBuilder {
     }
 
     #[cfg(has_alpn)]
-    fn set_alpn_protocols(&mut self, protocols: &[&[u8]]) -> Result<()> {
+    fn set_alpn_protocols(&mut self, protocols: &[&str]) -> Result<()> {
         let mut sz = 0;
         for p in protocols {
             sz += p.len() + 1;
@@ -302,8 +301,8 @@ impl tls_api::TlsAcceptorBuilder for TlsAcceptorBuilder {
     }
 
     #[cfg(not(has_alpn))]
-    fn set_alpn_protocols(&mut self, _protocols: &[&[u8]]) -> Result<()> {
-        Err(Error::new_other("openssl is compiled without alpn"))
+    fn set_alpn_protocols(&mut self, _protocols: &[&str]) -> Result<()> {
+        Err(Error::Other("openssl is compiled without alpn"))
     }
 
     fn build(self) -> Result<TlsAcceptor> {

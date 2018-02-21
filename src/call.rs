@@ -4,7 +4,7 @@ use std::io::ErrorKind as IoErrorKind;
 use tls_api::TlsConnector;
 use httparse::{self, Response as ParseResp};
 use http::response::Builder as RespBuilder;
-use http::{self, Request, Uri, Version};
+use http::{self, Method, Request, Uri, Version};
 use http::header::*;
 use std::str::FromStr;
 use std::time::{Duration, Instant};
@@ -160,7 +160,7 @@ impl CallImpl {
             buf.extend(b"\r\n");
         }
         let cl = self.b.req.headers().get(CONTENT_LENGTH);
-        if None == cl {
+        if None == cl && self.b.req.body().len() > 0 {
             let mut ar = [0u8; 15];
             self.body_sz = self.b.req.body().len();
             if let Ok(sz) = ::itoa::write(&mut ar[..], self.body_sz) {
@@ -371,7 +371,7 @@ impl CallImpl {
                 let hdr_sz = self.hdr_sz;
 
                 let ret = self.event_send_do::<C>(con, cp, 0, &buf[pos..hdr_sz]);
-                // println!("TrySent: {}",String::from_utf8(buf.clone())?);
+                // println!("TrySent: {}", String::from_utf8(buf.clone())?);
                 self.buf = buf;
                 if let Dir::SendingBody(_) = self.dir {
                     self.buf.truncate(0);
@@ -595,7 +595,7 @@ impl CallImpl {
                 if self.hdr_sz == 0 {
                     let mut headers = [httparse::EMPTY_HEADER; 32];
                     let mut presp = ParseResp::new(&mut headers);
-                    // println!("Got: {}",String::from_utf8(buf.clone())?);
+                    println!("Got: {}", String::from_utf8(buf.clone())?);
                     let buflen = buf.len();
                     match presp.parse(buf) {
                         Ok(httparse::Status::Complete(hdr_sz)) => {

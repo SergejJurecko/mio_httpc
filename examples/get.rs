@@ -8,6 +8,7 @@ fn do_call(htp: &mut Httpc, poll: &Poll, req: Request<Vec<u8>>) {
     let call = CallBuilder::new(req)
         .timeout_ms(10000)
         .digest_auth(true)
+        .insecure_do_not_verify_domain()
         .call(htp, &poll)
         .expect("Call start failed");
     let mut call = SimpleCall::from(call);
@@ -44,7 +45,7 @@ fn do_call(htp: &mut Httpc, poll: &Poll, req: Request<Vec<u8>>) {
     }
 }
 
-use std::fs::{read_dir, File, ReadDir};
+use std::fs::{read_dir, File};
 use std::ffi::OsStr;
 use std::io::Read;
 
@@ -56,6 +57,7 @@ fn read_certs() -> ::std::io::Result<HttpcCfg> {
         let de = de?;
         match de.path().extension() {
             Some(ex) if der.contains(&ex) => {
+                println!("Adding {:?}", de.path());
                 let mut file = File::open(de.path())?;
                 let mut contents = Vec::new();
                 file.read_to_end(&mut contents)?;
@@ -64,9 +66,9 @@ fn read_certs() -> ::std::io::Result<HttpcCfg> {
             Some(ex) if certs.contains(&ex) => {
                 println!("Adding {:?}", de.path());
                 let mut file = File::open(de.path())?;
-                let mut contents = String::new();
-                file.read_to_string(&mut contents)?;
-                cfg.pem_ca.push(contents.into_bytes());
+                let mut contents = Vec::new();
+                file.read_to_end(&mut contents)?;
+                cfg.pem_ca.push(contents);
             }
             _ => {}
         }
@@ -78,11 +80,6 @@ fn main() {
     let poll = Poll::new().unwrap();
     let args: Vec<String> = ::std::env::args().collect();
 
-    if let Ok(dl) = read_dir(".") {
-        for d in dl {
-            if let Ok(d) = d {}
-        }
-    }
     let cfg = if let Ok(cfg) = read_certs() {
         Some(cfg)
     } else {

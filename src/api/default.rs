@@ -105,6 +105,14 @@ impl CallBuilder {
     pub fn max_redirects(&mut self, _v: u8) -> &mut Self {
         self
     }
+
+    /// Default true.
+    ///
+    /// Turn off domain verification over ssl. This should only be used when testing as you are throwing away
+    /// a big part of ssl security.
+    pub fn insecure_do_not_verify_domain(&mut self) -> &mut Self {
+        self
+    }
 }
 
 /// Send requests, receive responses.

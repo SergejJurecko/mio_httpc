@@ -1,12 +1,10 @@
-extern crate native_tls;
-
 use std::io;
 use std::result;
 use std::fmt;
 
 use tls_api;
-use tls_api::Error;
-use tls_api::Result;
+use tls_api::{Error, Result};
+use native_tls;
 
 pub struct TlsConnectorBuilder(pub native_tls::TlsConnectorBuilder);
 pub struct TlsConnector(pub native_tls::TlsConnector);
@@ -27,30 +25,28 @@ impl tls_api::TlsConnectorBuilder for TlsConnectorBuilder {
         false
     }
 
-    fn set_alpn_protocols(&mut self, _protocols: &[&[u8]]) -> Result<()> {
-        Err(Error::new_other(
-            "ALPN is not implemented in rust-native-tls",
-        ))
+    fn set_alpn_protocols(&mut self, _protocols: &[&str]) -> Result<()> {
+        Err(Error::Other("ALPN is not implemented in rust-native-tls"))
     }
 
     fn add_der_certificate(&mut self, cert: &[u8]) -> Result<&mut Self> {
-        let cert = native_tls::Certificate::from_der(cert).map_err(Error::new)?;
+        let cert = native_tls::Certificate::from_der(cert)?;
 
-        self.0.add_root_certificate(cert).map_err(Error::new)?;
+        self.0.add_root_certificate(cert)?;
 
         Ok(self)
     }
 
     fn add_pem_certificate(&mut self, cert: &[u8]) -> Result<&mut Self> {
-        let cert = native_tls::Certificate::from_pem(cert).map_err(Error::new)?;
+        let cert = native_tls::Certificate::from_pem(cert)?;
 
-        self.0.add_root_certificate(cert).map_err(Error::new)?;
+        self.0.add_root_certificate(cert)?;
 
         Ok(self)
     }
 
     fn build(self) -> Result<TlsConnector> {
-        self.0.build().map(TlsConnector).map_err(Error::new)
+        self.0.build().map(TlsConnector).map_err(From::from)
     }
 }
 
@@ -124,7 +120,7 @@ where
     S: io::Read + io::Write + Send + Sync + fmt::Debug + 'static,
 {
     match e {
-        native_tls::HandshakeError::Failure(e) => tls_api::HandshakeError::Failure(Error::new(e)),
+        native_tls::HandshakeError::Failure(e) => tls_api::HandshakeError::Failure(From::from(e)),
         native_tls::HandshakeError::Interrupted(s) => tls_api::HandshakeError::Interrupted(
             tls_api::MidHandshakeTlsStream::new(MidHandshakeTlsStream(Some(s))),
         ),
@@ -137,7 +133,7 @@ impl tls_api::TlsConnector for TlsConnector {
     fn builder() -> Result<TlsConnectorBuilder> {
         native_tls::TlsConnector::builder()
             .map(TlsConnectorBuilder)
-            .map_err(Error::new)
+            .map_err(From::from)
     }
 
     fn connect<S>(
@@ -173,11 +169,11 @@ impl tls_api::TlsConnector for TlsConnector {
 
 impl TlsAcceptorBuilder {
     pub fn from_pkcs12(pkcs12: &[u8], password: &str) -> Result<TlsAcceptorBuilder> {
-        let pkcs12 = native_tls::Pkcs12::from_der(pkcs12, password).map_err(Error::new)?;
+        let pkcs12 = native_tls::Pkcs12::from_der(pkcs12, password)?;
 
         native_tls::TlsAcceptor::builder(pkcs12)
             .map(TlsAcceptorBuilder)
-            .map_err(Error::new)
+            .map_err(From::from)
     }
 }
 
@@ -190,10 +186,8 @@ impl tls_api::TlsAcceptorBuilder for TlsAcceptorBuilder {
         false
     }
 
-    fn set_alpn_protocols(&mut self, _protocols: &[&[u8]]) -> Result<()> {
-        Err(Error::new_other(
-            "ALPN is not implemented in rust-native-tls",
-        ))
+    fn set_alpn_protocols(&mut self, _protocols: &[&str]) -> Result<()> {
+        Err(Error::Other("ALPN is not implemented in rust-native-tls"))
     }
 
     // fn underlying_mut(&mut self) -> &mut native_tls::TlsAcceptorBuilder {
@@ -201,7 +195,7 @@ impl tls_api::TlsAcceptorBuilder for TlsAcceptorBuilder {
     // }
 
     fn build(self) -> Result<TlsAcceptor> {
-        self.0.build().map(TlsAcceptor).map_err(Error::new)
+        self.0.build().map(TlsAcceptor).map_err(From::from)
     }
 }
 

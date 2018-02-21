@@ -55,6 +55,8 @@ pub struct Con {
     // idle: bool,
     to_close: bool,
     idle_since: Instant,
+    insecure: bool,
+    signalled: bool,
 }
 
 impl Con {
@@ -64,6 +66,7 @@ impl Con {
         cache: &mut DnsCache,
         poll: &Poll,
         dns_timeout: u64,
+        insecure: bool,
     ) -> Result<Con> {
         let port = url_port(req.uri())?;
         let sock = Self::sock_from_req(req, cache, port)?;
@@ -83,11 +86,13 @@ impl Con {
             token,
             sock,
             dns,
+            insecure,
             // idle: false,
             idle_since: Instant::now(),
             // dns_sock,
             tls: None,
             mid_tls: None,
+            signalled: false,
         };
         Ok(res)
     }
@@ -218,6 +223,9 @@ impl Con {
         cp: &mut CallParam,
         req: &Request<T>,
     ) -> Result<()> {
+        if !self.signalled {
+            return Ok(());
+        }
         if self.dns.is_some() {
             let dns = self.dns.take().unwrap();
             let mut buf: [u8; 512] = unsafe { ::std::mem::uninitialized() };
@@ -251,7 +259,12 @@ impl Con {
                 let host = req.uri().host().unwrap();
                 self.reg(cp.poll, Ready::readable())?;
                 let tcp = self.sock.take().unwrap();
-                let r = connector.connect(host, tcp);
+
+                let r = if self.insecure {
+                    connector.danger_connect_without_providing_domain_for_certificate_verification_and_server_name_indication(tcp)
+                } else {
+                    connector.connect(host, tcp)
+                };
                 self.handshake_resp::<C>(r)?;
             }
             if self.mid_tls.is_some() {
@@ -275,8 +288,12 @@ impl Con {
             Err(HandshakeError::Interrupted(mid)) => {
                 self.mid_tls = Some(mid);
             }
+            // Err(HandshakeError::Failure(::Error::Io(ioe))) => {
+            //     return Err(::Error::Io(ioe));
+            // }
             Err(HandshakeError::Failure(e)) => {
-                return Err(::Error::TlsHandshake(e));
+                // if ::std::io::Error::is(e) {}
+                return Err(e);
             }
         }
         Ok(())
@@ -340,8 +357,6 @@ impl Evented for Con {
             poll.register(tls.get_ref(), token, interest, opts)
         } else if let Some(ref dns) = self.dns {
             poll.register(&dns.sock, token, interest, opts)
-        // } else if let Some(ref tls) = self.mid_tls {
-        //     poll.register(tls.get_ref(),token, interest, opts)
         } else {
             Ok(())
         }
@@ -445,6 +460,7 @@ impl ConTable {
                 return None;
             }
             let c = &mut self.cons[id].0;
+            c.signalled = true;
             return Some(c);
         }
         None

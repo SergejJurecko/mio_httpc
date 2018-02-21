@@ -59,6 +59,10 @@ impl CallBuilder {
         self.cb.as_mut().unwrap().max_redirects(v);
         self
     }
+    pub fn insecure_do_not_verify_domain(&mut self) -> &mut Self {
+        self.cb.as_mut().unwrap().insecure();
+        self
+    }
     // pub fn auth(&mut self, v: ::AuthenticateInfo) -> &mut Self {
     //     self.cb.auth(v);
     //     self

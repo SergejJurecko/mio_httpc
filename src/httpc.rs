@@ -78,6 +78,7 @@ impl HttpcImpl {
             &mut self.cache,
             poll,
             b.dns_timeout,
+            b.insecure,
         )?;
         let call = CallImpl::new(b, self.get_buf());
         if let Some(con_id) = self.cons.push_con(con, call, poll)? {
@@ -131,7 +132,7 @@ impl HttpcImpl {
         let mut id = ev.token().0;
         if id >= self.con_offset && id <= (u16::max_value() as usize) {
             id -= self.con_offset;
-            if let Some(con) = self.cons.get_signalled_con(id) {
+            if let Some(_) = self.cons.get_signalled_con(id) {
                 return Some(CallRef::new(id as u16, 0));
             }
         }
@@ -221,11 +222,13 @@ impl HttpcImpl {
                 return RecvState::DoneWithBody(body);
             }
             Ok(RecvStateInt::Redirect(r)) => {
+                println!("redirect");
                 let mut b = self.call_close_int(Call(call.0));
                 call.invalidate();
                 if b.max_redirects > 0 {
                     b.max_redirects -= 1;
                 }
+                b.reused = true;
                 if Self::fix_location(&r, &mut b) {
                     match self.call::<C>(b, poll) {
                         Ok(nc) => {

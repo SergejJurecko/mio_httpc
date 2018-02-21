@@ -1,4 +1,3 @@
-extern crate rustls;
 extern crate webpki;
 extern crate webpki_roots;
 
@@ -9,9 +8,9 @@ use std::sync::Arc;
 use std::str;
 use std::cell::RefCell;
 
+use rustls;
 use tls_api;
-use tls_api::Result;
-use tls_api::Error;
+use tls_api::{Error, Result};
 use tls_api::rustls::rustls::Session;
 
 thread_local!(static CLIENT_CFG: RefCell<Arc<rustls::ClientConfig>> = RefCell::new(Arc::new(rustls::ClientConfig::new())));
@@ -57,8 +56,8 @@ enum IntermediateError {
 impl IntermediateError {
     fn into_error(self) -> Error {
         match self {
-            IntermediateError::Io(err) => Error::new(err),
-            IntermediateError::Tls(err) => Error::new(err),
+            IntermediateError::Io(err) => Error::from(err),
+            IntermediateError::Tls(err) => Error::from(err),
         }
     }
 }
@@ -147,7 +146,9 @@ where
                     // No plaintext available yet.
                     continue;
                 }
-                rc @ _ => return rc,
+                rc @ _ => {
+                    return rc;
+                }
             };
         }
     }
@@ -175,7 +176,7 @@ where
                         Ok(0) => {
                             return Ok(0);
                         }
-                        Ok(_) => {
+                        Ok(n) => {
                             // we can not rely on returned bytes, as TLS adds its own data
                             if !self.session.wants_write() {
                                 nsent += self.write_skip;
@@ -290,7 +291,7 @@ impl tls_api::TlsConnectorBuilder for TlsConnectorBuilder {
         if let Some(ref mut cfg) = self.0 {
             let mut rd = ::std::io::BufReader::new(cert);
             if cfg.root_store.add_pem_file(&mut rd).is_err() {
-                return Err(tls_api::Error::new_other("pem file invalid"));
+                return Err(Error::Other("pem file invalid"));
             }
         }
         Ok(self)
@@ -300,11 +301,11 @@ impl tls_api::TlsConnectorBuilder for TlsConnectorBuilder {
         true
     }
 
-    fn set_alpn_protocols(&mut self, protocols: &[&[u8]]) -> Result<()> {
+    fn set_alpn_protocols(&mut self, protocols: &[&str]) -> Result<()> {
         if let Some(ref mut cfg) = self.0 {
             let mut v = Vec::new();
             for p in protocols {
-                v.push(String::from(str::from_utf8(p).map_err(Error::new)?));
+                v.push(String::from(*p));
             }
             cfg.alpn_protocols = v;
         }
@@ -330,7 +331,6 @@ impl tls_api::TlsConnector for TlsConnector {
     type Builder = TlsConnectorBuilder;
 
     fn builder() -> Result<TlsConnectorBuilder> {
-        // Ok(TlsConnectorBuilder(cfg.clone()))
         if CLIENT_CFG_SEALED.with(|f| *f.borrow()) {
             Ok(TlsConnectorBuilder(None))
         } else {
@@ -357,7 +357,7 @@ impl tls_api::TlsConnector for TlsConnector {
 
             return tls_stream.complete_handleshake_mid();
         }
-        Err(tls_api::HandshakeError::Failure(Error::new_other(
+        Err(tls_api::HandshakeError::Failure(Error::Other(
             "invalid domain",
         )))
     }
@@ -401,7 +401,7 @@ impl tls_api::TlsConnector for TlsConnector {
                 write_skip: 0,
             }
         } else {
-            return Err(tls_api::HandshakeError::Failure(Error::new_other(
+            return Err(tls_api::HandshakeError::Failure(Error::Other(
                 "invalid domain",
             )));
         };
@@ -438,10 +438,10 @@ impl tls_api::TlsAcceptorBuilder for TlsAcceptorBuilder {
         true
     }
 
-    fn set_alpn_protocols(&mut self, protocols: &[&[u8]]) -> Result<()> {
+    fn set_alpn_protocols(&mut self, protocols: &[&str]) -> Result<()> {
         let mut v = Vec::new();
         for p in protocols {
-            v.push(String::from(str::from_utf8(p).map_err(Error::new)?));
+            v.push(String::from(*p));
         }
         self.0.alpn_protocols = v;
         Ok(())

@@ -79,9 +79,15 @@ extern crate libc;
 extern crate libflate;
 extern crate md5;
 extern crate mio;
+#[cfg(feature = "native")]
+extern crate native_tls;
+#[cfg(feature = "openssl")]
+extern crate openssl;
 extern crate pest;
 #[macro_use]
 extern crate pest_derive;
+#[cfg(feature = "rustls")]
+extern crate rustls;
 extern crate smallvec;
 
 #[macro_use]
@@ -120,6 +126,18 @@ pub use http::response::*;
 pub use http::status::*;
 pub use http::uri::*;
 pub use http::version::*;
+#[cfg(feature = "rustls")]
+pub use rustls::TLSError;
+#[cfg(feature = "native")]
+pub use native_tls::Error as TLSError;
+#[cfg(feature = "openssl")]
+pub use openssl::error::Error as OpenSSLError;
+#[cfg(feature = "openssl")]
+pub use openssl::error::ErrorStack as OpenSSLErrorStack;
+#[cfg(feature = "openssl")]
+pub use openssl::ssl::Error as TLSError;
+// #[cfg(feature = "openssl")]
+// pub use rustls::TLSError;
 // pub use http::Extensions;
 // use failure::Error;
 
@@ -138,8 +156,8 @@ pub enum Error {
     #[fail(display = "AddrParseError: {}", _0)]
     Addr (#[cause] std::net::AddrParseError ),
 
-    #[fail(display = "TlsError: {}", _0)]
-    Tls (#[cause] tls_api::Error),
+    // #[fail(display = "TlsError: {}", _0)]
+    // Tls (#[cause] tls_api::Error),
 
     #[fail(display = "Httparse error: {}", _0)]
     Httparse (#[cause] httparse::Error ),
@@ -170,12 +188,28 @@ pub enum Error {
     /// Invalid scheme
     #[fail(display = "Invalid scheme")]
     InvalidScheme,
-    /// TLS handshake failed.
-    #[fail(display = "Handshake failed {}",_0)]
-    TlsHandshake(#[cause] tls_api::Error),
+    
+    #[cfg(any(feature = "rustls", feature = "native", feature = "openssl"))]
+    #[fail(display = "TLS error {}",_0)]
+    Tls(#[cause] TLSError),
+
+    #[cfg(feature = "openssl")]
+    #[fail(display = "OpenSSL stack error {}",_0)]
+    OpenSSLErrorStack(#[cause] OpenSSLErrorStack),
+
+    #[cfg(feature = "openssl")]
+    #[fail(display = "OpenSSL error {}",_0)]
+    OpenSSLError(#[cause] OpenSSLError),
+
+    // /// TLS handshake failed.
+    // #[fail(display = "Handshake failed {}",_0)]
+    // TlsHandshake(#[cause] tls_api::Error),
     /// All 0xFFFF slots for connections are full.
     #[fail(display = "Concurrent connection limit")]
     NoSpace,
+
+    #[fail(display = "{}",_0)]
+    Other(&'static str),
     /// You must pick one of the features: native, rustls, openssl
     #[fail(display = "You must pick one of the features: native, rustls, openssl")]
     NoTls,
@@ -191,6 +225,8 @@ pub enum Error {
     /// Chunk was larger than configured CallBuilder::cunked_max_chunk.
     #[fail(display = "Chunk was larger than configured CallBuilder::cunked_max_chunk. {}", _0)]
     ChunkOverlimit(usize),
+
+
 }
 
 impl From<std::io::Error> for Error {
@@ -198,11 +234,29 @@ impl From<std::io::Error> for Error {
         Error::Io(e)
     }
 }
-impl From<tls_api::Error> for Error {
-    fn from(e: tls_api::Error) -> Self {
+#[cfg(any(feature = "rustls", feature = "native", feature = "openssl"))]
+impl From<TLSError> for Error {
+    fn from(e: TLSError) -> Self {
         Error::Tls(e)
     }
 }
+#[cfg(feature = "openssl")]
+impl From<openssl::error::ErrorStack> for Error {
+    fn from(e: openssl::error::ErrorStack) -> Self {
+        Error::OpenSSLErrorStack(e)
+    }
+}
+#[cfg(feature = "openssl")]
+impl From<OpenSSLError> for Error {
+    fn from(e: OpenSSLError) -> Self {
+        Error::OpenSSLError(e)
+    }
+}
+// impl From<tls_api::Error> for Error {
+//     fn from(e: tls_api::Error) -> Self {
+//         Error::Tls(e)
+//     }
+// }
 impl From<httparse::Error> for Error {
     fn from(e: httparse::Error) -> Self {
         Error::Httparse(e)

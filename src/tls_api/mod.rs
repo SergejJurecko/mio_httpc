@@ -12,64 +12,64 @@ pub mod openssl;
 
 use std::io;
 use std::fmt;
-use std::error;
+// use std::error;
 use std::result;
+use {Error, Result};
+// pub struct Error(Box<error::Error + Send + Sync>);
 
-pub struct Error(Box<error::Error + Send + Sync>);
+// /// An error returned from the TLS implementation.
+// impl Error {
+//     pub fn new<E: error::Error + 'static + Send + Sync>(e: E) -> Error {
+//         Error(Box::new(e))
+//     }
 
-/// An error returned from the TLS implementation.
-impl Error {
-    pub fn new<E: error::Error + 'static + Send + Sync>(e: E) -> Error {
-        Error(Box::new(e))
-    }
+//     pub fn new_other(message: &str) -> Error {
+//         Error::new(io::Error::new(io::ErrorKind::Other, message))
+//     }
 
-    pub fn new_other(message: &str) -> Error {
-        Error::new(io::Error::new(io::ErrorKind::Other, message))
-    }
+//     pub fn into_inner(self) -> Box<error::Error + Send + Sync> {
+//         self.0
+//     }
+// }
 
-    pub fn into_inner(self) -> Box<error::Error + Send + Sync> {
-        self.0
-    }
-}
+// impl error::Error for Error {
+//     fn description(&self) -> &str {
+//         self.0.description()
+//     }
 
-impl error::Error for Error {
-    fn description(&self) -> &str {
-        self.0.description()
-    }
+//     fn cause(&self) -> Option<&error::Error> {
+//         self.0.cause()
+//     }
+// }
 
-    fn cause(&self) -> Option<&error::Error> {
-        self.0.cause()
-    }
-}
+// impl fmt::Debug for Error {
+//     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+//         fmt::Debug::fmt(&self.0, f)
+//     }
+// }
 
-impl fmt::Debug for Error {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        fmt::Debug::fmt(&self.0, f)
-    }
-}
+// impl fmt::Display for Error {
+//     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+//         fmt::Display::fmt(&self.0, f)
+//     }
+// }
 
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        fmt::Display::fmt(&self.0, f)
-    }
-}
+// impl From<io::Error> for Error {
+//     fn from(err: io::Error) -> Error {
+//         Error::new(err)
+//     }
+// }
 
-impl From<io::Error> for Error {
-    fn from(err: io::Error) -> Error {
-        Error::new(err)
-    }
-}
-
-impl From<Error> for io::Error {
-    fn from(err: Error) -> io::Error {
-        io::Error::new(io::ErrorKind::Other, err)
-    }
-}
+// impl From<Error> for io::Error {
+//     fn from(err: Error) -> io::Error {
+//         io::Error::new(io::ErrorKind::Other, err)
+//     }
+// }
 
 // Result
 
 /// A typedef of the result type returned by many methods.
-pub type Result<A> = result::Result<A, Error>;
+// pub type Result<A> = result::Result<A, Error>;
 
 // X.509 certificate
 // pub struct Certificate<'a>(&'a [u8]);
@@ -188,7 +188,7 @@ pub trait TlsConnectorBuilder: Sized + Sync + Send + 'static {
 
     fn supports_alpn() -> bool;
 
-    fn set_alpn_protocols(&mut self, protocols: &[&[u8]]) -> Result<()>;
+    fn set_alpn_protocols(&mut self, protocols: &[&str]) -> Result<()>;
 
     fn add_der_certificate(&mut self, cert: &[u8]) -> Result<&mut Self>;
     fn add_pem_certificate(&mut self, cert: &[u8]) -> Result<&mut Self>;
@@ -233,7 +233,7 @@ pub trait TlsAcceptorBuilder: Sized + Sync + Send + 'static {
 
     fn supports_alpn() -> bool;
 
-    fn set_alpn_protocols(&mut self, protocols: &[&[u8]]) -> Result<()>;
+    fn set_alpn_protocols(&mut self, protocols: &[&str]) -> Result<()>;
 
     // fn underlying_mut(&mut self) -> &mut Self::Underlying;
 
