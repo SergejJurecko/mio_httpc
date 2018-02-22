@@ -4,7 +4,7 @@
 //!
 //! No call will block (except SyncCall), not even for DNS resolution as it is implemented internally to avoid blocking.
 //!
-//! mio_httpc requires you specify one of the TLS implementations using features: rustls, native, openssl.
+//! mio_httpc requires you specify one of the TLS implementations using features: rtls (rustls), native, openssl.
 //! Default is noop for everything.
 //!
 //! mio_httpc does a minimal amount of allocation and in general works with buffers you provide and an internal pool
@@ -16,24 +16,23 @@
 //! extern crate mio_httpc;
 //! extern crate mio;
 //!
-//! use mio_httpc::{Request,CallBuilder,Httpc,SimpleCall};
+//! use mio_httpc::{CallBuilder,Httpc};
 //! use mio::{Poll,Events};
 //!
 //! let poll = Poll::new().unwrap();
-//! let mut htp = Httpc::new(10);
-//! let mut req = Request::builder();
-//! let req = req.uri("https://www.reddit.com").body(Vec::new())?;
-//!
-//! let call = CallBuilder::new(req).timeout_ms(500).call(&mut htp, &poll)?;
-//! let mut call = SimpleCall::from(call);
+//! let mut htp = Httpc::new(10,None);
+//! let mut call = CallBuilder::get("https://www.reddit.com")
+//!     .timeout_ms(500)
+//!     .simple_call(&mut htp, &poll)?;
 //!
 //! let to = ::std::time::Duration::from_millis(100);
+//! let mut events = Events::with_capacity(8);
 //! 'outer: loop {
-//!     let mut events = Events::with_capacity(8);
 //!     poll.poll(&mut events, Some(to)).unwrap();
 //!     for cref in htp.timeout().into_iter() {
 //!        if call.is_ref(cref) {
 //!            println!("Request timed out");
+//!            call.abort(&mut htp);
 //!            break 'outer;
 //!        }
 //!    }
@@ -121,7 +120,7 @@ pub use api::*;
 pub use http::Error as HttpError;
 pub use http::header::*;
 pub use http::method::*;
-pub use http::request::*;
+// pub use http::request::*;
 pub use http::response::*;
 pub use http::status::*;
 pub use http::uri::*;

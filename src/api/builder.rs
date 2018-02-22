@@ -1,30 +1,129 @@
-// extern crate tls_api_rustls;
 use tls_api;
-use http::Request;
+use http::{Method, Request, Uri};
+use http::header::{HeaderName, HeaderValue};
 use types::CallBuilderImpl;
 use mio::{Event, Poll};
 use tls_api::TlsConnector;
 use {Call, CallRef, Result};
+use http::request::Builder;
+use http::HttpTryFrom;
+use SimpleCall;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct CallBuilder {
     cb: Option<CallBuilderImpl>,
+    builder: Builder,
+    body: Vec<u8>,
 }
 
+#[cfg(feature = "rustls")]
+type CONNECTOR = tls_api::rustls::TlsConnector;
+#[cfg(feature = "native")]
+type CONNECTOR = tls_api::native::TlsConnector;
+#[cfg(feature = "openssl")]
+type CONNECTOR = tls_api::openssl::TlsConnector;
+
 impl CallBuilder {
-    pub fn new(req: Request<Vec<u8>>) -> CallBuilder {
+    pub fn new() -> CallBuilder {
         CallBuilder {
-            cb: Some(CallBuilderImpl::new(req)),
+            builder: Builder::new(),
+            cb: Some(CallBuilderImpl::new(Request::new(Vec::new()))),
+            body: Vec::new(),
         }
     }
-    pub fn call(&mut self, httpc: &mut Httpc, poll: &Poll) -> ::Result<Call> {
-        let cb = self.cb.take().unwrap();
-        httpc.call::<tls_api::rustls::TlsConnector>(cb, poll)
+
+    pub fn get<T>(uri: T) -> CallBuilder
+    where
+        Uri: HttpTryFrom<T>,
+    {
+        let mut b = CallBuilder::new();
+        b.method(Method::GET).uri(uri);
+        b
     }
-    pub fn websocket(&mut self, httpc: &mut Httpc, poll: &Poll) -> ::Result<::WebSocket> {
+
+    pub fn post<T>(uri: T, body: Vec<u8>) -> CallBuilder
+    where
+        Uri: HttpTryFrom<T>,
+    {
+        let mut b = CallBuilder::new();
+        b.body = body;
+        b.method(Method::POST).uri(uri);
+        b
+    }
+
+    pub fn put<T>(uri: T, body: Vec<u8>) -> CallBuilder
+    where
+        Uri: HttpTryFrom<T>,
+    {
+        let mut b = CallBuilder::new();
+        b.body = body;
+        b.method(Method::PUT).uri(uri);
+        b
+    }
+
+    pub fn delete<T>(uri: T) -> CallBuilder
+    where
+        Uri: HttpTryFrom<T>,
+    {
+        let mut b = CallBuilder::new();
+        b.method(Method::DELETE).uri(uri);
+        b
+    }
+
+    pub fn method<T>(&mut self, method: T) -> &mut Self
+    where
+        Method: HttpTryFrom<T>,
+    {
+        self.builder.method(method);
+        self
+    }
+
+    pub fn body(&mut self, body: Vec<u8>) -> &mut Self {
+        self.body = body;
+        self
+    }
+
+    pub fn uri<T>(&mut self, uri: T) -> &mut Self
+    where
+        Uri: HttpTryFrom<T>,
+    {
+        self.builder.uri(uri);
+        self
+    }
+
+    pub fn header<K, V>(&mut self, key: K, value: V) -> &mut CallBuilder
+    where
+        HeaderName: HttpTryFrom<K>,
+        HeaderValue: HttpTryFrom<V>,
+    {
+        self.builder.header(key, value);
+        self
+    }
+
+    fn finish(&mut self) -> ::Result<()> {
+        let mut body = Vec::new();
+        ::std::mem::swap(&mut self.body, &mut body);
+        let mut builder = Builder::new();
+        ::std::mem::swap(&mut self.builder, &mut builder);
+        self.cb.as_mut().unwrap().req = builder.body(body)?;
+        Ok(())
+    }
+
+    pub fn simple_call(&mut self, httpc: &mut Httpc, poll: &Poll) -> Result<SimpleCall> {
+        self.finish()?;
+        let cb = self.cb.take().unwrap();
+        Ok(httpc.call::<CONNECTOR>(cb, poll)?.simple())
+    }
+    pub fn call(&mut self, httpc: &mut Httpc, poll: &Poll) -> Result<Call> {
+        self.finish()?;
+        let cb = self.cb.take().unwrap();
+        httpc.call::<CONNECTOR>(cb, poll)
+    }
+    pub fn websocket(&mut self, httpc: &mut Httpc, poll: &Poll) -> Result<::WebSocket> {
+        self.finish()?;
         let mut cb = self.cb.take().unwrap();
         cb.websocket();
-        let cid = httpc.call::<tls_api::rustls::TlsConnector>(cb, poll)?;
+        let cid = httpc.call::<CONNECTOR>(cb, poll)?;
         Ok(::WebSocket::new(cid, httpc.h.get_buf()))
     }
     pub fn max_response(&mut self, m: usize) -> &mut Self {
@@ -108,11 +207,10 @@ impl Httpc {
         self.h.timeout_extend(out)
     }
     pub fn event(&mut self, ev: &Event) -> Option<CallRef> {
-        self.h.event::<tls_api::rustls::TlsConnector>(ev)
+        self.h.event::<CONNECTOR>(ev)
     }
     pub fn call_send(&mut self, poll: &Poll, id: &mut Call, buf: Option<&[u8]>) -> ::SendState {
-        self.h
-            .call_send::<tls_api::rustls::TlsConnector>(poll, id, buf)
+        self.h.call_send::<CONNECTOR>(poll, id, buf)
     }
     pub fn call_recv(
         &mut self,
@@ -120,7 +218,6 @@ impl Httpc {
         id: &mut Call,
         buf: Option<&mut Vec<u8>>,
     ) -> ::RecvState {
-        self.h
-            .call_recv::<tls_api::rustls::TlsConnector>(poll, id, buf)
+        self.h.call_recv::<CONNECTOR>(poll, id, buf)
     }
 }

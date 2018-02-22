@@ -1,18 +1,10 @@
 extern crate mio;
 extern crate mio_httpc;
 
-use mio_httpc::{CallBuilder, Httpc, HttpcCfg, Request, SimpleCall};
+use mio_httpc::{CallBuilder, Httpc, HttpcCfg, SimpleCall};
 use mio::{Events, Poll};
 
-fn do_call(htp: &mut Httpc, poll: &Poll, req: Request<Vec<u8>>) {
-    let call = CallBuilder::new(req)
-        .timeout_ms(10000)
-        .digest_auth(true)
-        // .insecure_do_not_verify_domain()
-        .call(htp, &poll)
-        .expect("Call start failed");
-    let mut call = SimpleCall::from(call);
-
+fn do_call(htp: &mut Httpc, poll: &Poll, mut call: SimpleCall) {
     let to = ::std::time::Duration::from_millis(100);
     let mut events = Events::with_capacity(8);
     'outer: loop {
@@ -45,6 +37,31 @@ fn do_call(htp: &mut Httpc, poll: &Poll, req: Request<Vec<u8>>) {
     }
 }
 
+fn main() {
+    let poll = Poll::new().unwrap();
+    let args: Vec<String> = ::std::env::args().collect();
+
+    let cfg = if let Ok(cfg) = read_certs() {
+        Some(cfg)
+    } else {
+        None
+    };
+    let mut htp = Httpc::new(10, cfg);
+
+    for i in 1..args.len() {
+        println!("Get {}", args[i].as_str());
+        let call = CallBuilder::get(args[i].as_str())
+            .timeout_ms(10000)
+            .digest_auth(true)
+            // .insecure_do_not_verify_domain()
+            .simple_call(&mut htp, &poll)
+            .expect("Call start failed");
+        do_call(&mut htp, &poll, call);
+
+        println!("Open connections={}", htp.open_connections());
+    }
+}
+
 use std::fs::{read_dir, File};
 use std::ffi::OsStr;
 use std::io::Read;
@@ -74,27 +91,4 @@ fn read_certs() -> ::std::io::Result<HttpcCfg> {
         }
     }
     Ok(cfg)
-}
-
-fn main() {
-    let poll = Poll::new().unwrap();
-    let args: Vec<String> = ::std::env::args().collect();
-
-    let cfg = if let Ok(cfg) = read_certs() {
-        Some(cfg)
-    } else {
-        None
-    };
-    let mut htp = Httpc::new(10, cfg);
-
-    for i in 1..args.len() {
-        println!("Get {}", args[i].as_str());
-        let mut req = Request::builder();
-        let req = req.uri(args[i].as_str())
-            .body(Vec::new())
-            .expect("can not build request");
-        do_call(&mut htp, &poll, req);
-
-        println!("Open connections={}", htp.open_connections());
-    }
 }

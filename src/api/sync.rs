@@ -1,4 +1,4 @@
-use {CallBuilder, HeaderMap, HeaderValue, Httpc, Request, SimpleCall};
+use {CallBuilder, HeaderMap, HeaderValue, Httpc};
 use mio::{Events, Poll};
 
 type Response = ::Result<(u16, HeaderMap<HeaderValue>, Vec<u8>)>;
@@ -78,21 +78,22 @@ impl<'a> SyncCall<'a> {
         let poll = Poll::new()?;
         let mut htp = Httpc::new(0, None);
         let mut events = Events::with_capacity(2);
+        let mut bv = Vec::with_capacity(body.len());
+        bv.extend(body);
 
-        let mut req_builder = Request::builder();
+        // let mut req_builder = Request::builder();
+        let mut call = CallBuilder::new();
         for &(k, v) in self.hdrs.iter() {
-            req_builder.header(k, v);
+            call.header(k, v);
         }
-        req_builder.method(method);
-        req_builder.uri(uri);
-        let req = req_builder.body(body.to_vec())?;
-        let call = CallBuilder::new(req)
+        let mut call = call.method(method)
+            .uri(uri)
+            .body(bv)
             .timeout_ms(self.timeout)
             .max_response(self.max_resp)
             .chunked_parse(true)
             .digest_auth(true)
-            .call(&mut htp, &poll)?;
-        let mut call = SimpleCall::from(call);
+            .simple_call(&mut htp, &poll)?;
         loop {
             poll.poll(&mut events, Some(::std::time::Duration::from_millis(100)))?;
             for cref in htp.timeout().into_iter() {

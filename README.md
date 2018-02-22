@@ -58,26 +58,26 @@ cargo run --example get --features "rtls" -- "https://edition.cnn.com"
 extern crate mio_httpc;
 extern crate mio;
 
-use mio_httpc::{Request,CallBuilder,Httpc,SimpleCall};
+use mio_httpc::{CallBuilder,Httpc};
 use mio::{Poll,Events};
 
 fn main() {
     let poll = Poll::new().unwrap();
-    let mut htp = Httpc::new(10);
-    let mut req = Request::builder();
+    let mut htp = Httpc::new(10,None);
     let args: Vec<String> = ::std::env::args().collect();
-    let req = req.uri(args[1].as_str()).body(Vec::new()).expect("can not build request");
-
-    let call = CallBuilder::new(req).timeout_ms(500).call(&mut htp, &poll).expect("Call start failed");
-    let mut call = SimpleCall::from(call);
+    let mut call = CallBuilder::get(args[1].as_str())
+        .timeout_ms(500)
+        .call_simple(&mut htp, &poll)
+        .expect("Call start failed");
 
     let to = ::std::time::Duration::from_millis(100);
+    let mut events = Events::with_capacity(8);
     'outer: loop {
-        let mut events = Events::with_capacity(8);
         poll.poll(&mut events, Some(to)).unwrap();
         for cref in htp.timeout().into_iter() {
             if call.is_ref(cref) {
                 println!("Request timed out");
+                call.abort(&mut htp);
                 break 'outer;
             }
         }
@@ -110,18 +110,18 @@ cargo run --example ws --features="native" -- "wss://demos.kaazing.com/echo"
 extern crate mio_httpc;
 extern crate mio;
 
-use mio_httpc::{Request,CallBuilder,Httpc,WebSocket,WSPacket};
+use mio_httpc::{CallBuilder,Httpc,WebSocket,WSPacket};
 use mio::{Poll,Events};
 // ws://demos.kaazing.com/echo
 
 fn main() {
     let poll = Poll::new().unwrap();
-    let mut htp = Httpc::new(10);
-    let mut req = Request::builder();
+    let mut htp = Httpc::new(10,None);
     let args: Vec<String> = ::std::env::args().collect();
-    let req = req.uri(args[1].as_str()).body(Vec::new()).expect("can not build request");
 
-    let mut ws = CallBuilder::new(req).websocket(&mut htp, &poll).expect("Call start failed");
+    let mut ws = CallBuilder::get(args[1].as_str())
+        .websocket(&mut htp, &poll)
+        .expect("Call start failed");
 
     let to = ::std::time::Duration::from_millis(800);
     'outer: loop {

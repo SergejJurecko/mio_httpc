@@ -1,27 +1,101 @@
-use http::Request;
+use http::{Method, Uri};
+use http::header::{HeaderName, HeaderValue};
 use types::CallBuilderImpl;
 use mio::{Event, Poll};
 use tls_api::TlsConnector;
 use {Call, CallRef, RecvState, Result, SendState, WebSocket};
+use http::HttpTryFrom;
+use SimpleCall;
 
 /// Used to start a call and get a Call for it.
-#[derive(Debug)]
-pub struct CallBuilder {}
+#[derive(Debug, Default)]
+pub struct CallBuilder {
+    // pub(crate) builder: Builder,
+}
 
+/// If you're only executing a one-off call you should set connection: close as default
+/// is keep-alive.
+///
+/// If you do not set body, but do set content-length,
+/// it will wait for send body to be provided through Httpc::call_send.
+/// You must use a streaming interface in this case and can not use SimpleCall.
+///
+/// mio_httpc will set headers (if they are not already):
+/// user-agent, connection, host, auth, content-length
 impl CallBuilder {
-    /// If req contains body it will be used.
-    ///
-    /// If req contains no body, but has content-length set,
-    /// it will wait for send body to be provided through Httpc::call_send.
-    /// mio_httpc will set headers (if they are not already):
-    /// user-agent, connection, host, auth, content-length
-    /// If you're only executing a one-off call you should set connection: close as default
-    /// is keep-alive.
-    pub fn new(req: Request<Vec<u8>>) -> CallBuilder {
+    /// Start an empty CallBuilder
+    pub fn new() -> CallBuilder {
         CallBuilder {}
     }
 
-    /// Consume and execute HTTP call
+    /// Start a GET request.
+    pub fn get<T>(uri: T) -> CallBuilder
+    where
+        Uri: HttpTryFrom<T>,
+    {
+        CallBuilder::new()
+    }
+
+    /// Start a POST request.
+    pub fn post<T>(uri: T) -> CallBuilder
+    where
+        Uri: HttpTryFrom<T>,
+    {
+        CallBuilder::new()
+    }
+
+    /// Start a PUT request.
+    pub fn put<T>(uri: T) -> CallBuilder
+    where
+        Uri: HttpTryFrom<T>,
+    {
+        CallBuilder::new()
+    }
+
+    /// Start a DELETE request.
+    pub fn delete<T>(uri: T) -> CallBuilder
+    where
+        Uri: HttpTryFrom<T>,
+    {
+        CallBuilder::new()
+    }
+
+    /// Set method for call. Like: Method::GET.
+    pub fn method<T>(&mut self, method: T) -> &mut Self
+    where
+        Method: HttpTryFrom<T>,
+    {
+        self
+    }
+
+    pub fn body(&mut self, body: Vec<u8>) -> &mut Self {
+        self
+    }
+
+    /// Set URI for call.
+    pub fn uri<T>(&mut self, uri: T) -> &mut Self
+    where
+        Uri: HttpTryFrom<T>,
+    {
+        self
+    }
+
+    /// Set HTTP header.
+    pub fn header<K, V>(&mut self, key: K, value: V) -> &mut Self
+    where
+        HeaderName: HttpTryFrom<K>,
+        HeaderValue: HttpTryFrom<V>,
+    {
+        self
+    }
+
+    /// Consume and execute HTTP call. Returns SimpleCall interface.
+    /// CallBuilder is invalid after this call and will panic if used again.
+    pub fn simple_call(&mut self, httpc: &mut Httpc, poll: &Poll) -> ::Result<SimpleCall> {
+        Err(::Error::NoTls)
+    }
+
+    /// Consume and execute HTTP call. Return low level streaming call interface.
     /// CallBuilder is invalid after this call and will panic if used again.
     pub fn call(&mut self, httpc: &mut Httpc, poll: &Poll) -> ::Result<Call> {
         Err(::Error::NoTls)
@@ -32,11 +106,6 @@ impl CallBuilder {
     pub fn websocket(&mut self, httpc: &mut Httpc, poll: &Poll) -> ::Result<WebSocket> {
         Err(::Error::NoTls)
     }
-
-    // /// Add custom root ca in DER format
-    // pub fn add_root_ca_der(&mut self, v: Vec<u8>) -> &mut Self {
-    //     self
-    // }
 
     /// Default 10MB.
     ///

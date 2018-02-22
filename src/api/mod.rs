@@ -86,6 +86,10 @@ impl Call {
         CallRef(self.0)
     }
 
+    pub fn simple(self) -> SimpleCall {
+        SimpleCall::from(self)
+    }
+
     /// Is CallRef for this call.
     pub fn is_ref(&self, r: CallRef) -> bool {
         self.0 == r.0
@@ -162,17 +166,7 @@ mod default;
 #[cfg(not(any(feature = "rustls", feature = "native", feature = "openssl")))]
 pub use self::default::*;
 
-#[cfg(feature = "rustls")]
-mod rustls;
-#[cfg(feature = "rustls")]
-pub use self::rustls::*;
-
-#[cfg(feature = "native")]
-mod native;
-#[cfg(feature = "native")]
-pub use self::native::*;
-
-#[cfg(feature = "openssl")]
-mod openssl;
-#[cfg(feature = "openssl")]
-pub use self::openssl::*;
+#[cfg(any(feature = "rustls", feature = "native", feature = "openssl"))]
+mod builder;
+#[cfg(any(feature = "rustls", feature = "native", feature = "openssl"))]
+pub use self::builder::*;

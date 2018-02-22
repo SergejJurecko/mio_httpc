@@ -1,20 +1,16 @@
 extern crate mio;
 extern crate mio_httpc;
 
-use mio_httpc::{CallBuilder, Httpc, Request, WSPacket};
+use mio_httpc::{CallBuilder, Httpc, WSPacket};
 use mio::{Events, Poll};
 // ws://demos.kaazing.com/echo
 
 fn main() {
     let poll = Poll::new().unwrap();
-    let mut htp = Httpc::new(10);
-    let mut req = Request::builder();
+    let mut htp = Httpc::new(10, None);
     let args: Vec<String> = ::std::env::args().collect();
-    let req = req.uri(args[1].as_str())
-        .body(Vec::new())
-        .expect("can not build request");
 
-    let mut ws = CallBuilder::new(req)
+    let mut ws = CallBuilder::get(args[1].as_str())
         .websocket(&mut htp, &poll)
         .expect("Call start failed");
 

@@ -1,16 +1,16 @@
-extern crate mio_httpc;
 extern crate mio;
+extern crate mio_httpc;
 
-use mio_httpc::{Request,CallBuilder,Httpc,SendState,RecvState,ResponseBody};
-use mio::{Poll,Events};
+use mio_httpc::{CallBuilder, Httpc, RecvState, SendState};
+use mio::{Events, Poll};
 
 fn main() {
     let poll = Poll::new().unwrap();
-    let mut htp = Httpc::new(10);
-    let mut req = Request::builder();
+    let mut htp = Httpc::new(10, None);
     let args: Vec<String> = ::std::env::args().collect();
-    let req = req.uri(args[1].as_str()).body(Vec::new()).expect("can not build request");
-    let mut call = CallBuilder::new(req).call(&mut htp, &poll).expect("Call start failed");
+    let mut call = CallBuilder::get(args[1].as_str())
+        .call(&mut htp, &poll)
+        .expect("Call start failed");
 
     let mut sending = true;
     let mut done = false;
@@ -31,7 +31,7 @@ fn main() {
                         panic!("Done while sending");
                     }
                     SendState::Error(e) => {
-                        panic!("Failed while sending {}",e);
+                        panic!("Failed while sending {}", e);
                     }
                     SendState::Wait => {}
                     SendState::Receiving => {
@@ -40,7 +40,7 @@ fn main() {
                     }
                     _ => {}
                 }
-            } 
+            }
             // no else here because when it switches to receiving you should call call_recv immediately
             if !sending {
                 // Loop until receiving RecvState::Wait or an error.
@@ -53,8 +53,8 @@ fn main() {
                             done = true;
                             break;
                         }
-                        RecvState::Response(resp,bsz) => {
-                            println!("Got response {:?}\nbody_sz={}",resp,bsz);
+                        RecvState::Response(resp, bsz) => {
+                            println!("Got response {:?}\nbody_sz={}", resp, bsz);
                             if bsz.is_empty() {
                                 println!("Finish as content-length is 0");
                                 done = true;
@@ -63,20 +63,22 @@ fn main() {
                             // recv_vec.reserve(bsz);
                         }
                         RecvState::ReceivedBody(sz) => {
-                            println!("Got chunk {} bytes",sz);
+                            println!("Got chunk {} bytes", sz);
                         }
                         // If no Vec<u8> provied to call_recv the final body is returned with this.
                         RecvState::DoneWithBody(rt) => {
                             if let Ok(s) = String::from_utf8(rt) {
-                                println!("Body: {}",s);
+                                println!("Body: {}", s);
                             }
                             panic!("We provided vec, should not get body as well!");
                         }
                         RecvState::Error(e) => {
-                            panic!("Get failed {}",e);
+                            panic!("Get failed {}", e);
                         }
                         RecvState::Sending => {
-                            panic!("Still sending");
+                            println!("Switch to sending, must be redirect!");
+                            sending = true;
+                            break;
                         }
                         RecvState::Wait => {
                             break;
@@ -87,6 +89,6 @@ fn main() {
         }
     }
     if let Ok(s) = String::from_utf8(recv_vec) {
-        println!("Body: {}",s);
+        println!("Body: {}", s);
     }
 }
