@@ -181,11 +181,6 @@ impl Con {
     pub fn is_first_use(&self) -> bool {
         self.first_use
     }
-    // #[inline]
-    // pub fn is_idle(&self) -> bool {
-    //     self.idle
-    // }
-    // #[inline]
     pub fn set_idle(&mut self, b: bool) {
         self.first_use = false;
         if b {
@@ -288,11 +283,7 @@ impl Con {
             Err(HandshakeError::Interrupted(mid)) => {
                 self.mid_tls = Some(mid);
             }
-            // Err(HandshakeError::Failure(::Error::Io(ioe))) => {
-            //     return Err(::Error::Io(ioe));
-            // }
             Err(HandshakeError::Failure(e)) => {
-                // if ::std::io::Error::is(e) {}
                 return Err(e);
             }
         }
@@ -600,8 +591,6 @@ impl ConTable {
         let con = con as usize;
         let call: CallImpl = Self::extract_call(call, &mut self.cons[con].1);
         let (builder, call_buf) = call.stop();
-        // let (parts, req_buf) = builder.req.into_parts();
-        // let uri = parts.uri;
         // println!("close_call {} {} {}",con, self.cons[con].0.to_close, self.cons.len());
         {
             let uri = builder.req.uri();
