@@ -1,6 +1,6 @@
 use mio::{Event, Poll, Token};
 use dns_cache::DnsCache;
-use con::{Con, ConTable};
+use connection::{Con, ConTable};
 use tls_api::TlsConnector;
 use std::collections::VecDeque;
 use call::CallImpl;

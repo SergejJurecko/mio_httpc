@@ -1,4 +1,4 @@
-use con::Con;
+use connection::Con;
 use mio::Ready;
 use std::io::ErrorKind as IoErrorKind;
 use tls_api::TlsConnector;

@@ -106,7 +106,7 @@ mod dns;
 #[allow(dead_code, unused_imports)]
 mod dns_parser;
 #[allow(dead_code, unused_variables)]
-mod con;
+mod connection;
 #[allow(dead_code, unused_variables)]
 mod httpc;
 #[allow(dead_code, unused_variables, unused_imports)]
