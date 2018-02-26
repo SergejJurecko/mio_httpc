@@ -155,7 +155,7 @@ pub fn get_dns_servers(srvs: &mut SmallVec<[IpAddr; 4]>) {
 
 #[cfg(windows)]
 pub fn get_dns_servers(srvs: &mut SmallVec<[IpAddr; 4]>) {
-    get_google()
+    get_google(srvs)
 }
 
 fn get_google(srvs: &mut SmallVec<[IpAddr; 4]>) {
