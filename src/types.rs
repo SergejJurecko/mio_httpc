@@ -18,6 +18,17 @@ pub(crate) enum RecvStateInt {
     Wait,
     BasicAuth,
     Redirect(::http::Response<Vec<u8>>),
+    Retry(::Error),
+}
+
+#[derive(Debug)]
+pub enum SendStateInt {
+    SentBody(usize),
+    WaitReqBody,
+    Receiving,
+    Done,
+    Wait,
+    Retry(::Error),
 }
 
 #[derive(Parser)]

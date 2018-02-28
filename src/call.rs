@@ -190,7 +190,7 @@ impl CallImpl {
             buf.extend((env!("CARGO_PKG_VERSION")).as_bytes());
             buf.extend(b"\r\n");
         }
-        if self.b.gzip {
+        if self.b.gzip && !self.b.ws {
             buf.extend(ACCEPT_ENCODING.as_str().as_bytes());
             buf.extend(b": gzip\r\n");
         }
@@ -350,17 +350,17 @@ impl CallImpl {
         con: &mut Con,
         cp: &mut CallParam,
         b: Option<&[u8]>,
-    ) -> ::Result<SendState> {
+    ) -> ::Result<SendStateInt> {
         match self.dir {
             Dir::Done => {
-                return Ok(SendState::Done);
+                return Ok(SendStateInt::Done);
             }
-            Dir::Receiving(_, false) => return Ok(SendState::Receiving),
+            Dir::Receiving(_, false) => return Ok(SendStateInt::Receiving),
             Dir::Receiving(_, true) => {
                 if let Some(b) = b {
                     self.event_send_do::<C>(con, cp, 0, b)
                 } else {
-                    Ok(SendState::WaitReqBody)
+                    Ok(SendStateInt::WaitReqBody)
                 }
             }
             Dir::SendingHdr(pos) => {
@@ -389,9 +389,7 @@ impl CallImpl {
                 let b = b.unwrap();
                 self.event_send_do::<C>(con, cp, 0, &b[..])
             }
-            Dir::SendingBody(_) => Ok(SendState::WaitReqBody), // _ => {
-                                                               //     Ok(SendState::WaitReqBody)
-                                                               // }
+            Dir::SendingBody(_) => Ok(SendStateInt::WaitReqBody),
         }
     }
 
@@ -482,7 +480,7 @@ impl CallImpl {
         cp: &mut CallParam,
         in_pos: usize,
         b: &[u8],
-    ) -> ::Result<SendState> {
+    ) -> ::Result<SendStateInt> {
         con.signalled::<C, Vec<u8>>(cp, &self.b.req)?;
         // if !self.con.ready.is_writable() {
         //     return Ok(SendState::Nothing);
@@ -499,10 +497,10 @@ impl CallImpl {
                     if ie.kind() == IoErrorKind::Interrupted {
                         continue;
                     } else if ie.kind() == IoErrorKind::NotConnected {
-                        return Ok(SendState::Wait);
+                        return Ok(SendStateInt::Wait);
                     } else if ie.kind() == IoErrorKind::WouldBlock {
                         con.reg(cp.poll, Ready::writable())?;
-                        return Ok(SendState::Wait);
+                        return Ok(SendStateInt::Wait);
                     } else {
                         return Err(::Error::Closed);
                     }
@@ -512,28 +510,28 @@ impl CallImpl {
                         if self.hdr_sz == pos + sz {
                             if self.body_sz > 0 {
                                 self.dir = Dir::SendingBody(0);
-                                return Ok(SendState::Wait);
+                                return Ok(SendStateInt::Wait);
                             } else {
                                 self.hdr_sz = 0;
                                 self.body_sz = 0;
                                 self.dir = Dir::Receiving(0, false);
-                                return Ok(SendState::Receiving);
+                                return Ok(SendStateInt::Receiving);
                             }
                         } else {
                             self.dir = Dir::SendingHdr(pos + sz);
-                            return Ok(SendState::Wait);
+                            return Ok(SendStateInt::Wait);
                         }
                     } else if let Dir::SendingBody(pos) = self.dir {
                         if self.body_sz == pos + sz {
                             self.hdr_sz = 0;
                             self.body_sz = 0;
                             self.dir = Dir::Receiving(0, false);
-                            return Ok(SendState::Receiving);
+                            return Ok(SendStateInt::Receiving);
                         }
                         self.dir = Dir::SendingBody(pos + sz);
-                        return Ok(SendState::SentBody(pos + sz));
+                        return Ok(SendStateInt::SentBody(pos + sz));
                     } else {
-                        return Ok(SendState::SentBody(sz));
+                        return Ok(SendStateInt::SentBody(sz));
                     }
                 }
                 _ => {
@@ -595,7 +593,9 @@ impl CallImpl {
                 if self.hdr_sz == 0 {
                     let mut headers = [httparse::EMPTY_HEADER; 32];
                     let mut presp = ParseResp::new(&mut headers);
-                    // println!("Got: {}", String::from_utf8(buf.clone())?);
+                    // if let Ok(sx) = String::from_utf8(Vec::from(&buf[0..60])) {
+                    //     println!("Got ({}): {}", self.b.req.uri(), sx);
+                    // }
                     let buflen = buf.len();
                     match presp.parse(buf) {
                         Ok(httparse::Status::Complete(hdr_sz)) => {

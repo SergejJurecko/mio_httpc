@@ -616,8 +616,8 @@ impl WebSocket {
                         break;
                     }
                     RecvState::Sending => {
-                        self.stop(htp);
-                        return Err(::Error::Closed);
+                        self.state = State::InitSending;
+                        break;
                     }
                     RecvState::ReceivedBody(_) => {}
                 }

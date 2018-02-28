@@ -68,6 +68,7 @@ impl HttpcImpl {
         };
         if let Some(con_id) = con_id {
             let call = CallImpl::new(b, self.get_buf());
+            self.cons.push_ka_con(con_id, call, poll)?;
             let id = Call::new(con_id, 0);
             return Ok(id);
         }
@@ -133,6 +134,7 @@ impl HttpcImpl {
         if id >= self.con_offset && id <= (u16::max_value() as usize) {
             id -= self.con_offset;
             if let Some(_) = self.cons.get_signalled_con(id) {
+                // println!("Signalled {:?}", ev);
                 return Some(CallRef::new(id as u16, 0));
             }
         }
@@ -171,13 +173,39 @@ impl HttpcImpl {
                 .event_send::<C>(call.con_id(), call.call_id(), &mut cp, buf)
         };
         match cret {
-            Ok(SendState::Done) => {
+            Ok(SendStateInt::Done) => {
                 self.call_close(Call(call.0));
                 call.invalidate();
                 return SendState::Done;
             }
-            Ok(er) => {
-                return er;
+            // Ok(SendStateInt::Error(e)) => {
+            //     return SendState::Error(e);
+            // }
+            Ok(SendStateInt::Receiving) => {
+                return SendState::Receiving;
+            }
+            Ok(SendStateInt::SentBody(sz)) => {
+                return SendState::SentBody(sz);
+            }
+            Ok(SendStateInt::Wait) => {
+                return SendState::Wait;
+            }
+            Ok(SendStateInt::WaitReqBody) => {
+                return SendState::WaitReqBody;
+            }
+            Ok(SendStateInt::Retry(err)) => {
+                let mut b = self.call_close_int(Call(call.0));
+                call.invalidate();
+                b.reused = true;
+                match self.call::<C>(b, poll) {
+                    Ok(nc) => {
+                        call.0 = nc.0;
+                        return SendState::Wait;
+                    }
+                    Err(e) => {
+                        return SendState::Error(e);
+                    }
+                }
             }
             Err(e) => {
                 self.call_close(Call(call.0));
@@ -220,6 +248,20 @@ impl HttpcImpl {
                 self.call_close(Call(call.0));
                 call.invalidate();
                 return RecvState::DoneWithBody(body);
+            }
+            Ok(RecvStateInt::Retry(err)) => {
+                let mut b = self.call_close_int(Call(call.0));
+                call.invalidate();
+                b.reused = true;
+                match self.call::<C>(b, poll) {
+                    Ok(nc) => {
+                        call.0 = nc.0;
+                        return RecvState::Sending;
+                    }
+                    Err(e) => {
+                        return RecvState::Error(e);
+                    }
+                }
             }
             Ok(RecvStateInt::Redirect(r)) => {
                 let mut b = self.call_close_int(Call(call.0));

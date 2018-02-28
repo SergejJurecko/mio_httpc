@@ -21,6 +21,7 @@ fn main() {
         for cref in htp.timeout().into_iter() {
             if ws.is_ref(cref) {
                 println!("Request timed out");
+                ws.finish_inplace(&mut htp);
                 break 'outer;
             }
         }

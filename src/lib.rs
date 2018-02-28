@@ -87,6 +87,7 @@ extern crate pest;
 extern crate pest_derive;
 #[cfg(feature = "rustls")]
 extern crate rustls;
+extern crate slab;
 extern crate smallvec;
 
 #[macro_use]
