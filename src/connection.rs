@@ -553,12 +553,12 @@ impl ConTable {
         // let mut cons_to_close: SmallVec<[u16; 16]> = SmallVec::new();
         let con_to_close;
         let nh = ConHost::new(host.as_bytes());
-        if let Some(con) = self.keepalive.get(&nh) {
-            self.cons[*con as usize].0.set_idle(false);
-            if self.cons[*con as usize].0.reuse(poll).is_ok() {
-                return Some(*con);
+        if let Some(con) = self.keepalive.remove(&nh) {
+            self.cons[con as usize].0.set_idle(false);
+            if self.cons[con as usize].0.reuse(poll).is_ok() {
+                return Some(con);
             } else {
-                con_to_close = *con;
+                con_to_close = con;
             }
         } else {
             return None;
