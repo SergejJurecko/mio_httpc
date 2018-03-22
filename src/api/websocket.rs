@@ -96,6 +96,10 @@ impl WebSocket {
         }
     }
 
+    pub fn call(&self) -> &Call {
+        &self.id
+    }
+
     pub fn empty() -> WebSocket {
         let mut r = Self::new(Call::empty(), Vec::new());
         r.state = State::Done;
