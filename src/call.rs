@@ -481,7 +481,10 @@ impl CallImpl {
         in_pos: usize,
         b: &[u8],
     ) -> ::Result<SendStateInt> {
-        con.signalled::<C, Vec<u8>>(cp, &self.b.req)?;
+        con.signalled::<C, Vec<u8>>(cp, &self.b.req).map_err(|e| {
+            con.set_to_close(true);
+            e
+        })?;
         // if !self.con.ready.is_writable() {
         //     return Ok(SendState::Nothing);
         // }
@@ -551,7 +554,10 @@ impl CallImpl {
         let mut orig_len = self.reserve_space(internal, buf)?;
         let mut io_ret;
         let mut entire_sz = 0;
-        con.signalled::<C, Vec<u8>>(cp, &self.b.req)?;
+        con.signalled::<C, Vec<u8>>(cp, &self.b.req).map_err(|e| {
+            con.set_to_close(true);
+            e
+        })?;
         // if !self.con.ready.is_readable() {
         //     return Ok(RecvState::Nothing);
         // }

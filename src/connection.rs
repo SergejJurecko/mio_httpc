@@ -16,24 +16,32 @@ use smallvec::SmallVec;
 use call::CallImpl;
 use slab::Slab;
 
-fn url_port(url: &Uri) -> Result<u16> {
-    if let Some(p) = url.port() {
-        return Ok(p);
-    }
+fn is_https(url: &Uri) -> Result<bool> {
     if let Some(scheme) = url.scheme_part() {
         if scheme == "https" {
-            return Ok(443);
+            return Ok(true);
         } else if scheme == "http" {
-            return Ok(80);
+            return Ok(false);
         } else if scheme == "ws" {
-            return Ok(80);
+            return Ok(false);
         } else if scheme == "wss" {
-            return Ok(443);
+            return Ok(true);
         } else {
             return Err(::Error::InvalidScheme);
         }
     } else {
         return Err(::Error::InvalidScheme);
+    }
+}
+
+fn url_port(url: &Uri) -> Result<u16> {
+    if let Some(p) = url.port() {
+        return Ok(p);
+    }
+    if is_https(url)? {
+        Ok(443)
+    } else {
+        Ok(80)
     }
 }
 
@@ -59,6 +67,7 @@ pub struct Con {
     idle_since: Instant,
     insecure: bool,
     signalled: bool,
+    is_tls: bool,
 }
 
 impl Con {
@@ -87,6 +96,7 @@ impl Con {
             insecure,
             host: ConHost::new(req.uri().host().unwrap().as_bytes()),
             idle_since: Instant::now(),
+            is_tls: is_https(req.uri())?,
             tls: None,
             mid_tls: None,
             signalled: false,
@@ -235,9 +245,7 @@ impl Con {
             }
             self.dns = Some(dns);
         } else {
-            if self.sock.is_some() && self.con_port == 443 && self.tls.is_none()
-                && self.mid_tls.is_none()
-            {
+            if self.sock.is_some() && self.is_tls && self.tls.is_none() && self.mid_tls.is_none() {
                 let mut connector = C::builder()?;
                 for rca in cp.cfg.der_ca.iter() {
                     let _ = connector.add_der_certificate(rca);
@@ -250,7 +258,10 @@ impl Con {
                 let tcp = self.sock.take().unwrap();
 
                 let r = if self.insecure {
-                    connector.danger_connect_without_providing_domain_for_certificate_verification_and_server_name_indication(tcp)
+                    connector
+                        .danger_connect_without_providing_domain_for_certificate_verification_and_server_name_indication(
+                            tcp,
+                        )
                 } else {
                     connector.connect(self.host.as_ref(), tcp)
                 };
