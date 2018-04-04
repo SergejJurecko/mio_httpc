@@ -175,7 +175,7 @@ impl CallBuilder {
         self
     }
 
-    /// Default true.
+    /// Default secure.
     ///
     /// Turn off domain verification over ssl. This should only be used when testing as you are throwing away
     /// a big part of ssl security.
