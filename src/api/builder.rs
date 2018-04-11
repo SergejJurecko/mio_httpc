@@ -191,6 +191,9 @@ impl Httpc {
     pub(crate) fn try_truncate(&mut self, id: &::Call, off: &mut usize) {
         self.h.try_truncate(id, off);
     }
+    pub fn recfg(&mut self, cfg: ::HttpcCfg) {
+        self.h.recfg(cfg);
+    }
     pub fn open_connections(&self) -> usize {
         self.h.open_connections()
     }

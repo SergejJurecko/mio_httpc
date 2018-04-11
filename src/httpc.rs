@@ -35,6 +35,10 @@ impl HttpcImpl {
         }
     }
 
+    pub fn recfg(&mut self, cfg: ::HttpcCfg) {
+        self.cfg = cfg;
+    }
+
     pub fn open_connections(&self) -> usize {
         self.cons.open_cons()
     }
@@ -134,7 +138,6 @@ impl HttpcImpl {
         if id >= self.con_offset && id <= (u16::max_value() as usize) {
             id -= self.con_offset;
             if let Some(_) = self.cons.get_signalled_con(id) {
-                // println!("Signalled {:?}", ev);
                 return Some(CallRef::new(id as u16, 0));
             }
         }

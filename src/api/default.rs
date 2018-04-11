@@ -209,6 +209,9 @@ impl Httpc {
         0
     }
 
+    /// Reconfigure client
+    pub fn recfg(&mut self, _cfg: ::HttpcCfg) {}
+
     /// Reuse a response buffer for subsequent calls.
     pub fn reuse(&mut self, buf: Vec<u8>) {}
 
