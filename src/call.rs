@@ -4,16 +4,15 @@ use std::io::ErrorKind as IoErrorKind;
 use tls_api::TlsConnector;
 use httparse::{self, Response as ParseResp};
 use http::response::Builder as RespBuilder;
-use http::{self, Method, Request, Uri, Version};
+use http::{self, Request, Uri, Version};
 use http::header::*;
 use std::str::FromStr;
 use std::time::{Duration, Instant};
 use std::io::{Read, Write};
-use {RecvState, SendState};
 use types::*;
 use data_encoding::{BASE64, HEXLOWER};
 use byteorder::{ByteOrder, LittleEndian};
-use std::ascii::AsciiExt;
+// use std::ascii::AsciiExt;
 use md5;
 use libflate::gzip::Decoder;
 

@@ -29,34 +29,22 @@ impl CallBuilder {
     }
 
     /// Start a GET request.
-    pub fn get<T>(uri: T) -> CallBuilder
-    where
-        Uri: HttpTryFrom<T>,
-    {
+    pub fn get(uri: &str) -> CallBuilder {
         CallBuilder::new()
     }
 
     /// Start a POST request.
-    pub fn post<T>(uri: T) -> CallBuilder
-    where
-        Uri: HttpTryFrom<T>,
-    {
+    pub fn post(uri: &str, body: Vec<u8>) -> CallBuilder {
         CallBuilder::new()
     }
 
     /// Start a PUT request.
-    pub fn put<T>(uri: T) -> CallBuilder
-    where
-        Uri: HttpTryFrom<T>,
-    {
+    pub fn put(uri: &str, body: Vec<u8>) -> CallBuilder {
         CallBuilder::new()
     }
 
     /// Start a DELETE request.
-    pub fn delete<T>(uri: T) -> CallBuilder
-    where
-        Uri: HttpTryFrom<T>,
-    {
+    pub fn delete(uri: &str) -> CallBuilder {
         CallBuilder::new()
     }
 
@@ -73,10 +61,7 @@ impl CallBuilder {
     }
 
     /// Set URI for call.
-    pub fn uri<T>(&mut self, uri: T) -> &mut Self
-    where
-        Uri: HttpTryFrom<T>,
-    {
+    pub fn uri(&mut self, uri: &str) -> &mut Self {
         self
     }
 

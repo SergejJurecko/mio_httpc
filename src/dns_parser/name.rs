@@ -1,7 +1,7 @@
 use std::fmt;
 use std::fmt::Write;
 use std::str::from_utf8;
-use std::ascii::AsciiExt;
+// use std::ascii::AsciiExt;
 use byteorder::{BigEndian, ByteOrder};
 use super::{Error};
 

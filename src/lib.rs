@@ -4,8 +4,8 @@
 //!
 //! No call will block (except SyncCall), not even for DNS resolution as it is implemented internally to avoid blocking.
 //!
-//! mio_httpc requires you specify one of the TLS implementations using features: rtls (rustls), native, openssl.
-//! Default is noop for everything.
+//! For https to work you must specify one of the TLS implementations using features: rtls (rustls), native, openssl.
+//! Default build will fail on any https URI.
 //!
 //! mio_httpc does a minimal amount of allocation and in general works with buffers you provide and an internal pool
 //! of buffers that get reused on new calls.
@@ -85,6 +85,7 @@ extern crate openssl;
 extern crate pest;
 #[macro_use]
 extern crate pest_derive;
+extern crate percent_encoding;
 #[cfg(feature = "rustls")]
 extern crate rustls;
 extern crate slab;
@@ -96,24 +97,22 @@ extern crate failure;
 #[macro_use]
 extern crate matches;
 
-// Because of default implementation does nothing we suppress warnings of nothing going on.
-// One of TLS implementation features must be picked.
-// #[allow(dead_code,unused_variables)]
-// mod con_table;
-#[allow(dead_code, unused_variables)]
+
+// #[allow(dead_code, unused_variables)]
 mod dns_cache;
-#[allow(dead_code, unused_variables)]
+// #[allow(dead_code, unused_variables)]
 mod dns;
-#[allow(dead_code, unused_imports)]
+// #[allow(dead_code, unused_imports)]
 mod dns_parser;
-#[allow(dead_code, unused_variables)]
+// #[allow(dead_code, unused_variables)]
 mod connection;
-#[allow(dead_code, unused_variables)]
+// #[allow(dead_code, unused_variables)]
 mod httpc;
-#[allow(dead_code, unused_variables, unused_imports)]
+// #[allow(dead_code, unused_variables, unused_imports)]
 mod call;
-#[allow(dead_code, unused_variables)]
+// #[allow(dead_code, unused_variables)]
 mod api;
+// #[allow(dead_code, unused_variables)]
 mod types;
 mod tls_api;
 
@@ -145,25 +144,24 @@ pub type Result<T> = ::std::result::Result<T, Error>;
 #[derive(Debug, Fail)]
 pub enum Error {
     #[fail(display = "IO error: {}", _0)]
-    Io (#[cause] ::std::io::Error ),
+    Io(#[cause] ::std::io::Error),
 
     #[fail(display = "Utf8 error: {}", _0)]
-    Utf8 (#[cause] std::str::Utf8Error ),
+    Utf8(#[cause] std::str::Utf8Error),
 
     #[fail(display = "FromUtf8 error: {}", _0)]
-    FromUtf8 (#[cause] std::string::FromUtf8Error ),
+    FromUtf8(#[cause] std::string::FromUtf8Error),
 
     #[fail(display = "AddrParseError: {}", _0)]
-    Addr (#[cause] std::net::AddrParseError ),
+    Addr(#[cause] std::net::AddrParseError),
 
     // #[fail(display = "TlsError: {}", _0)]
     // Tls (#[cause] tls_api::Error),
-
     #[fail(display = "Httparse error: {}", _0)]
-    Httparse (#[cause] httparse::Error ),
+    Httparse(#[cause] httparse::Error),
 
     #[fail(display = "Http error: {}", _0)]
-    Http (#[cause] http::Error ),
+    Http(#[cause] http::Error),
 
     #[fail(display = "WebSocket setup failed")]
     WebSocketFail(http::Response<Vec<u8>>),
@@ -188,17 +186,17 @@ pub enum Error {
     /// Invalid scheme
     #[fail(display = "Invalid scheme")]
     InvalidScheme,
-    
+
     #[cfg(any(feature = "rustls", feature = "native", feature = "openssl"))]
-    #[fail(display = "TLS error {}",_0)]
+    #[fail(display = "TLS error {}", _0)]
     Tls(#[cause] TLSError),
 
     #[cfg(feature = "openssl")]
-    #[fail(display = "OpenSSL stack error {}",_0)]
+    #[fail(display = "OpenSSL stack error {}", _0)]
     OpenSSLErrorStack(#[cause] OpenSSLErrorStack),
 
     #[cfg(feature = "openssl")]
-    #[fail(display = "OpenSSL error {}",_0)]
+    #[fail(display = "OpenSSL error {}", _0)]
     OpenSSLError(#[cause] OpenSSLError),
 
     // /// TLS handshake failed.
@@ -208,7 +206,7 @@ pub enum Error {
     #[fail(display = "Concurrent connection limit")]
     NoSpace,
 
-    #[fail(display = "{}",_0)]
+    #[fail(display = "{}", _0)]
     Other(&'static str),
     /// You must pick one of the features: native, rustls, openssl
     #[fail(display = "You must pick one of the features: native, rustls, openssl")]
@@ -225,8 +223,6 @@ pub enum Error {
     /// Chunk was larger than configured CallBuilder::cunked_max_chunk.
     #[fail(display = "Chunk was larger than configured CallBuilder::cunked_max_chunk. {}", _0)]
     ChunkOverlimit(usize),
-
-
 }
 
 impl From<std::io::Error> for Error {

@@ -1,6 +1,6 @@
 [package]
 name = "mio_httpc"
-version = "0.5.9"
+version = "0.6.0"
 authors = ["sergej jurecko <sergej.jurecko@gmail.com>"]
 description = "mio_httpc is a fully async and sync http client running on top of mio only. "
 repository = "https://github.com/SergejJurecko/mio_httpc"
@@ -35,6 +35,7 @@ pest = "1"
 pest_derive = "1"
 libflate = "0.1"
 slab = "0.4"
+percent-encoding = "1"
 
 webpki = {version = "^0.18.0-alpha", optional = true}
 webpki-roots = {version = "0.14", optional = true}

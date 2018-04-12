@@ -161,12 +161,5 @@ pub use self::simple_call::*;
 mod sync;
 pub use self::sync::*;
 
-#[cfg(not(any(feature = "rustls", feature = "native", feature = "openssl")))]
-mod default;
-#[cfg(not(any(feature = "rustls", feature = "native", feature = "openssl")))]
-pub use self::default::*;
-
-#[cfg(any(feature = "rustls", feature = "native", feature = "openssl"))]
 mod builder;
-#[cfg(any(feature = "rustls", feature = "native", feature = "openssl"))]
 pub use self::builder::*;

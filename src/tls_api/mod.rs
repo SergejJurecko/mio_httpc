@@ -10,6 +10,9 @@ pub mod native;
 #[allow(dead_code, unused_variables)]
 pub mod openssl;
 
+#[cfg(not(any(feature = "rustls", feature = "native", feature = "openssl")))]
+pub mod dummy;
+
 use std::io;
 use std::fmt;
 // use std::error;
