@@ -39,9 +39,8 @@ pub enum DnsError {
     #[fail(display = "invalid characters encountered while reading TXT")]
     TxtDataIsNotUTF8 { error: Utf8Error },
 
-    #[fail(display = "parser is in the wrong state")]
-    WrongState,
-
+    // #[fail(display = "parser is in the wrong state")]
+    // WrongState,
     #[fail(display = "additional OPT record found")]
     AdditionalOPT,
 }

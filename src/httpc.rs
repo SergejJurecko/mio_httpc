@@ -8,7 +8,6 @@ use types::*;
 // use fnv::FnvHashMap as HashMap;
 use {Call, CallRef, RecvState, Response, Result, SendState};
 use std::time::Instant;
-use std::str::FromStr;
 
 pub struct HttpcImpl {
     cache: DnsCache,
@@ -24,7 +23,7 @@ const BUF_SZ: usize = 4096 * 2;
 
 impl HttpcImpl {
     pub fn new(con_offset: usize, cfg: Option<::HttpcCfg>) -> HttpcImpl {
-        HttpcImpl {
+        let mut r = HttpcImpl {
             cfg: cfg.unwrap_or_default(),
             // timed_out_calls: HashMap::default(),
             last_timeout: Instant::now(),
@@ -32,7 +31,10 @@ impl HttpcImpl {
             con_offset,
             free_bufs: VecDeque::new(),
             cons: ConTable::new(),
-        }
+        };
+        r.free_bufs.push_back(Vec::with_capacity(BUF_SZ));
+        r.free_bufs.push_back(Vec::with_capacity(BUF_SZ));
+        r
     }
 
     pub fn recfg(&mut self, cfg: ::HttpcCfg) {
@@ -44,7 +46,10 @@ impl HttpcImpl {
     }
 
     pub fn reuse(&mut self, mut buf: Vec<u8>) {
-        if self.free_bufs.len() > 5 {
+        if buf.len() + buf.capacity() == 0 {
+            return;
+        }
+        if self.free_bufs.len() >= self.cfg.cache_buffers {
             return;
         }
         let cap = buf.capacity();
@@ -61,8 +66,8 @@ impl HttpcImpl {
     }
 
     pub fn call<C: TlsConnector>(&mut self, b: CallBuilderImpl, poll: &Poll) -> Result<Call> {
-        let con_id = if let Some(host) = b.req.uri().host() {
-            if let Some(con_id) = self.cons.try_keepalive(host, poll) {
+        let con_id = if b.bytes.host.len() > 0 {
+            if let Some(con_id) = self.cons.try_keepalive(&b.bytes.host, poll) {
                 Some(con_id)
             } else {
                 None
@@ -71,21 +76,21 @@ impl HttpcImpl {
             None
         };
         if let Some(con_id) = con_id {
-            let call = CallImpl::new(b, self.get_buf());
-            self.cons.push_ka_con(con_id, call, poll)?;
+            let call = CallImpl::new(b, self.get_buf(), self.get_buf());
+            self.cons.push_ka_con(con_id, call)?;
             let id = Call::new(con_id, 0);
             return Ok(id);
         }
         // cons.push_con will set actual mio token
         let con = Con::new::<C, Vec<u8>>(
             Token::from(self.con_offset),
-            &b.req,
+            &b,
             &mut self.cache,
-            poll,
+            // poll,
             b.dns_timeout,
             b.insecure,
         )?;
-        let call = CallImpl::new(b, self.get_buf());
+        let call = CallImpl::new(b, self.get_buf(), self.get_buf());
         if let Some(con_id) = self.cons.push_con(con, call, poll)? {
             let id = Call::new(con_id, 0);
             Ok(id)
@@ -102,9 +107,12 @@ impl HttpcImpl {
     }
 
     fn call_close_int(&mut self, id: Call) -> CallBuilderImpl {
-        let (builder, b1) = self.cons.close_call(id.con_id(), id.call_id());
+        let (builder, b1, b2) = self.cons.close_call(id.con_id(), id.call_id());
         if b1.capacity() > 0 || b1.len() > 0 {
             self.reuse(b1);
+        }
+        if b2.capacity() > 0 || b2.len() > 0 {
+            self.reuse(b2);
         }
         builder
     }
@@ -196,7 +204,7 @@ impl HttpcImpl {
             Ok(SendStateInt::WaitReqBody) => {
                 return SendState::WaitReqBody;
             }
-            Ok(SendStateInt::Retry(err)) => {
+            Ok(SendStateInt::Retry(_err)) => {
                 let mut b = self.call_close_int(Call(call.0));
                 call.invalidate();
                 b.reused = true;
@@ -252,7 +260,7 @@ impl HttpcImpl {
                 call.invalidate();
                 return RecvState::DoneWithBody(body);
             }
-            Ok(RecvStateInt::Retry(err)) => {
+            Ok(RecvStateInt::Retry(_err)) => {
                 let mut b = self.call_close_int(Call(call.0));
                 call.invalidate();
                 b.reused = true;
@@ -293,7 +301,7 @@ impl HttpcImpl {
                     // If an attempt was already made once, return response.
                     return RecvState::Response(r, ::ResponseBody::Sized(0));
                 }
-                b.auth(d);
+                b.auth_recv(d);
                 match self.call::<C>(b, poll) {
                     Ok(nc) => {
                         call.0 = nc.0;
@@ -341,68 +349,33 @@ impl HttpcImpl {
         }
     }
 
-    fn fix_location(r: &Response<Vec<u8>>, b: &mut CallBuilderImpl) -> bool {
-        if let Some(ref clh) = r.headers().get(::http::header::LOCATION) {
-            if let Ok(s) = clh.to_str() {
-                if let Ok(nuri) = ::http::Uri::from_str(s) {
-                    let mut s128 = [0u8; 128];
-                    let mut svec = Vec::new();
-                    let uri_len = if nuri.scheme_part().is_some() {
-                        *b.req.uri_mut() = nuri;
+    fn fix_location(r: &Response, b: &mut CallBuilderImpl) -> bool {
+        let hdrs = r.headers();
+        for h in hdrs {
+            if h.is("location") {
+                if h.value.starts_with("https://") || h.value.starts_with("http://") {
+                    if let Ok(_) = b.url(h.value) {
                         return true;
-                    } else {
-                        let old_uri = b.req.uri();
-                        let scheme = old_uri.scheme_part().unwrap();
-                        let auth = old_uri.authority_part().unwrap();
-                        let path = nuri.path();
-                        let (quer, quer_len) = if let Some(q) = old_uri.query() {
-                            (q, q.len() + 1)
-                        } else {
-                            ("", 0)
-                        };
-                        let uri_len = scheme.as_str().len() + "://".len() + auth.as_str().len()
-                            + path.len() + quer_len;
-                        if uri_len <= 128 {
-                            let mut pos = 0;
-                            s128[pos..pos + scheme.as_str().len()]
-                                .copy_from_slice(scheme.as_str().as_bytes());
-                            pos += scheme.as_str().len();
-                            s128[pos..pos + 3].copy_from_slice(b"://");
-                            pos += 3;
-                            s128[pos..pos + auth.as_str().len()]
-                                .copy_from_slice(auth.as_str().as_bytes());
-                            pos += auth.as_str().len();
-                            s128[pos..pos + path.len()].copy_from_slice(&path.as_bytes());
-                            pos += path.len();
-                            if quer_len > 0 {
-                                s128[pos..pos + 1].copy_from_slice(b"?");
-                                pos += 1;
-                                s128[pos..pos + quer_len].copy_from_slice(&quer.as_bytes());
-                            }
-                        } else {
-                            svec.extend(scheme.as_str().as_bytes());
-                            svec.extend(b"://");
-                            svec.extend(auth.as_str().as_bytes());
-                            svec.extend(path.as_bytes());
-                            if quer_len > 0 {
-                                svec.extend(b"?");
-                                svec.extend(quer.as_bytes());
-                            }
-                        }
-                        uri_len
-                    };
-                    let slice: &[u8] = if uri_len <= 128 {
-                        &s128[..uri_len]
-                    } else {
-                        &svec
-                    };
-                    if let Ok(s) = ::std::str::from_utf8(slice) {
-                        if let Ok(nuri) = ::http::Uri::from_str(s) {
-                            *b.req.uri_mut() = nuri;
-                            return true;
+                    }
+                } else if h.value.len() > 0 {
+                    b.bytes.path.truncate(0);
+                    b.bytes.query.truncate(0);
+                    if h.value.as_bytes()[0] != b'/' {
+                        b.bytes.path.push(b'/');
+                    }
+                    let mut path_split = h.value.split("?");
+                    if let Some(path) = path_split.next() {
+                        b.bytes.path.extend_from_slice(path.as_bytes());
+                    }
+                    if let Some(query) = path_split.next() {
+                        if query.len() > 0 {
+                            b.bytes.query.push(b'?');
+                            b.bytes.query.extend_from_slice(query.as_bytes());
                         }
                     }
+                    return true;
                 }
+                break;
             }
         }
         false

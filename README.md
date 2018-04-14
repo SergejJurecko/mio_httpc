@@ -7,7 +7,7 @@ No call will block (except SyncCall), not even for DNS resolution as it is imple
 
 It uses [http crate](https://crates.io/crates/http) for Request/Response types.
 
-mio_httpc requires you specify one of the TLS implementations using features: native, openssl and rtls (rustls). Not picking any feature will NOT work, as all calls will be no-op.
+For https to work mio_httpc requires you specify one of the TLS implementations using features: native, openssl or rtls (rustls).
 
 [Documentation](https://docs.rs/mio_httpc/)
 
@@ -38,7 +38,7 @@ use mio_httpc::SyncCall;
  
  // One line blocking call.
  
- let (status, hdrs, body) = SyncCall::new().timeout_ms(5000).get(uri).expect("Request failed");
+ let (response_data, body) = SyncCall::new().timeout_ms(5000).get(uri).expect("Request failed");
  
 ```
 
@@ -65,7 +65,8 @@ fn main() {
     let poll = Poll::new().unwrap();
     let mut htp = Httpc::new(10,None);
     let args: Vec<String> = ::std::env::args().collect();
-    let mut call = CallBuilder::get(args[1].as_str())
+    let mut call = CallBuilder::get()
+        .url(args[1].as_str()).expect("Can not parse url")
         .timeout_ms(500)
         .call_simple(&mut htp, &poll)
         .expect("Call start failed");
@@ -119,7 +120,8 @@ fn main() {
     let mut htp = Httpc::new(10,None);
     let args: Vec<String> = ::std::env::args().collect();
 
-    let mut ws = CallBuilder::get(args[1].as_str())
+    let mut ws = CallBuilder::get()
+        .url(args[1].as_str()).expect("Can not parse url")
         .websocket(&mut htp, &poll)
         .expect("Call start failed");
 

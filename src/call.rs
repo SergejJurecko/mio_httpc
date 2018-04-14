@@ -3,16 +3,13 @@ use mio::Ready;
 use std::io::ErrorKind as IoErrorKind;
 use tls_api::TlsConnector;
 use httparse::{self, Response as ParseResp};
-use http::response::Builder as RespBuilder;
-use http::{self, Request, Uri, Version};
-use http::header::*;
 use std::str::FromStr;
-use std::time::{Duration, Instant};
+use std::time::{Instant};
 use std::io::{Read, Write};
 use types::*;
 use data_encoding::{BASE64, HEXLOWER};
 use byteorder::{ByteOrder, LittleEndian};
-// use std::ascii::AsciiExt;
+use std::str::from_utf8;
 use md5;
 use libflate::gzip::Decoder;
 
@@ -25,15 +22,11 @@ enum Dir {
     Done,
 }
 
-enum TransferEncoding {
-    Identity,
-    Chunked,
-}
-
 pub struct CallImpl {
     b: CallBuilderImpl,
     start: Instant,
-    buf: Vec<u8>,
+    buf_hdr: Vec<u8>,
+    buf_body: Vec<u8>,
     hdr_sz: usize,
     body_sz: usize,
     dir: Dir,
@@ -42,13 +35,15 @@ pub struct CallImpl {
 }
 
 impl CallImpl {
-    pub fn new(b: CallBuilderImpl, mut buf: Vec<u8>) -> CallImpl {
-        buf.truncate(0);
+    pub fn new(b: CallBuilderImpl, mut buf_hdr: Vec<u8>, mut buf_body: Vec<u8>) -> CallImpl {
+        buf_hdr.truncate(0);
+        buf_body.truncate(0);
         CallImpl {
             dir: Dir::SendingHdr(0),
             start: Instant::now(),
             b,
-            buf,
+            buf_hdr,
+            buf_body,
             hdr_sz: 0,
             body_sz: 0,
             chunked: ChunkIndex::new(),
@@ -60,17 +55,13 @@ impl CallImpl {
         match self.dir {
             Dir::Receiving(sz, _) if sz > 0 => false,
             Dir::Done => false,
-            Dir::SendingBody(pos) if pos > 0 && self.b.req.body().len() == 0 => false,
+            Dir::SendingBody(pos) if pos > 0 && self.b.body.len() == 0 => false,
             _ => true,
         }
     }
 
-    pub fn set_retry(&mut self) {
-        self.dir = Dir::SendingHdr(0);
-    }
-
     pub fn empty() -> CallImpl {
-        let mut res = Self::new(CallBuilderImpl::new(Request::new(Vec::new())), Vec::new());
+        let mut res = Self::new(CallBuilderImpl::new(), Vec::new(), Vec::new());
         res.dir = Dir::Done;
         res
     }
@@ -82,12 +73,11 @@ impl CallImpl {
 
     pub fn peek_body(&mut self, off: &mut usize) -> &[u8] {
         if self.body_sz > 0 {
-            if self.buf.len() > self.hdr_sz + *off {
-                // there is some additional data after last offset and hdr
-                return &self.buf[self.hdr_sz + (*off)..];
-            } else if self.buf.len() > self.hdr_sz {
-                // everything after hdr_sz has been processed
-                self.buf.truncate(self.hdr_sz);
+            if self.buf_body.len() > *off {
+                // there is some additional data after last offset
+                return &self.buf_body[(*off)..];
+            } else if self.buf_body.len() > 0 {
+                self.buf_body.truncate(0);
                 *off = 0;
             }
         }
@@ -96,11 +86,11 @@ impl CallImpl {
 
     pub fn try_truncate(&mut self, off: &mut usize) {
         if self.body_sz > 0 {
-            if self.buf.len() > self.hdr_sz + *off {
+            if self.buf_body.len() > *off {
                 return;
-            } else if self.buf.len() > self.hdr_sz {
+            } else if self.buf_body.len() > 0 {
                 // everything after hdr_sz has been processed
-                self.buf.truncate(self.hdr_sz);
+                self.buf_body.truncate(0);
                 *off = 0;
             }
         }
@@ -114,13 +104,13 @@ impl CallImpl {
         self.dir == Dir::Done
     }
 
-    pub fn stop(self) -> (CallBuilderImpl, Vec<u8>) {
-        (self.b, self.buf)
+    pub fn stop(self) -> (CallBuilderImpl, Vec<u8>, Vec<u8>) {
+        (self.b, self.buf_hdr, self.buf_body)
     }
 
-    pub fn duration(&self) -> Duration {
-        self.start.elapsed()
-    }
+    // pub fn duration(&self) -> Duration {
+    //     self.start.elapsed()
+    // }
 
     fn reserve_space(&mut self, internal: bool, buf: &mut Vec<u8>) -> ::Result<usize> {
         let orig_len = buf.len();
@@ -136,53 +126,42 @@ impl CallImpl {
         Ok(orig_len)
     }
 
-    fn extend_full_path(buf: &mut Vec<u8>, uri: &Uri) {
-        buf.extend(uri.path().as_bytes());
-        if let Some(q) = uri.query() {
-            buf.extend(b"?");
-            buf.extend(q.as_bytes());
-        }
-    }
+    // fn extend_full_path(buf: &mut Vec<u8>, uri: &Uri) {
+    //     buf.extend(uri.path().as_bytes());
+    //     if let Some(q) = uri.query() {
+    //         buf.extend(b"?");
+    //         buf.extend(q.as_bytes());
+    //     }
+    // }
 
     fn fill_send_req(&mut self, buf: &mut Vec<u8>) {
-        buf.extend(self.b.req.method().as_str().as_bytes());
+        buf.extend(self.b.method.as_str().as_bytes());
         buf.extend(b" ");
-        Self::extend_full_path(buf, self.b.req.uri());
+        // Self::extend_full_path(buf, self.b.req.uri());
+        buf.extend(&self.b.bytes.path);
+        buf.extend(&self.b.bytes.query);
         buf.extend(b" HTTP/1.1\r\n");
-        for (k, v) in self.b.req.headers().iter() {
-            // if k == CONNECTION && self.b.ws {
-            //     continue;
-            // }
-            buf.extend(k.as_str().as_bytes());
-            buf.extend(b": ");
-            buf.extend(v.as_bytes());
-            buf.extend(b"\r\n");
-        }
-        let cl = self.b.req.headers().get(CONTENT_LENGTH);
-        if None == cl && self.b.req.body().len() > 0 {
+        buf.extend(&self.b.bytes.headers);
+        // let cl = self.b.req.headers().get(CONTENT_LENGTH);
+        let cl = self.b.content_len_set;
+        if cl == false && self.b.body.len() > 0 {
             let mut ar = [0u8; 15];
-            self.body_sz = self.b.req.body().len();
+            self.body_sz = self.b.body.len();
             if let Ok(sz) = ::itoa::write(&mut ar[..], self.body_sz) {
-                buf.extend(CONTENT_LENGTH.as_str().as_bytes());
-                buf.extend(b": ");
+                buf.extend(b"Content-Length: ");
                 buf.extend(&ar[..sz]);
                 buf.extend(b"\r\n");
             }
-        } else if let Some(cl) = cl {
-            if let Ok(cl1) = cl.to_str() {
-                self.body_sz = usize::from_str(cl1).unwrap();
-            }
+        } else if cl {
+            self.body_sz = self.b.content_len;
         }
-        if let Some(ref clh) = self.b.req.headers().get(http::header::TRANSFER_ENCODING) {
-            if let Ok(clhs) = clh.to_str() {
-                if "chunked".eq_ignore_ascii_case(clhs) {
-                    self.send_encoding = TransferEncoding::Chunked;
-                    self.body_sz = usize::max_value();
-                }
-            }
+        if self.b.transfer_encoding == TransferEncoding::Chunked {
+            self.send_encoding = TransferEncoding::Chunked;
+            self.body_sz = usize::max_value();
         }
-        if None == self.b.req.headers().get(USER_AGENT) {
-            buf.extend(USER_AGENT.as_str().as_bytes());
+        if self.b.ua_set == false {
+            // buf.extend(USER_AGENT.as_str().as_bytes());
+            buf.extend(b"User-Agent");
             buf.extend(b": ");
             buf.extend((env!("CARGO_PKG_NAME")).as_bytes());
             buf.extend(b" ");
@@ -190,14 +169,13 @@ impl CallImpl {
             buf.extend(b"\r\n");
         }
         if self.b.gzip && !self.b.ws {
-            buf.extend(ACCEPT_ENCODING.as_str().as_bytes());
-            buf.extend(b": gzip\r\n");
+            // buf.extend(ACCEPT_ENCODING.as_str().as_bytes());
+            buf.extend(b"Accept-Encoding: gzip\r\n");
         }
         if self.b.ws {
-            buf.extend(CONNECTION.as_str().as_bytes());
-            buf.extend(b": upgrade\r\n");
-            buf.extend(b"upgrade: websocket\r\n");
-            buf.extend(b"sec-websocket-key: ");
+            buf.extend(b"Connection: upgrade\r\n");
+            buf.extend(b"Upgrade: websocket\r\n");
+            buf.extend(b"Sec-Websocket-Key: ");
             let mut ar = [0u8; 16];
             let mut out = [0u8; 32];
             LittleEndian::write_u64(&mut ar, ::rand::random::<u64>());
@@ -206,138 +184,118 @@ impl CallImpl {
             BASE64.encode_mut(&ar, &mut out[..enc_len]);
             buf.extend(&out[..enc_len]);
             buf.extend(b"\r\n");
-            buf.extend(b"sec-websocket-version: 13\r\n");
-        } else if None == self.b.req.headers().get(CONNECTION) {
-            buf.extend(CONNECTION.as_str().as_bytes());
-            buf.extend(b": keep-alive\r\n");
+            buf.extend(b"Sec-Websocket-Version: 13\r\n");
+        } else if self.b.con_set == false {
+            buf.extend(b"Connection: keep-alive\r\n");
         }
-        if None == self.b.req.headers().get(HOST) {
-            if let Some(h) = self.b.req.uri().host() {
-                buf.extend(HOST.as_str().as_bytes());
-                buf.extend(b": ");
-                buf.extend(h.as_bytes());
-                buf.extend(b"\r\n");
-            }
+        if self.b.host_set == false {
+            buf.extend(b"Host: ");
+            buf.extend(&self.b.bytes.host);
+            buf.extend(b"\r\n");
         }
-        if let Some(auth) = self.b.req.uri().authority_part() {
-            let mut auth = auth.as_str().split("@");
-            if let Some(first) = auth.next() {
-                if auth.next().is_some() {
-                    let mut auth = first.split(":");
-                    if let Some(us) = auth.next() {
-                        if let Some(pw) = auth.next() {
-                            if self.b.digest {
-                                if self.b.auth.hdr.len() > 0 {
-                                    if let Ok(dig) =
-                                        ::types::AuthDigest::parse(self.b.auth.hdr.as_str())
-                                    {
-                                        buf.extend(AUTHORIZATION.as_str().as_bytes());
-                                        buf.extend(b": Digest ");
-                                        buf.extend(b"username=\"");
-                                        buf.extend(us.as_bytes());
-                                        buf.extend(b"\", ");
-                                        buf.extend(b"realm=\"");
-                                        buf.extend(dig.realm.as_bytes());
-                                        buf.extend(b"\", ");
-                                        if dig.qop != DigestQop::None {
-                                            buf.extend(b"qop=");
-                                            buf.extend(dig.qop.as_bytes());
-                                            buf.extend(b", ");
-                                        }
-                                        buf.extend(b"uri=\"");
-                                        Self::extend_full_path(buf, self.b.req.uri());
-                                        buf.extend(b"\", ");
-                                        buf.extend(b"opaque=\"");
-                                        buf.extend(dig.opaque.as_bytes());
-                                        buf.extend(b"\", ");
-                                        buf.extend(b"nonce=\"");
-                                        buf.extend(dig.nonce.as_bytes());
-                                        buf.extend(b"\", ");
-                                        let cnoncebin = ::rand::random::<[u8; 32]>();
-                                        let mut cnonce = [0u8; 64];
-                                        let cnonce_len = BASE64.encode_len(cnoncebin.len());
-                                        BASE64.encode_mut(&cnoncebin, &mut cnonce[..cnonce_len]);
-                                        buf.extend(b"cnonce=\"");
-                                        buf.extend(&cnonce[..cnonce_len]);
-                                        buf.extend(b"\", ");
-                                        // For now only a single request per www auth data
-                                        buf.extend(b"nc=00000001");
-                                        // buf.extend(&cnonce[..enc_len]);
-                                        buf.extend(b", ");
-                                        let mut ha1 = [0u8; 32];
-                                        let mut ha2 = [0u8; 32];
-                                        let mut md5 = md5::Context::new();
-                                        md5.consume(us.as_bytes());
-                                        md5.consume(":");
-                                        md5.consume(dig.realm.as_bytes());
-                                        md5.consume(":");
-                                        md5.consume(pw.as_bytes());
-                                        let d = md5.compute();
-                                        HEXLOWER.encode_mut(&d.0, &mut ha1);
-                                        if dig.alg == DigestAlg::MD5Sess {
-                                            let mut md5 = md5::Context::new();
-                                            md5.consume(&ha1);
-                                            md5.consume(":");
-                                            md5.consume(dig.nonce.as_bytes());
-                                            md5.consume(":");
-                                            md5.consume(&cnonce[..cnonce_len]);
-                                            let d = md5.compute();
-                                            HEXLOWER.encode_mut(&d.0, &mut ha1);
-                                        }
-                                        if dig.qop == DigestQop::Auth || dig.qop == DigestQop::None
-                                        {
-                                            let mut md5 = md5::Context::new();
-                                            md5.consume(self.b.req.method().as_str().as_bytes());
-                                            md5.consume(":");
-                                            md5.consume(self.b.req.uri().path().as_bytes());
-                                            if let Some(q) = self.b.req.uri().query() {
-                                                md5.consume(b"?");
-                                                md5.consume(q.as_bytes());
-                                            }
-                                            let d = md5.compute();
-                                            HEXLOWER.encode_mut(&d.0, &mut ha2);
-                                        }
-                                        let mut md5 = md5::Context::new();
-                                        md5.consume(&ha1);
-                                        md5.consume(":");
-                                        md5.consume(dig.nonce.as_bytes());
-                                        if dig.qop != DigestQop::None {
-                                            md5.consume(":00000001:");
-                                            md5.consume(&cnonce[..cnonce_len]);
-                                            md5.consume(":");
-                                            md5.consume(dig.qop.as_bytes());
-                                        }
-                                        md5.consume(":");
-                                        md5.consume(&ha2);
-                                        let d = md5.compute();
-                                        HEXLOWER.encode_mut(&d.0, &mut ha1);
-                                        buf.extend(b"response=\"");
-                                        buf.extend(&ha1);
-                                        buf.extend(b"\"\r\n");
-                                    }
-                                }
-                            } else {
-                                buf.extend(AUTHORIZATION.as_str().as_bytes());
-                                buf.extend(b": Basic ");
-                                let enc_len = BASE64.encode_len(us.len() + 1 + pw.len());
-                                if BASE64.encode_len(us.len() + 1 + pw.len()) < 512 {
-                                    let mut ar = [0u8; 512];
-                                    let mut out = [0u8; 512];
-                                    (&mut ar[..us.len()]).copy_from_slice(us.as_bytes());
-                                    (&mut ar[us.len()..us.len() + 1]).copy_from_slice(b":");
-                                    (&mut ar[us.len() + 1..us.len() + 1 + pw.len()])
-                                        .copy_from_slice(pw.as_bytes());
-                                    BASE64.encode_mut(
-                                        &ar[..us.len() + 1 + pw.len()],
-                                        &mut out[..enc_len],
-                                    );
-                                    buf.extend(&out[..enc_len]);
-                                    buf.extend(b"\r\n");
-                                }
-                            }
-                        }
+        if self.b.digest {
+            if self.b.auth.hdr.len() > 0 {
+                if let Ok(dig) = ::types::AuthDigest::parse(self.b.auth.hdr.as_str()) {
+                    buf.extend(b"Authorization: Digest ");
+                    buf.extend(b"username=\"");
+                    buf.extend(&self.b.bytes.us);
+                    buf.extend(b"\", ");
+                    buf.extend(b"realm=\"");
+                    buf.extend(dig.realm.as_bytes());
+                    buf.extend(b"\", ");
+                    if dig.qop != DigestQop::None {
+                        buf.extend(b"qop=");
+                        buf.extend(dig.qop.as_bytes());
+                        buf.extend(b", ");
                     }
+                    buf.extend(b"uri=\"");
+                    // Self::extend_full_path(buf, self.b.req.uri());
+                    buf.extend(&self.b.bytes.path);
+                    buf.extend(&self.b.bytes.query);
+                    buf.extend(b"\", ");
+                    buf.extend(b"opaque=\"");
+                    buf.extend(dig.opaque.as_bytes());
+                    buf.extend(b"\", ");
+                    buf.extend(b"nonce=\"");
+                    buf.extend(dig.nonce.as_bytes());
+                    buf.extend(b"\", ");
+                    let cnoncebin = ::rand::random::<[u8; 32]>();
+                    let mut cnonce = [0u8; 64];
+                    let cnonce_len = BASE64.encode_len(cnoncebin.len());
+                    BASE64.encode_mut(&cnoncebin, &mut cnonce[..cnonce_len]);
+                    buf.extend(b"cnonce=\"");
+                    buf.extend(&cnonce[..cnonce_len]);
+                    buf.extend(b"\", ");
+                    // For now only a single request per www auth data
+                    buf.extend(b"nc=00000001");
+                    // buf.extend(&cnonce[..enc_len]);
+                    buf.extend(b", ");
+                    let mut ha1 = [0u8; 32];
+                    let mut ha2 = [0u8; 32];
+                    let mut md5 = md5::Context::new();
+                    md5.consume(&self.b.bytes.us);
+                    md5.consume(":");
+                    md5.consume(dig.realm.as_bytes());
+                    md5.consume(":");
+                    md5.consume(&self.b.bytes.pw);
+                    let d = md5.compute();
+                    HEXLOWER.encode_mut(&d.0, &mut ha1);
+                    if dig.alg == DigestAlg::MD5Sess {
+                        let mut md5 = md5::Context::new();
+                        md5.consume(&ha1);
+                        md5.consume(":");
+                        md5.consume(dig.nonce.as_bytes());
+                        md5.consume(":");
+                        md5.consume(&cnonce[..cnonce_len]);
+                        let d = md5.compute();
+                        HEXLOWER.encode_mut(&d.0, &mut ha1);
+                    }
+                    if dig.qop == DigestQop::Auth || dig.qop == DigestQop::None {
+                        let mut md5 = md5::Context::new();
+                        md5.consume(self.b.method.as_str().as_bytes());
+                        md5.consume(":");
+                        md5.consume(&self.b.bytes.path);
+                        md5.consume(&self.b.bytes.query);
+                        // if let Some(q) = self.b.req.uri().query() {
+                        //     md5.consume(b"?");
+                        //     md5.consume(q.as_bytes());
+                        // }
+                        let d = md5.compute();
+                        HEXLOWER.encode_mut(&d.0, &mut ha2);
+                    }
+                    let mut md5 = md5::Context::new();
+                    md5.consume(&ha1);
+                    md5.consume(":");
+                    md5.consume(dig.nonce.as_bytes());
+                    if dig.qop != DigestQop::None {
+                        md5.consume(":00000001:");
+                        md5.consume(&cnonce[..cnonce_len]);
+                        md5.consume(":");
+                        md5.consume(dig.qop.as_bytes());
+                    }
+                    md5.consume(":");
+                    md5.consume(&ha2);
+                    let d = md5.compute();
+                    HEXLOWER.encode_mut(&d.0, &mut ha1);
+                    buf.extend(b"response=\"");
+                    buf.extend(&ha1);
+                    buf.extend(b"\"\r\n");
                 }
+            }
+        } else {
+            buf.extend(b"Authorization: Basic ");
+            let uslen = self.b.bytes.us.len();
+            let pwlen = self.b.bytes.us.len();
+            let enc_len = BASE64.encode_len(uslen + 1 + pwlen);
+            if BASE64.encode_len(uslen + 1 + pwlen) < 512 {
+                let mut ar = [0u8; 512];
+                let mut out = [0u8; 512];
+                (&mut ar[..uslen]).copy_from_slice(&self.b.bytes.us);
+                (&mut ar[uslen..uslen + 1]).copy_from_slice(b":");
+                (&mut ar[uslen + 1..uslen + 1 + pwlen]).copy_from_slice(&self.b.bytes.pw);
+                BASE64.encode_mut(&ar[..uslen + 1 + pwlen], &mut out[..enc_len]);
+                buf.extend(&out[..enc_len]);
+                buf.extend(b"\r\n");
             }
         }
         buf.extend(b"\r\n");
@@ -363,7 +321,7 @@ impl CallImpl {
                 }
             }
             Dir::SendingHdr(pos) => {
-                let mut buf = ::std::mem::replace(&mut self.buf, Vec::new());
+                let mut buf = ::std::mem::replace(&mut self.buf_hdr, Vec::new());
                 if self.hdr_sz == 0 {
                     self.fill_send_req(&mut buf);
                 }
@@ -371,17 +329,17 @@ impl CallImpl {
 
                 let ret = self.event_send_do::<C>(con, cp, 0, &buf[pos..hdr_sz]);
                 // println!("TrySent: {}", String::from_utf8(buf.clone())?);
-                self.buf = buf;
+                self.buf_hdr = buf;
                 if let Dir::SendingBody(_) = self.dir {
-                    self.buf.truncate(0);
+                    self.buf_hdr.truncate(0);
                     // go again
                     return self.event_send::<C>(con, cp, b);
                 } else if let Dir::Receiving(_, _) = self.dir {
-                    self.buf.truncate(0);
+                    self.buf_hdr.truncate(0);
                 }
                 ret
             }
-            Dir::SendingBody(pos) if self.b.req.body().len() > 0 => {
+            Dir::SendingBody(pos) if self.b.body.len() > 0 => {
                 self.event_send_do::<C>(con, cp, pos, &[])
             }
             Dir::SendingBody(_pos) if b.is_some() => {
@@ -392,14 +350,19 @@ impl CallImpl {
         }
     }
 
-    fn maybe_gunzip(&self, buf: Vec<u8>) -> ::Result<Vec<u8>> {
+    fn maybe_gunzip(&self, inbuf: Vec<u8>, extbuf: Option<&mut Vec<u8>>) -> ::Result<Vec<u8>> {
         if self.b.gzip {
-            let mut d = Decoder::new(&buf[..])?;
-            let mut buf = Vec::new();
-            d.read_to_end(&mut buf)?;
-            return Ok(buf);
+            let mut out = Vec::new();
+            let mut d = Decoder::new(&inbuf[..])?;
+            if let Some(ext) = extbuf {
+                d.read_to_end(ext)?;
+                return Ok(out);
+            } else {
+                d.read_to_end(&mut out)?;
+                return Ok(out);
+            }
         }
-        Ok(buf)
+        Ok(inbuf)
     }
 
     pub(crate) fn event_recv<C: TlsConnector>(
@@ -414,18 +377,25 @@ impl CallImpl {
             }
             Dir::Receiving(rec_pos, _) => {
                 if self.hdr_sz == 0 || b.is_none() || self.b.chunked_parse || self.b.gzip {
-                    let mut buf = ::std::mem::replace(&mut self.buf, Vec::new());
+                    let (mut buf, is_hdr) = if self.hdr_sz == 0 {
+                        (::std::mem::replace(&mut self.buf_hdr, Vec::new()), true)
+                    } else {
+                        (::std::mem::replace(&mut self.buf_body, Vec::new()), false)
+                    };
                     // Have we already received everything?
                     // Move body data to beginning of buffer
                     // and return with body.
                     if rec_pos > 0 && rec_pos >= self.body_sz {
-                        unsafe {
-                            let src: *const u8 = buf.as_ptr().offset(self.hdr_sz as isize);
-                            let dst: *mut u8 = buf.as_mut_ptr();
-                            ::std::ptr::copy(src, dst, self.body_sz);
-                        }
                         buf.truncate(self.body_sz);
-                        return Ok(RecvStateInt::DoneWithBody(self.maybe_gunzip(buf)?));
+                        if b.is_some() {
+                            let mut b = b.unwrap();
+                            let len_pre = b.len();
+                            self.maybe_gunzip(buf, Some(b))?;
+                            self.dir = Dir::Done;
+                            return Ok(RecvStateInt::ReceivedBody(b.len() - len_pre));
+                        } else {
+                            return Ok(RecvStateInt::DoneWithBody(self.maybe_gunzip(buf, None)?));
+                        }
                     }
                     let mut ret = self.event_rec_do::<C>(con, cp, true, &mut buf);
 
@@ -434,36 +404,52 @@ impl CallImpl {
                             Err(_) => {}
                             // Ok(RecvStateInt::Error(_)) => {}
                             Ok(RecvStateInt::Response(_, _)) => {}
-                            _ if b.is_some() && !self.b.gzip => {
+                            _ if b.is_some() && !self.b.gzip && Dir::Done != self.dir => {
                                 let b = b.unwrap();
-                                let nc = self.chunked.push_to(self.hdr_sz, &mut buf, b)?;
+                                let nc = self.chunked.push_to(0, &mut buf, b)?;
                                 if nc == 0 {
                                     ret = Ok(RecvStateInt::Wait);
                                 } else {
                                     ret = Ok(RecvStateInt::ReceivedBody(nc));
                                 }
                             }
+                            _ if Dir::Done == self.dir && b.is_none() => {
+                                let mut chunkless = Vec::with_capacity(buf.len());
+                                self.chunked.push_to(0, &mut buf, &mut chunkless)?;
+                                ret = Ok(RecvStateInt::DoneWithBody(self.maybe_gunzip(chunkless, None)?));
+                            }
                             _ if Dir::Done == self.dir => {
-                                let mut b = Vec::with_capacity(buf.len());
-                                self.chunked.push_to(self.hdr_sz, &mut buf, &mut b)?;
-                                ret = Ok(RecvStateInt::DoneWithBody(self.maybe_gunzip(b)?));
+                                let b = b.unwrap();
+                                let len_pre = b.len();
+                                if self.b.gzip {
+                                    let mut chunkless = Vec::with_capacity(buf.len());
+                                    self.chunked.push_to(0, &mut buf, &mut chunkless)?;
+                                    self.maybe_gunzip(chunkless, Some(b))?;
+                                } else {
+                                    self.chunked.push_to(0, &mut buf, b)?;
+                                };
+                                return Ok(RecvStateInt::ReceivedBody(b.len() - len_pre));
                             }
                             _ => {}
                         }
                     }
-                    self.buf = buf;
+                    if is_hdr {
+                        self.buf_hdr = buf;
+                    } else {
+                        self.buf_body = buf;
+                    }
                     ret
                 } else {
                     let mut b = b.unwrap();
                     // Can we copy anything from internal buffer to
                     // a client provided one?
-                    if self.buf.len() > self.hdr_sz {
-                        (&mut b).extend(&self.buf[self.hdr_sz..]);
+                    if self.buf_body.len() > 0 {
+                        (&mut b).extend(&self.buf_body[..]);
                         if rec_pos >= self.body_sz {
                             self.dir = Dir::Done;
-                            return Ok(RecvStateInt::ReceivedBody(self.buf.len() - self.hdr_sz));
+                            return Ok(RecvStateInt::ReceivedBody(self.buf_body.len()));
                         }
-                        self.buf.truncate(self.hdr_sz);
+                        self.buf_body.truncate(0);
                     }
                     self.event_rec_do::<C>(con, cp, false, b)
                 }
@@ -480,7 +466,7 @@ impl CallImpl {
         in_pos: usize,
         b: &[u8],
     ) -> ::Result<SendStateInt> {
-        con.signalled::<C, Vec<u8>>(cp, &self.b.req).map_err(|e| {
+        con.signalled::<C, Vec<u8>>(cp, &self.b).map_err(|e| {
             con.set_to_close(true);
             e
         })?;
@@ -492,7 +478,7 @@ impl CallImpl {
             if b.len() > 0 {
                 io_ret = con.write(&b[in_pos..]);
             } else {
-                io_ret = con.write(&self.b.req.body()[in_pos..]);
+                io_ret = con.write(&self.b.body[in_pos..]);
             }
             match &io_ret {
                 &Err(ref ie) => {
@@ -553,13 +539,10 @@ impl CallImpl {
         let mut orig_len = self.reserve_space(internal, buf)?;
         let mut io_ret;
         let mut entire_sz = 0;
-        con.signalled::<C, Vec<u8>>(cp, &self.b.req).map_err(|e| {
+        con.signalled::<C, Vec<u8>>(cp, &self.b).map_err(|e| {
             con.set_to_close(true);
             e
         })?;
-        // if !self.con.ready.is_readable() {
-        //     return Ok(RecvState::Nothing);
-        // }
         loop {
             io_ret = con.read(&mut buf[orig_len..]);
             match &io_ret {
@@ -596,137 +579,32 @@ impl CallImpl {
             }
             Ok(bytes_rec) => {
                 if self.hdr_sz == 0 {
-                    let mut headers = [httparse::EMPTY_HEADER; 32];
-                    let mut presp = ParseResp::new(&mut headers);
+                    let mut auth_info = None;
+                    let mut resp = ::Response::new();
                     // if let Ok(sx) = String::from_utf8(Vec::from(&buf[0..60])) {
-                    //     println!("Got ({}): {}", self.b.req.uri(), sx);
+                    //     println!("Got: {}", sx);
                     // }
-                    let buflen = buf.len();
-                    match presp.parse(buf) {
-                        Ok(httparse::Status::Complete(hdr_sz)) => {
-                            self.hdr_sz = hdr_sz;
-                            let mut b = RespBuilder::new();
-                            for h in presp.headers.iter() {
-                                b.header(h.name, h.value);
+                    match self.read_hdr(con, buf, &mut resp, &mut auth_info) {
+                        Ok(()) => {
+                            if self.hdr_sz == 0 {
+                                return Ok(RecvStateInt::Wait);
                             }
-                            if let Some(status) = presp.code {
-                                b.status(status);
-                            }
-                            if let Some(v) = presp.version {
-                                if v == 0 {
-                                    b.version(Version::HTTP_10);
-                                } else if v == 1 {
-                                    b.version(Version::HTTP_11);
-                                }
-                            }
-                            let resp = b.body(Vec::new())?;
-                            if let Some(ref clh) = resp.headers().get(http::header::CONTENT_LENGTH)
-                            {
-                                if let Ok(clhs) = clh.to_str() {
-                                    if let Ok(bsz) = usize::from_str(clhs) {
-                                        self.body_sz = bsz;
-                                    }
-                                }
-                            }
-                            if let Some(ref clh) = resp.headers().get(http::header::CONNECTION) {
-                                if let Ok(clhs) = clh.to_str() {
-                                    if "close".eq_ignore_ascii_case(clhs) {
-                                        con.set_to_close(true);
-                                    }
-                                }
-                            }
-                            if let Some(ref clh) =
-                                resp.headers().get(http::header::CONTENT_ENCODING)
-                            {
-                                if let Ok(clhs) = clh.to_str() {
-                                    if !"gzip".eq_ignore_ascii_case(clhs) {
-                                        self.b.gzip = false;
-                                    } else {
-                                        self.b.gzip = true;
-                                    }
-                                } else {
-                                    self.b.gzip = false;
-                                }
-                            } else {
-                                self.b.gzip = false;
-                            }
-                            if let Some(ref clh) =
-                                resp.headers().get(http::header::TRANSFER_ENCODING)
-                            {
-                                if let Ok(clhs) = clh.to_str() {
-                                    if "chunked".eq_ignore_ascii_case(clhs) {
-                                        self.body_sz = usize::max_value();
-                                    } else {
-                                        self.b.chunked_parse = false;
-                                    }
-                                } else {
-                                    self.b.chunked_parse = false;
-                                }
-                            } else {
-                                self.b.chunked_parse = false;
-                            }
+                            buf.truncate(self.hdr_sz);
+                            ::std::mem::swap(&mut resp.hdrs, buf);
 
-                            let status_code = resp.status().as_u16();
-                            let auth_info = if status_code == 401 {
-                                if let Some(ref clh) =
-                                    resp.headers().get(http::header::WWW_AUTHENTICATE)
-                                {
-                                    if let Ok(s) = clh.to_str() {
-                                        let mut auth_type = s.split_whitespace();
-                                        if let Some(auth_type) = auth_type.next() {
-                                            if auth_type.eq_ignore_ascii_case("digest") {
-                                                if ::types::AuthDigest::parse(s).is_ok() {
-                                                    self.dir == Dir::Done;
-                                                    Some(AuthenticateInfo::new(String::from(s)))
-                                                // return Ok(RecvStateInt::DigestAuth(resp,::AuthenticateInfo::new(String::from(s))));
-                                                } else {
-                                                    None
-                                                }
-                                            } else if auth_type.eq_ignore_ascii_case("basic")
-                                                && self.b.digest
-                                            {
-                                                return Ok(RecvStateInt::BasicAuth);
-                                            } else {
-                                                None
-                                            }
-                                        } else {
-                                            None
-                                        }
-                                    } else {
-                                        None
-                                    }
-                                } else {
-                                    None
+                            if resp.status == 401 {
+                                if let Some(auth) = auth_info {
+                                    return Ok(RecvStateInt::DigestAuth(resp, auth));
+                                } else if self.b.digest {
+                                    return Ok(RecvStateInt::BasicAuth);
                                 }
-                            } else {
-                                None
-                            };
-                            if let Some(auth_info) = auth_info {
-                                return Ok(RecvStateInt::DigestAuth(resp, auth_info));
                             }
-                            // If switching protocols body is unlimited
-                            if status_code == 101 {
-                                con.set_to_close(true);
-                                self.body_sz = usize::max_value();
-                                self.dir = Dir::Receiving(buflen - self.hdr_sz, true);
+                            if resp.status == 101 {
                                 return Ok(RecvStateInt::Response(resp, ::ResponseBody::Streamed));
-                            } else if status_code >= 300 && status_code < 400 {
+                            }  else if resp.status >= 300 && resp.status < 400 {
                                 return Ok(RecvStateInt::Redirect(resp));
-                            // if let Some(ref clh) = resp.headers().get(http::header::LOCATION) {
-                            //     if let Ok(s) = clh.to_str() {
-                            //     }
-                            // }
-                            } else if self.body_sz == 0 {
-                                self.dir == Dir::Done;
-                            } else {
-                                self.dir = Dir::Receiving(buflen - self.hdr_sz, false);
                             }
                             if self.b.chunked_parse {
-                                if self.chunked
-                                    .check_done(self.b.max_chunk, &buf[self.hdr_sz..])?
-                                {
-                                    self.dir = Dir::Done;
-                                }
                                 return Ok(RecvStateInt::Response(resp, ::ResponseBody::Streamed));
                             } else {
                                 return Ok(RecvStateInt::Response(
@@ -735,11 +613,8 @@ impl CallImpl {
                                 ));
                             }
                         }
-                        Ok(httparse::Status::Partial) => {
-                            return Ok(RecvStateInt::Wait);
-                        }
                         Err(e) => {
-                            return Err(From::from(e));
+                            return Err(e);
                         }
                     }
                 } else {
@@ -757,7 +632,7 @@ impl CallImpl {
                         let mut chunked_done = false;
                         if self.b.chunked_parse {
                             if self.chunked
-                                .check_done(self.b.max_chunk, &buf[self.hdr_sz..])?
+                                .check_done(self.b.max_chunk, &buf)?
                             {
                                 chunked_done = true;
                                 self.dir = Dir::Done;
@@ -775,4 +650,108 @@ impl CallImpl {
             }
         }
     }
+
+    fn read_hdr(&mut self, con: &mut Con, buf: &mut Vec<u8>, resp: &mut ::Response, auth_info: &mut Option<AuthenticateInfo>) -> ::Result<()> {
+        let mut headers = [httparse::EMPTY_HEADER; 32];
+        let mut presp = ParseResp::new(&mut headers);
+        let buflen = buf.len();
+        match presp.parse(buf) {
+            Ok(httparse::Status::Complete(hdr_sz)) => {
+                self.hdr_sz = hdr_sz;
+                if hdr_sz < buflen {
+                    self.buf_body.extend_from_slice(&buf[hdr_sz..]);
+                }
+                resp.status = presp.code.unwrap_or(0);
+                let mut chunked_parse = false;
+                let mut gzip = false;
+                for h in presp.headers.iter() {
+                    if h.name.eq_ignore_ascii_case("content-length") {
+                        if let Ok(val) = from_utf8(h.value) {
+                            if let Ok(bsz) = usize::from_str(val) {
+                                self.body_sz = bsz;
+                            }
+                        }
+                    } else if h.name.eq_ignore_ascii_case("connection") {
+                        if let Ok(val) = from_utf8(h.value) {
+                            if val.eq_ignore_ascii_case("close") {
+                                con.set_to_close(true);
+                            }
+                        }
+                    } else if h.name.eq_ignore_ascii_case("content-encoding") {
+                        if let Ok(val) = from_utf8(h.value) {
+                            if val.eq_ignore_ascii_case("gzip") {
+                                gzip = true;
+                            }
+                        }
+                    } else if h.name.eq_ignore_ascii_case("transfer-encoding") {
+                        if let Ok(val) = from_utf8(h.value) {
+                            if val.eq_ignore_ascii_case("chunked") {
+                                self.body_sz = usize::max_value();
+                                chunked_parse = true;
+                            }
+                        }
+                    } else if h.name.eq_ignore_ascii_case("upgrade") {
+                        if let Ok(val) = from_utf8(h.value) {
+                            if val.eq_ignore_ascii_case("websocket") {
+                                resp.ws = true;
+                            }
+                        }
+                    } else if resp.status == 401 && h.name.eq_ignore_ascii_case("www-authenticate") {
+                        if let Ok(val) = from_utf8(h.value) {
+                            let mut auth_type = val.split_whitespace();
+                            if let Some(auth_type) = auth_type.next() {
+                                if auth_type.eq_ignore_ascii_case("digest") {
+                                    if ::types::AuthDigest::parse(val).is_ok() {
+                                        self.dir == Dir::Done;
+                                        *auth_info = Some(AuthenticateInfo::new(String::from(val)));
+                                    }
+                                } else if auth_type.eq_ignore_ascii_case("basic")
+                                    && self.b.digest
+                                {
+                                    return Ok(());
+                                }
+                            }
+                        }
+                    }
+                }
+                if !chunked_parse {
+                    self.b.chunked_parse = false;
+                }
+                if !gzip {
+                    self.b.gzip = false;
+                }
+                if auth_info.is_some() {
+                    return Ok(());
+                }
+                // If switching protocols body is unlimited
+                if resp.status == 101 {
+                    con.set_to_close(true);
+                    self.body_sz = usize::max_value();
+                    self.dir = Dir::Receiving(buflen - self.hdr_sz, true);
+                    return Ok(());
+                } else if resp.status >= 300 && resp.status < 400 {
+                    return Ok(());
+                } else if self.body_sz == 0 {
+                    self.dir == Dir::Done;
+                } else {
+                    self.dir = Dir::Receiving(buflen - self.hdr_sz, false);
+                }
+                if self.b.chunked_parse {
+                    if self.chunked
+                        .check_done(self.b.max_chunk, &buf[self.hdr_sz..])?
+                    {
+                        self.dir = Dir::Done;
+                    }
+                }
+                return Ok(());
+            }
+            Ok(httparse::Status::Partial) => {
+                return Ok(())
+            }
+            Err(e) => {
+                return Err(From::from(e));
+            }
+        }
+    }
 }
+

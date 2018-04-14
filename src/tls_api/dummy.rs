@@ -28,11 +28,11 @@ impl tls_api::TlsConnectorBuilder for TlsConnectorBuilder {
         Err(Error::Other("No TLS"))
     }
 
-    fn add_der_certificate(&mut self, cert: &[u8]) -> Result<&mut Self> {
+    fn add_der_certificate(&mut self, _cert: &[u8]) -> Result<&mut Self> {
         Err(Error::Other("No TLS"))
     }
 
-    fn add_pem_certificate(&mut self, cert: &[u8]) -> Result<&mut Self> {
+    fn add_pem_certificate(&mut self, _cert: &[u8]) -> Result<&mut Self> {
         Err(Error::Other("No TLS"))
     }
 
@@ -40,7 +40,6 @@ impl tls_api::TlsConnectorBuilder for TlsConnectorBuilder {
         Err(Error::Other("No TLS"))
     }
 }
-
 
 impl tls_api::TlsConnector for TlsConnector {
     type Builder = TlsConnectorBuilder;
@@ -51,8 +50,8 @@ impl tls_api::TlsConnector for TlsConnector {
 
     fn connect<S>(
         &self,
-        domain: &str,
-        stream: S,
+        _domain: &str,
+        _stream: S,
     ) -> result::Result<tls_api::TlsStream<S>, tls_api::HandshakeError<S>>
     where
         S: io::Read + io::Write + fmt::Debug + Send + Sync + 'static,
@@ -64,7 +63,7 @@ impl tls_api::TlsConnector for TlsConnector {
         S,
     >(
         &self,
-        stream: S,
+        _stream: S,
     ) -> result::Result<tls_api::TlsStream<S>, tls_api::HandshakeError<S>>
     where
         S: io::Read + io::Write + fmt::Debug + Send + Sync + 'static,
@@ -76,9 +75,9 @@ impl tls_api::TlsConnector for TlsConnector {
 // TlsAcceptor and TlsAcceptorBuilder
 
 impl TlsAcceptorBuilder {
-    pub fn from_pkcs12(pkcs12: &[u8], password: &str) -> Result<TlsAcceptorBuilder> {
-        Err(Error::Other("No TLS"))
-    }
+    // pub fn from_pkcs12(_pkcs12: &[u8], _password: &str) -> Result<TlsAcceptorBuilder> {
+    //     Err(Error::Other("No TLS"))
+    // }
 }
 
 impl tls_api::TlsAcceptorBuilder for TlsAcceptorBuilder {

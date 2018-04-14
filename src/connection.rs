@@ -8,42 +8,42 @@ use mio::{Poll, PollOpt, Ready, Token};
 use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
 use std::time::{Duration, Instant};
-use http::{Request, Uri};
+// use http::{Request, Uri};
 use std::io::{Read, Write};
-use types::{CallParam, RecvStateInt, SendStateInt};
+use types::{CallBuilderImpl, CallParam, RecvStateInt, SendStateInt};
 use fnv::FnvHashMap as HashMap;
 use smallvec::SmallVec;
 use call::CallImpl;
 use slab::Slab;
 
-fn is_https(url: &Uri) -> Result<bool> {
-    if let Some(scheme) = url.scheme_part() {
-        if scheme == "https" {
-            return Ok(true);
-        } else if scheme == "http" {
-            return Ok(false);
-        } else if scheme == "ws" {
-            return Ok(false);
-        } else if scheme == "wss" {
-            return Ok(true);
-        } else {
-            return Err(::Error::InvalidScheme);
-        }
-    } else {
-        return Err(::Error::InvalidScheme);
-    }
-}
+// fn is_https(url: &Uri) -> Result<bool> {
+//     if let Some(scheme) = url.scheme_part() {
+//         if scheme == "https" {
+//             return Ok(true);
+//         } else if scheme == "http" {
+//             return Ok(false);
+//         } else if scheme == "ws" {
+//             return Ok(false);
+//         } else if scheme == "wss" {
+//             return Ok(true);
+//         } else {
+//             return Err(::Error::InvalidScheme);
+//         }
+//     } else {
+//         return Err(::Error::InvalidScheme);
+//     }
+// }
 
-fn url_port(url: &Uri) -> Result<u16> {
-    if let Some(p) = url.port() {
-        return Ok(p);
-    }
-    if is_https(url)? {
-        Ok(443)
-    } else {
-        Ok(80)
-    }
-}
+// fn url_port(url: &Uri) -> Result<u16> {
+//     if let Some(p) = url.port() {
+//         return Ok(p);
+//     }
+//     if is_https(url)? {
+//         Ok(443)
+//     } else {
+//         Ok(80)
+//     }
+// }
 
 fn connect(addr: SocketAddr) -> Result<TcpStream> {
     let tcp = TcpStream::connect(&addr)?;
@@ -73,15 +73,15 @@ pub struct Con {
 impl Con {
     pub fn new<C: TlsConnector, T>(
         token: Token,
-        req: &Request<T>,
+        cb: &CallBuilderImpl,
         cache: &mut DnsCache,
-        poll: &Poll,
+        // poll: &Poll,
         dns_timeout: u64,
         insecure: bool,
     ) -> Result<Con> {
         let rdy = Ready::writable();
-        let port = url_port(req.uri())?;
-        if req.uri().host().is_none() {
+        let port = cb.port; //url_port(req.uri())?;
+        if cb.bytes.host.len() == 0 {
             return Err(::Error::NoHost);
         }
         let mut res = Con {
@@ -94,9 +94,9 @@ impl Con {
             sock: None,
             dns: None,
             insecure,
-            host: ConHost::new(req.uri().host().unwrap().as_bytes()),
+            host: ConHost::new(&cb.bytes.host),
             idle_since: Instant::now(),
-            is_tls: is_https(req.uri())?,
+            is_tls: cb.tls, //is_https(req.uri())?,
             tls: None,
             mid_tls: None,
             signalled: false,
@@ -170,13 +170,13 @@ impl Con {
         false
     }
 
-    pub fn close(&mut self) {
-        self.sock = None;
-        self.tls = None;
-        // self.dns_sock = None;
-        self.dns = None;
-        self.is_closed = true;
-    }
+    // pub fn close(&mut self) {
+    //     self.sock = None;
+    //     self.tls = None;
+    //     // self.dns_sock = None;
+    //     self.dns = None;
+    //     self.is_closed = true;
+    // }
 
     #[inline]
     pub fn is_closed(&self) -> bool {
@@ -200,10 +200,10 @@ impl Con {
     pub fn set_to_close(&mut self, b: bool) {
         self.to_close = b;
     }
-    #[inline]
-    pub fn to_close(&self) -> bool {
-        self.to_close
-    }
+    // #[inline]
+    // pub fn to_close(&self) -> bool {
+    //     self.to_close
+    // }
 
     pub fn reg(&mut self, poll: &Poll, rdy: Ready) -> ::std::io::Result<()> {
         if self.reg_for.contains(rdy) {
@@ -221,7 +221,7 @@ impl Con {
     pub fn signalled<'a, C: TlsConnector, T>(
         &mut self,
         cp: &mut CallParam,
-        req: &Request<T>,
+        req: &CallBuilderImpl,
     ) -> Result<()> {
         if !self.signalled {
             return Ok(());
@@ -233,10 +233,9 @@ impl Con {
                 if let Some(ip) = dns::dns_parse(&buf[..sz]) {
                     // let host = req.uri().host().unwrap();
                     cp.dns.save(self.host.as_ref(), ip);
-                    let port = url_port(req.uri())?;
                     self.dns = None;
                     self.deregister(cp.poll)?;
-                    self.sock = Some(connect(SocketAddr::new(ip, port))?);
+                    self.sock = Some(connect(SocketAddr::new(ip, req.port))?);
                     self.reg_for = Ready::writable();
                     self.register(cp.poll, self.token, self.reg_for, PollOpt::edge())?;
 
@@ -428,7 +427,6 @@ pub struct ConTable {
     cons: Slab<(Con, SmallVec<[CallImpl; 2]>)>,
     // con that can be used for new requests
     keepalive: HashMap<ConHost, u16>,
-    empty_slots: usize,
 }
 
 impl ConTable {
@@ -436,7 +434,6 @@ impl ConTable {
         ConTable {
             keepalive: HashMap::with_capacity_and_hasher(4, Default::default()),
             cons: Slab::with_capacity(4),
-            empty_slots: 0,
         }
     }
 
@@ -470,9 +467,11 @@ impl ConTable {
                     if now - call.start_time() >= call.settings().dur {
                         out.push(CallRef::new(con_id as u16, call_id));
                     } else if call_id == 0 {
-                        if let Some(host) = call.settings().req.uri().host() {
-                            con.timeout(now, host);
-                        }
+                        // if let Some(host) = call.settings().bytes.host() {
+                        let host =
+                            unsafe { ::std::str::from_utf8_unchecked(&call.settings().bytes.host) };
+                        con.timeout(now, host);
+                        // }
                     }
                 }
                 call_id += 1;
@@ -537,7 +536,7 @@ impl ConTable {
         Ok(Some(key as u16))
     }
 
-    pub fn push_ka_con(&mut self, con: u16, call: CallImpl, poll: &Poll) -> Result<()> {
+    pub fn push_ka_con(&mut self, con: u16, call: CallImpl) -> Result<()> {
         // self.cons[con as usize].0.update_token(poll, con as usize)?;
         self.cons[con as usize].1.push(call);
         Ok(())
@@ -560,10 +559,10 @@ impl ConTable {
         }
     }
 
-    pub fn try_keepalive(&mut self, host: &str, poll: &Poll) -> Option<u16> {
+    pub fn try_keepalive(&mut self, host: &[u8], poll: &Poll) -> Option<u16> {
         // let mut cons_to_close: SmallVec<[u16; 16]> = SmallVec::new();
         let con_to_close;
-        let nh = ConHost::new(host.as_bytes());
+        let nh = ConHost::new(host);
         if let Some(con) = self.keepalive.remove(&nh) {
             self.cons[con as usize].0.set_idle(false);
             if self.cons[con as usize].0.reuse(poll).is_ok() {
@@ -578,20 +577,20 @@ impl ConTable {
         None
     }
 
-    pub fn close_call(&mut self, con: u16, call: u16) -> (::types::CallBuilderImpl, Vec<u8>) {
+    pub fn close_call(&mut self, con: u16, call: u16) -> (::types::CallBuilderImpl, Vec<u8>, Vec<u8>) {
         let con = con as usize;
         let call: CallImpl = Self::extract_call(call, &mut self.cons[con].1);
-        let (builder, call_buf) = call.stop();
+        let (builder, hdr_buf, body_buf) = call.stop();
         // println!("close_call {} {} {}",con, self.cons[con].0.to_close, self.cons.len());
         {
-            let uri = builder.req.uri();
-            if !self.cons[con].0.to_close && uri.host().is_some() {
+            let host = &builder.bytes.host;
+            if !self.cons[con].0.to_close {
                 if self.cons[con].1.len() == 0 {
                     self.cons[con].0.set_idle(true);
                 } else {
                     self.cons[con].0.first_use_done();
                 }
-                let nh = ConHost::new(uri.host().unwrap().as_bytes());
+                let nh = ConHost::new(host);
                 if self.keepalive.contains_key(&nh) {
                     let mut doclose = false;
                     {
@@ -611,7 +610,7 @@ impl ConTable {
                 self.close_con(con);
             }
         }
-        (builder, call_buf)
+        (builder, hdr_buf, body_buf)
     }
 
     fn close_con(&mut self, toclose: usize) {

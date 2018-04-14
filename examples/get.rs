@@ -21,14 +21,15 @@ fn do_call(htp: &mut Httpc, poll: &Poll, mut call: SimpleCall) {
 
             if call.is_call(&cref) {
                 if call.perform(htp, &poll).expect("Call failed") {
-                    let mut resp = call.finish().expect("No response");
-                    // println!("done req");
-                    println!("Headers={:?}", resp.headers());
-                    let v = mio_httpc::extract_body(&mut resp);
-                    if let Ok(s) = String::from_utf8(v.clone()) {
+                    let (resp,body) = call.finish().expect("No response");
+                    println!("done req = {}",resp.status);
+                    for h in resp.headers() {
+                        println!("Header={}", h);
+                    }
+                    if let Ok(s) = String::from_utf8(body.clone()) {
                         println!("Body: {}", s);
                     } else {
-                        println!("Non utf8 body sized: {}", v.len());
+                        println!("Non utf8 body sized: {}", body.len());
                     }
                     break 'outer;
                 }
@@ -39,7 +40,11 @@ fn do_call(htp: &mut Httpc, poll: &Poll, mut call: SimpleCall) {
 
 fn main() {
     let poll = Poll::new().unwrap();
-    let args: Vec<String> = ::std::env::args().collect();
+    let mut args: Vec<String> = ::std::env::args().collect();
+
+    if args.len() == 1 {
+        args.push("https://www.reddit.com".to_string());
+    }
 
     let cfg = if let Ok(cfg) = read_certs() {
         Some(cfg)
@@ -50,7 +55,8 @@ fn main() {
 
     for i in 1..args.len() {
         println!("Get {}", args[i].as_str());
-        let call = CallBuilder::get(args[i].as_str())
+        let call = CallBuilder::get()
+            .url(args[i].as_str()).expect("Invalid url")
             .timeout_ms(10000)
             .digest_auth(true)
             // .insecure_do_not_verify_domain()

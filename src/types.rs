@@ -1,23 +1,27 @@
 use dns_cache::DnsCache;
 use mio::Poll;
-use http::Request;
 use std::time::Duration;
 use httpc::HttpcImpl;
 use tls_api::TlsConnector;
 use pest::Parser;
+use smallvec::SmallVec;
+use percent_encoding::{utf8_percent_encode, PATH_SEGMENT_ENCODE_SET, QUERY_ENCODE_SET,
+                       USERINFO_ENCODE_SET};
+use std::str::{FromStr, from_utf8_unchecked};
+use url::Url;
 
 #[derive(Debug)]
 pub(crate) enum RecvStateInt {
     // Error(::Error),
-    Response(::http::Response<Vec<u8>>, ::ResponseBody),
-    DigestAuth(::http::Response<Vec<u8>>, AuthenticateInfo),
+    Response(::Response, ::ResponseBody),
+    DigestAuth(::Response, AuthenticateInfo),
     ReceivedBody(usize),
     DoneWithBody(Vec<u8>),
     Sending,
     Done,
     Wait,
     BasicAuth,
-    Redirect(::http::Response<Vec<u8>>),
+    Redirect(::Response),
     Retry(::Error),
 }
 
@@ -30,37 +34,6 @@ pub enum SendStateInt {
     Wait,
     Retry(::Error),
 }
-
-// from http crate to check URI and percent encode if required
-pub const URI_CHARS: [u8; 256] = [
-    //  0      1      2      3      4      5      6      7      8      9
-        0,     0,     0,     0,     0,     0,     0,     0,     0,     0, //   x
-        0,     0,     0,     0,     0,     0,     0,     0,     0,     0, //  1x
-        0,     0,     0,     0,     0,     0,     0,     0,     0,     0, //  2x
-        0,     0,     0,  b'!',     0,  b'#',  b'$',     0,  b'&', b'\'', //  3x
-     b'(',  b')',  b'*',  b'+',  b',',  b'-',  b'.',  b'/',  b'0',  b'1', //  4x
-     b'2',  b'3',  b'4',  b'5',  b'6',  b'7',  b'8',  b'9',  b':',  b';', //  5x
-        0,  b'=',     0,  b'?',  b'@',  b'A',  b'B',  b'C',  b'D',  b'E', //  6x
-     b'F',  b'G',  b'H',  b'I',  b'J',  b'K',  b'L',  b'M',  b'N',  b'O', //  7x
-     b'P',  b'Q',  b'R',  b'S',  b'T',  b'U',  b'V',  b'W',  b'X',  b'Y', //  8x
-     b'Z',  b'[',     0,  b']',     0,  b'_',     0,  b'a',  b'b',  b'c', //  9x
-     b'd',  b'e',  b'f',  b'g',  b'h',  b'i',  b'j',  b'k',  b'l',  b'm', // 10x
-     b'n',  b'o',  b'p',  b'q',  b'r',  b's',  b't',  b'u',  b'v',  b'w', // 11x
-     b'x',  b'y',  b'z',     0,     0,     0,  b'~',     0,     0,     0, // 12x
-        0,     0,     0,     0,     0,     0,     0,     0,     0,     0, // 13x
-        0,     0,     0,     0,     0,     0,     0,     0,     0,     0, // 14x
-        0,     0,     0,     0,     0,     0,     0,     0,     0,     0, // 15x
-        0,     0,     0,     0,     0,     0,     0,     0,     0,     0, // 16x
-        0,     0,     0,     0,     0,     0,     0,     0,     0,     0, // 17x
-        0,     0,     0,     0,     0,     0,     0,     0,     0,     0, // 18x
-        0,     0,     0,     0,     0,     0,     0,     0,     0,     0, // 19x
-        0,     0,     0,     0,     0,     0,     0,     0,     0,     0, // 20x
-        0,     0,     0,     0,     0,     0,     0,     0,     0,     0, // 21x
-        0,     0,     0,     0,     0,     0,     0,     0,     0,     0, // 22x
-        0,     0,     0,     0,     0,     0,     0,     0,     0,     0, // 23x
-        0,     0,     0,     0,     0,     0,     0,     0,     0,     0, // 24x
-        0,     0,     0,     0,     0,     0                              // 25x
-];
 
 #[derive(Parser)]
 #[grammar = "auth.pest"] // relative to src
@@ -181,7 +154,7 @@ impl<'a> AuthDigest<'a> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub(crate) struct AuthenticateInfo {
     pub(crate) nc: usize,
     pub(crate) hdr: String,
@@ -296,24 +269,117 @@ fn ascii_hex_to_num(ch: u8) -> Option<usize> {
         _ => None,
     }
 }
+type AuthBuf = SmallVec<[u8; 32]>;
+type HostBuf = SmallVec<[u8; 64]>;
+type PathBuf = SmallVec<[u8; 256]>;
+type QueryBuf = SmallVec<[u8; 256]>;
+type HeaderBuf = SmallVec<[u8; 1024 * 2]>;
+
+#[derive(Debug, Default)]
+pub struct CallBytes {
+    pub us: AuthBuf,
+    pub pw: AuthBuf,
+    pub host: HostBuf,
+    pub path: PathBuf,
+    pub query: QueryBuf,
+    pub headers: HeaderBuf,
+}
+
+impl CallBytes {
+    fn host_as_str(&self) -> &str {
+        unsafe { from_utf8_unchecked(&self.host) }
+    }
+
+    fn us_as_str(&self) -> &str {
+        unsafe { from_utf8_unchecked(&self.us) }
+    }
+
+    fn pw_as_str(&self) -> &str {
+        unsafe { from_utf8_unchecked(&self.pw) }
+    }
+
+    fn path_as_str(&self) -> &str {
+        unsafe { from_utf8_unchecked(&self.path) }
+    }
+
+    fn query_as_str(&self) -> &str {
+        if self.query.len() > 0 {
+            unsafe { from_utf8_unchecked(&self.query[1..]) }
+        } else {
+            ""
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum Method {
+    GET,
+    PUT,
+    POST,
+    DELETE,
+    OPTIONS,
+    HEAD,
+}
+impl Default for Method {
+    fn default() -> Method {
+        Method::GET
+    }
+}
+impl Method {
+    fn from_str(s: &str) -> Method {
+        if s.eq_ignore_ascii_case("get") {
+            Method::GET
+        } else if s.eq_ignore_ascii_case("post") {
+            Method::POST
+        } else if s.eq_ignore_ascii_case("put") {
+            Method::PUT
+        } else if s.eq_ignore_ascii_case("delete") {
+            Method::DELETE
+        } else if s.eq_ignore_ascii_case("options") {
+            Method::OPTIONS
+        } else if s.eq_ignore_ascii_case("head") {
+            Method::HEAD
+        } else {
+            Method::GET
+        }
+    }
+    pub fn as_str(&self) -> &'static str {
+        match *self {
+            Method::GET => "GET",
+            Method::POST => "POST",
+            Method::PUT => "PUT",
+            Method::DELETE => "DELETE",
+            Method::OPTIONS => "OPTIONS",
+            Method::HEAD => "HEAD",
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub enum TransferEncoding {
+    Identity,
+    Chunked,
+}
+impl Default for TransferEncoding {
+    fn default() -> TransferEncoding {
+        TransferEncoding::Identity
+    }
+}
 
 pub struct CallParam<'a> {
     pub poll: &'a Poll,
     pub dns: &'a mut DnsCache,
     pub cfg: &'a ::HttpcCfg,
-    // pub con: &'a mut Con,
-    // pub ev: &'a Event,
 }
 
 /// Start configure call.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct CallBuilderImpl {
-    pub req: Request<Vec<u8>>,
+    // pub req: Request<Vec<u8>>,
     pub chunked_parse: bool,
     pub dur: Duration,
     pub max_response: usize,
     pub max_chunk: usize,
-    // pub root_ca: Vec<Vec<u8>>,
     pub dns_timeout: u64,
     pub ws: bool,
     pub(crate) auth: AuthenticateInfo,
@@ -322,26 +388,33 @@ pub struct CallBuilderImpl {
     pub gzip: bool,
     pub insecure: bool,
     pub reused: bool,
+    pub method: Method,
+    pub body: Vec<u8>,
+    pub tls: bool,
+    pub port: u16,
+    pub content_len: usize,
+    pub ua_set: bool,
+    pub con_set: bool,
+    pub host_set: bool,
+    pub content_len_set: bool,
+    pub transfer_encoding: TransferEncoding,
+    pub bytes: Box<CallBytes>,
 }
 
 #[allow(dead_code)]
 impl CallBuilderImpl {
-    pub fn new(req: Request<Vec<u8>>) -> CallBuilderImpl {
+    pub fn new() -> CallBuilderImpl {
         CallBuilderImpl {
             max_response: 1024 * 1024 * 10,
             dur: Duration::from_millis(30000),
             max_chunk: 32 * 1024,
-            req,
             chunked_parse: true,
-            // root_ca: Vec::new(),
-            dns_timeout: 100,
-            ws: false,
-            auth: AuthenticateInfo::empty(),
-            digest: false,
-            max_redirects: 4,
             gzip: true,
-            insecure: false,
-            reused: false,
+            dns_timeout: 100,
+            max_redirects: 4,
+            auth: AuthenticateInfo::empty(),
+            port: 80,
+            ..Default::default()
         }
     }
     pub fn call<C: TlsConnector>(self, httpc: &mut HttpcImpl, poll: &Poll) -> ::Result<::Call> {
@@ -351,10 +424,120 @@ impl CallBuilderImpl {
         self.ws = true;
         self
     }
-    // pub fn add_root_ca_der(&mut self, v: Vec<u8>) -> &mut Self {
-    //     self.root_ca.push(v);
-    //     self
-    // }
+    pub fn method(&mut self, m: &str) -> &mut Self {
+        self.method = Method::from_str(m);
+        self
+    }
+    pub fn url(&mut self, url: &str) -> ::Result<&mut Self> {
+        let url = Url::parse(url)?;
+        if !url.has_host() {
+            return Err(::Error::NoHost);
+        }
+        let host = url.host_str().unwrap();
+        self.bytes.host.truncate(0);
+        self.bytes.host.extend_from_slice(host.as_bytes());
+        if let Some(port) = url.port() {
+            self.port = port;
+        }
+        self.bytes.us.truncate(0);
+        self.bytes.us.extend_from_slice(url.username().as_bytes());
+        self.bytes.pw.truncate(0);
+        if let Some(pw) = url.password() {
+            self.bytes.pw.extend_from_slice(pw.as_bytes());
+        }
+        if url.scheme().eq_ignore_ascii_case("https") || url.scheme().eq_ignore_ascii_case("wss") {
+            self.https();
+        }
+        self.bytes.path.truncate(0);
+        self.bytes.path.extend_from_slice(url.path().as_bytes());
+        self.bytes.query.truncate(0);
+        if let Some(q) = url.query() {
+            self.bytes.query.push(b'?');
+            self.bytes.query.extend_from_slice(q.as_bytes());
+        }
+        Ok(self)
+    }
+    pub fn query(&mut self, k: &str, v: &str) -> &mut Self {
+        if self.bytes.query.len() == 0 {
+            self.bytes.query.push(b'?');
+        } else {
+            self.bytes.query.push(b'&');
+        }
+        let enc = utf8_percent_encode(k, QUERY_ENCODE_SET);
+        for v in enc {
+            self.bytes.query.extend_from_slice(v.as_bytes());
+        }
+        self.bytes.query.push(b'=');
+        let enc = utf8_percent_encode(v, QUERY_ENCODE_SET);
+        for v in enc {
+            self.bytes.query.extend_from_slice(v.as_bytes());
+        }
+        self
+    }
+    pub fn auth(&mut self, us: &str, pw: &str) -> &mut Self {
+        let enc = utf8_percent_encode(us, USERINFO_ENCODE_SET);
+        for v in enc {
+            self.bytes.us.extend_from_slice(v.as_bytes());
+        }
+        let enc = utf8_percent_encode(pw, USERINFO_ENCODE_SET);
+        for v in enc {
+            self.bytes.pw.extend_from_slice(v.as_bytes());
+        }
+        self
+    }
+    pub fn host(&mut self, host: &str) -> &mut Self {
+        self.bytes.host.extend_from_slice(host.as_bytes());
+        self
+    }
+    pub fn https(&mut self) -> &mut Self {
+        self.tls = true;
+        if self.port == 80 {
+            self.port = 443;
+        }
+        self
+    }
+    pub fn path(&mut self, inpath: &str) -> &mut Self {
+        self.bytes.path.truncate(0);
+        if inpath.len() > 0 && inpath.as_bytes()[0] != b'/' {
+            self.bytes.path.push(b'/');
+        }
+        self.bytes.path.extend_from_slice(inpath.as_bytes());
+        self
+    }
+    pub fn path_segm(&mut self, part: &str) -> &mut Self {
+        if self.bytes.path.len() == 0 {
+            self.bytes.path.push(b'/');
+        }
+        let enc = utf8_percent_encode(part, PATH_SEGMENT_ENCODE_SET);
+        for v in enc {
+            self.bytes.path.extend_from_slice(v.as_bytes());
+        }
+        self
+    }
+    pub fn header(&mut self, key: &str, value: &str) -> &mut Self {
+        if key.eq_ignore_ascii_case("content-length") {
+            if let Ok(bsz) = usize::from_str(value) {
+                self.content_len = bsz;
+                self.content_len_set = true;
+            }
+        } else if key.eq_ignore_ascii_case("transfer-encoding") {
+            if value.eq_ignore_ascii_case("chunked") {
+                self.transfer_encoding = TransferEncoding::Chunked;
+                self.content_len = usize::max_value();
+            }
+        } else if key.eq_ignore_ascii_case("user-agent") {
+            self.ua_set = true;
+        } else if key.eq_ignore_ascii_case("connection") {
+            self.con_set = true;
+        } else if key.eq_ignore_ascii_case("host") {
+            self.host_set = true;
+        }
+        self.bytes.headers.extend_from_slice(key.as_bytes());
+        self.bytes.headers.extend_from_slice(b": ");
+        self.bytes.headers.extend_from_slice(value.as_bytes());
+        self.bytes.headers.extend_from_slice(b"\r\n");
+        self
+    }
     pub fn dns_retry_ms(&mut self, n: u64) -> &mut Self {
         self.dns_timeout = n;
         self
@@ -393,7 +576,7 @@ impl CallBuilderImpl {
         self.insecure = true;
         self
     }
-    pub(crate) fn auth(&mut self, v: AuthenticateInfo) -> &mut Self {
+    pub(crate) fn auth_recv(&mut self, v: AuthenticateInfo) -> &mut Self {
         self.digest = true;
         self.auth = v;
         self

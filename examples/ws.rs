@@ -8,9 +8,14 @@ use mio::{Events, Poll};
 fn main() {
     let poll = Poll::new().unwrap();
     let mut htp = Httpc::new(10, None);
-    let args: Vec<String> = ::std::env::args().collect();
+    let mut args: Vec<String> = ::std::env::args().collect();
 
-    let mut ws = CallBuilder::get(args[1].as_str())
+    if args.len() == 1 {
+        args.push("wss://demos.kaazing.com/echo".to_string());
+    }
+
+    let mut ws = CallBuilder::get()
+        .url(args[1].as_str()).expect("Invalid url")
         .websocket(&mut htp, &poll)
         .expect("Call start failed");
 

@@ -1,14 +1,14 @@
-use {CallBuilder, HeaderMap, HeaderValue, Httpc};
+use ::{CallBuilder, Httpc};
 use mio::{Events, Poll};
 
-type Response = ::Result<(u16, HeaderMap<HeaderValue>, Vec<u8>)>;
+type Response = ::Result<(u16, Vec<u8>)>;
 
 /// Simplest possible call interface. Will block until complete.
 pub struct SyncCall<'a> {
     max_resp: usize,
     hdrs: &'a [(&'a str, &'a str)],
-    tofile: &'a str,
-    fromfile: &'a str,
+    // tofile: &'a str,
+    // fromfile: &'a str,
     timeout: u64,
 }
 
@@ -17,8 +17,8 @@ impl<'a> SyncCall<'a> {
         SyncCall {
             max_resp: usize::max_value(),
             hdrs: &[],
-            tofile: "",
-            fromfile: "",
+            // tofile: "",
+            // fromfile: "",
             timeout: 10000,
         }
     }
@@ -70,7 +70,7 @@ impl<'a> SyncCall<'a> {
         self.exec(uri, "DELETE", buf)
     }
     /// Execute HEAD to uri
-    pub fn heae(self, uri: &str) -> Response {
+    pub fn head(self, uri: &str) -> Response {
         self.exec(uri, "HEAD", &[])
     }
 
@@ -87,7 +87,7 @@ impl<'a> SyncCall<'a> {
             call.header(k, v);
         }
         let mut call = call.method(method)
-            .uri(uri)
+            .url(uri)?
             .body(bv)
             .timeout_ms(self.timeout)
             .max_response(self.max_resp)
@@ -107,13 +107,10 @@ impl<'a> SyncCall<'a> {
 
                 if call.is_call(&cref) {
                     if call.perform(&mut htp, &poll)? {
-                        if let Some(mut resp) = call.finish() {
-                            let v = ::extract_body(&mut resp);
-                            let hdrs =
-                                ::std::mem::replace(resp.headers_mut(), HeaderMap::default());
-                            return Ok((resp.status().as_u16(), hdrs, v));
+                        if let Some((mut resp, v)) = call.finish() {
+                            return Ok((resp.status, v));
                         }
-                        return Ok((0, HeaderMap::default(), Vec::new()));
+                        return Ok((0, Vec::new()));
                     }
                 }
             }

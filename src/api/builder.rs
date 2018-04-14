@@ -1,33 +1,14 @@
 use tls_api;
-use http::{Method, Request};
-use http::header::{HeaderName, HeaderValue};
-use types::CallBuilderImpl;
+use types::{CallBuilderImpl, Method};
 use mio::{Event, Poll};
 use tls_api::TlsConnector;
 use {Call, CallRef, Result};
-use http::request::Builder;
-use percent_encoding::{utf8_percent_encode, DEFAULT_ENCODE_SET};
-use http::HttpTryFrom;
 use SimpleCall;
-use smallvec::SmallVec;
-
-// type UriBuf = SmallVec<[u8; 1024]>;
-type AuthBuf = SmallVec<[u8; 64]>;
-type HostBuf = SmallVec<[u8; 64]>;
-type PathBuf = SmallVec<[u8; 256]>;
-type QueryBuf = SmallVec<[u8; 256]>;
 
 /// Used to start a call and get a Call for it.
 #[derive(Debug, Default)]
 pub struct CallBuilder {
     cb: Option<CallBuilderImpl>,
-    builder: Builder,
-    body: Vec<u8>,
-    tls: bool,
-    auth: AuthBuf,
-    host: HostBuf,
-    path: PathBuf,
-    query: QueryBuf,
 }
 
 #[cfg(feature = "rustls")]
@@ -49,163 +30,148 @@ type CONNECTOR = tls_api::dummy::TlsConnector;
 /// mio_httpc will set headers (if they are not already):
 /// user-agent, connection, host, auth, content-length
 impl CallBuilder {
-    /// Start an empty CallBuilder
     pub fn new() -> CallBuilder {
         CallBuilder {
-            builder: Builder::new(),
-            tls: false,
-            cb: Some(CallBuilderImpl::new(Request::new(Vec::new()))),
-            body: Vec::new(),
-            auth: SmallVec::new(),
-            host: SmallVec::new(),
-            path: SmallVec::new(),
-            query: SmallVec::new(),
+            // builder: Builder::new(),
+            cb: Some(CallBuilderImpl::new()),
+            ..Default::default()
         }
     }
-
-    // fn uri_encoded(orig: &str, uri_buf: &mut UriBuffer) -> bool {
-    //     let mut must_encode = false;
-    //     for c in orig.as_bytes() {
-    //         if ::types::URI_CHARS[(*c) as usize] == 0 {
-    //             must_encode = true;
-    //             break;
-    //         }
-    //     }
-    //     if !must_encode {
-    //         return false;
-    //     }
-    //     let enc = utf8_percent_encode(orig, DEFAULT_ENCODE_SET);
-    //     for v in enc {
-    //         uri_buf.extend_from_slice(v.as_bytes());
-    //     }
-    //     true
-    // }
 
     /// Start a GET request.
     pub fn get() -> CallBuilder {
         let mut b = CallBuilder::new();
-        b.method(Method::GET);
+        b.cb.as_mut().unwrap().method = Method::GET;
         b
     }
 
     /// Start a POST request.
     pub fn post(body: Vec<u8>) -> CallBuilder {
         let mut b = CallBuilder::new();
-        b.body = body;
-        b.method(Method::POST);
+        b.cb.as_mut().unwrap().body = body;
+        b.cb.as_mut().unwrap().method = Method::POST;
         b
     }
 
     /// Start a PUT request.
     pub fn put(body: Vec<u8>) -> CallBuilder {
         let mut b = CallBuilder::new();
-        b.body = body;
-        b.method(Method::PUT);
+        b.cb.as_mut().unwrap().body = body;
+        b.cb.as_mut().unwrap().method = Method::PUT;
         b
     }
 
     /// Start a DELETE request.
     pub fn delete() -> CallBuilder {
         let mut b = CallBuilder::new();
-        b.method(Method::DELETE);
+        b.cb.as_mut().unwrap().method = Method::DELETE;
         b
+    }
+
+    /// Start an OPTIONS request.
+    pub fn options() -> CallBuilder {
+        let mut b = CallBuilder::new();
+        b.cb.as_mut().unwrap().method = Method::OPTIONS;
+        b
+    }
+
+    /// Start a HEAD request.
+    pub fn head() -> CallBuilder {
+        let mut b = CallBuilder::new();
+        b.cb.as_mut().unwrap().method = Method::HEAD;
+        b
+    }
+
+    pub fn method(&mut self, m: &str) -> &mut Self {
+        self.cb.as_mut().unwrap().method(m);
+        self
     }
 
     /// Default: http
     /// Use https for call.
     pub fn https(&mut self) -> &mut Self {
-        self.tls = true;
+        self.cb.as_mut().unwrap().https();
         self
     }
 
     /// Set host where to connect to. It can be a domain or IP address.
     pub fn host(&mut self, s: &str) -> &mut Self {
-        self.host.extend_from_slice(s.as_bytes());
+        self.cb.as_mut().unwrap().host(s);
+        self
+    }
+
+    /// Set connection port.
+    pub fn port(&mut self, p: u16) -> &mut Self {
+        self.cb.as_mut().unwrap().port = p;
         self
     }
 
     /// Use http authentication with username and password.
     pub fn auth(&mut self, us: &str, pw: &str) -> &mut Self {
-        // self.auth
+        self.cb.as_mut().unwrap().auth(us, pw);
         self
     }
 
     /// Set full path. No procent encoding is done. Will fail later if it contains invalid characters.
-    pub fn path(&mut self, path: &str) -> &mut Self {
-        // self.auth
+    pub fn path(&mut self, inpath: &str) -> &mut Self {
+        self.cb.as_mut().unwrap().path(inpath);
         self
     }
 
-    /// Add a single part of path. Parts are delimited by / which are added automatically.
-    /// Procent encoding will be done on any uri invalid characters.
+    /// Add a single segment of path. Parts are delimited by / which are added automatically.
+    /// Any path unsafe characters are procent encoded.
     /// If part contains /, it will be procent encoded!
-    pub fn path_part(&mut self, part: &str) -> &mut Self {
+    pub fn path_segm(&mut self, segm: &str) -> &mut Self {
+        self.cb.as_mut().unwrap().path_segm(segm);
         self
     }
 
-    /// Add multiple parts in one go.
-    pub fn path_parts(&mut self, parts: &[&str]) -> &mut Self {
+    /// Add multiple segments in one go.
+    pub fn path_segms(&mut self, parts: &[&str]) -> &mut Self {
+        for p in parts {
+            self.path_segm(p);
+        }
         self
     }
 
-    /// Add a key-value pair to query.
+    /// Add a key-value pair to query. Any url unsafe characters are procent encoded.
     pub fn query(&mut self, k: &str, v: &str) -> &mut Self {
+        self.cb.as_mut().unwrap().query(k, v);
         self
     }
 
-    /// Set method for call. Like: Method::GET or "GET"
-    pub fn method<T>(&mut self, method: T) -> &mut Self
-    where
-        Method: HttpTryFrom<T>,
-    {
-        self.builder.method(method);
+    /// Add multiple keu-value pars in one go.
+    pub fn query_list(&mut self, kvl: &[(&str, &str)]) -> &mut Self {
+        for &(ref k, ref v) in kvl {
+            self.query(k, v);
+        }
         self
+    }
+
+    /// Set full URL. If not valid it will return error. Be mindful of characters
+    /// that need to be procent encoded. Using https, path_segm, query and auth functions
+    /// to construct URL is much safer as those encode data automatically.
+    pub fn url(&mut self, url: &str) -> ::Result<&mut Self> {
+        self.cb.as_mut().unwrap().url(url)?;
+        Ok(self)
     }
 
     /// Set body.
     pub fn body(&mut self, body: Vec<u8>) -> &mut Self {
-        self.body = body;
-        self
-    }
-
-    /// Set full URI for call. It must be properly procent encoded for any non-uri characters.
-    /// It is safer to construct uri using: https/host/auth/path_part/query
-    /// and not use this.
-    pub fn uri(&mut self, uri: &str) -> &mut Self {
-        // let mut uri_buf: UriBuffer = SmallVec::new();
-        // if Self::uri_encoded(uri, &mut uri_buf) {
-        //     let enc = unsafe { ::std::str::from_utf8_unchecked(&uri_buf) };
-        //     println!("Encoded: {}", enc);
-        //     self.builder.uri(enc);
-        // } else {
-        self.builder.uri(uri);
-        // }
+        self.cb.as_mut().unwrap().body = body;
         self
     }
 
     /// Set HTTP header.
-    pub fn header<K, V>(&mut self, key: K, value: V) -> &mut CallBuilder
-    where
-        HeaderName: HttpTryFrom<K>,
-        HeaderValue: HttpTryFrom<V>,
-    {
-        self.builder.header(key, value);
+    pub fn header(&mut self, key: &str, value: &str) -> &mut CallBuilder {
+        self.cb.as_mut().unwrap().header(key, value);
         self
-    }
-
-    fn finish(&mut self) -> ::Result<()> {
-        let mut body = Vec::new();
-        ::std::mem::swap(&mut self.body, &mut body);
-        let mut builder = Builder::new();
-        ::std::mem::swap(&mut self.builder, &mut builder);
-        self.cb.as_mut().unwrap().req = builder.body(body)?;
-        Ok(())
     }
 
     /// Consume and execute HTTP call. Returns SimpleCall interface.
     /// CallBuilder is invalid after this call and will panic if used again.
     pub fn simple_call(&mut self, httpc: &mut Httpc, poll: &Poll) -> Result<SimpleCall> {
-        self.finish()?;
+        // self.finish()?;
         let cb = self.cb.take().unwrap();
         Ok(httpc.call::<CONNECTOR>(cb, poll)?.simple())
     }
@@ -213,7 +179,7 @@ impl CallBuilder {
     /// Consume and execute HTTP call. Return low level streaming call interface.
     /// CallBuilder is invalid after this call and will panic if used again.
     pub fn call(&mut self, httpc: &mut Httpc, poll: &Poll) -> Result<Call> {
-        self.finish()?;
+        // self.finish()?;
         let cb = self.cb.take().unwrap();
         httpc.call::<CONNECTOR>(cb, poll)
     }
@@ -221,7 +187,7 @@ impl CallBuilder {
     /// Consume and start a WebSocket
     /// CallBuilder is invalid after this call and will panic if used again.
     pub fn websocket(&mut self, httpc: &mut Httpc, poll: &Poll) -> Result<::WebSocket> {
-        self.finish()?;
+        // self.finish()?;
         let mut cb = self.cb.take().unwrap();
         cb.websocket();
         let cid = httpc.call::<CONNECTOR>(cb, poll)?;

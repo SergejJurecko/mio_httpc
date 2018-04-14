@@ -1,3 +1,6 @@
+use std::str::from_utf8;
+use std::fmt::{Display, Formatter, Error as FmtError};
+
 /// Used when call is in send request state.
 #[derive(Debug)]
 pub enum SendState {
@@ -16,18 +19,119 @@ pub enum SendState {
     Wait,
 }
 
+
+#[derive(Default, Debug)]
+pub struct Response {
+    pub(crate) hdrs: Vec<u8>,
+    pub status: u16,
+    pub(crate) ws: bool,
+}
+impl Response {
+    pub(crate) fn new() -> Response {
+        Response {
+            ..Default::default()
+        }
+    }
+
+    pub fn headers(&self) -> Headers {
+        let mut raw = [::httparse::EMPTY_HEADER; 32];
+        let mut out = Headers::new();
+        {
+            let mut presp = ::httparse::Response::new(&mut raw);
+            let _ = presp.parse(&self.hdrs);
+        }
+        let mut pos = 0;
+        for i in 0..raw.len() {
+            if raw[i].name.len() == 0 {
+                break;
+            }
+            if let Ok(v) = from_utf8(raw[i].value) {
+                out.headers[pos] = Header::new(raw[i].name, v);
+                pos += 1;
+                out.len = pos;
+            }
+        }
+        out
+    }
+}
+
+/// A single header
+#[derive(Default,Copy, Clone)]
+pub struct Header<'a> {
+    pub name: &'a str, 
+    pub value: &'a str,
+}
+impl<'a> Header<'a> {
+    fn new(n: &'a str, v: &'a str) -> Header<'a> {
+        Header {
+            name: n,
+            value: v,
+        }
+    }
+
+    /// Case insensitive header name comparison
+    pub fn is(&self, v:&str) -> bool {
+        self.name.eq_ignore_ascii_case(v)
+    }
+}
+impl<'a> Display for Header<'a> {
+    fn fmt(&self, f: &mut Formatter) -> Result<(), FmtError> {
+        write!(f, "[ {}: {} ]", self.name, self.value)
+    }
+}
+
+/// Iterator over headers in response
+#[derive(Default, Copy, Clone)]
+pub struct Headers<'a> {
+    headers: [Header<'a>;32],
+    len: usize,
+    next: usize,
+}
+impl<'a> Headers<'a> {
+    fn new() -> Headers<'a> {
+        Default::default()
+    }
+}
+
+impl<'a> Display for Headers<'a> {
+    fn fmt(&self, f: &mut Formatter) -> Result<(), FmtError> {
+        for h in 0..self.len {
+            self.headers[h].fmt(f)?;
+        }
+        Ok(())
+    }
+}
+
+impl<'a> Iterator for Headers<'a> {
+    type Item = Header<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.next == self.len {
+            return None;
+        }
+        self.next += 1;
+        Some(self.headers[self.next-1])
+    }
+}
+
 /// Top level configuration for mio_http. For now just additional root ssl certificates.
 #[derive(Default)]
 pub struct HttpcCfg {
-    // Extra root certificates in der format
+    /// Extra root certificates in der format.
     pub der_ca: Vec<Vec<u8>>,
-    // Extra root certificates in pem format
+    /// Extra root certificates in pem format.
     pub pem_ca: Vec<Vec<u8>>,
+    /// Max 8K buffers to keep cached for subsequent requests.
+    /// Default: 8
+    pub cache_buffers: usize,
 }
 
 impl HttpcCfg {
     pub fn new() -> HttpcCfg {
-        Default::default()
+        HttpcCfg {
+            cache_buffers: 8,
+            ..Default::default()
+        }
     }
 }
 
@@ -61,7 +165,7 @@ pub enum RecvState {
     Error(::Error),
     /// HTTP Response and response body size.
     /// If there is a body it will follow, otherwise call is done.
-    Response(::http::Response<Vec<u8>>, ResponseBody),
+    Response(Response, ResponseBody),
     /// How many bytes were received.
     ReceivedBody(usize),
     /// Request is done with body.
@@ -143,15 +247,11 @@ impl CallRef {
         CallRef((call_id << 16) | con_id)
     }
 
-    pub(crate) fn con_id(&self) -> u16 {
-        (self.0 & 0xFFFF) as u16
-    }
+    // pub(crate) fn con_id(&self) -> u16 {
+    //     (self.0 & 0xFFFF) as u16
+    // }
 }
 
-/// Extract body from http::Response
-pub fn extract_body(r: &mut ::http::Response<Vec<u8>>) -> Vec<u8> {
-    ::std::mem::replace(r.body_mut(), Vec::new())
-}
 #[allow(unused_imports)]
 mod websocket;
 pub use self::websocket::*;

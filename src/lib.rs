@@ -72,7 +72,7 @@ extern crate rand;
 extern crate byteorder;
 extern crate data_encoding;
 extern crate fnv;
-extern crate http;
+// extern crate http;
 extern crate itoa;
 extern crate libc;
 extern crate libflate;
@@ -90,6 +90,7 @@ extern crate percent_encoding;
 extern crate rustls;
 extern crate slab;
 extern crate smallvec;
+extern crate url;
 
 #[macro_use]
 extern crate failure;
@@ -97,12 +98,11 @@ extern crate failure;
 #[macro_use]
 extern crate matches;
 
-
 // #[allow(dead_code, unused_variables)]
 mod dns_cache;
 // #[allow(dead_code, unused_variables)]
 mod dns;
-// #[allow(dead_code, unused_imports)]
+#[allow(dead_code, unused_imports)]
 mod dns_parser;
 // #[allow(dead_code, unused_variables)]
 mod connection;
@@ -112,19 +112,19 @@ mod httpc;
 mod call;
 // #[allow(dead_code, unused_variables)]
 mod api;
-// #[allow(dead_code, unused_variables)]
+#[allow(dead_code, unused_variables)]
 mod types;
 mod tls_api;
 
 pub use api::*;
-pub use http::Error as HttpError;
-pub use http::header::*;
-pub use http::method::*;
-// pub use http::request::*;
-pub use http::response::*;
-pub use http::status::*;
-pub use http::uri::*;
-pub use http::version::*;
+// pub use http::Error as HttpError;
+// pub use http::header::*;
+// pub use http::method::*;
+// // pub use http::request::*;
+// pub use http::response::*;
+// pub use http::status::*;
+// pub use http::uri::*;
+// pub use http::version::*;
 #[cfg(feature = "rustls")]
 pub use rustls::TLSError;
 #[cfg(feature = "native")]
@@ -160,11 +160,11 @@ pub enum Error {
     #[fail(display = "Httparse error: {}", _0)]
     Httparse(#[cause] httparse::Error),
 
-    #[fail(display = "Http error: {}", _0)]
-    Http(#[cause] http::Error),
+    // #[fail(display = "Http error: {}", _0)]
+    // Http(#[cause] http::Error),
 
     #[fail(display = "WebSocket setup failed")]
-    WebSocketFail(http::Response<Vec<u8>>),
+    WebSocketFail(Response),
 
     #[fail(display = "Sync call timed out")]
     TimeOut,
@@ -206,6 +206,9 @@ pub enum Error {
     #[fail(display = "Concurrent connection limit")]
     NoSpace,
 
+    #[fail(display = "URL parse error {}",_0)]
+    Url(#[cause] url::ParseError),
+
     #[fail(display = "{}", _0)]
     Other(&'static str),
     /// You must pick one of the features: native, rustls, openssl
@@ -228,6 +231,11 @@ pub enum Error {
 impl From<std::io::Error> for Error {
     fn from(e: std::io::Error) -> Self {
         Error::Io(e)
+    }
+}
+impl From<url::ParseError> for Error {
+    fn from(e: url::ParseError) -> Self {
+        Error::Url(e)
     }
 }
 #[cfg(any(feature = "rustls", feature = "native", feature = "openssl"))]
@@ -258,13 +266,30 @@ impl From<httparse::Error> for Error {
         Error::Httparse(e)
     }
 }
-impl From<http::Error> for Error {
-    fn from(e: http::Error) -> Self {
-        Error::Http(e)
-    }
-}
+// impl From<http::Error> for Error {
+//     fn from(e: http::Error) -> Self {
+//         Error::Http(e)
+//     }
+// }
 impl From<std::string::FromUtf8Error> for Error {
     fn from(e: std::string::FromUtf8Error) -> Self {
         Error::FromUtf8(e)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn parse_headers() {
+        let v = b"HTTP/1.1 200 OK\r\nContent-length: 100\r\nUpgrade: websocket\r\n".to_vec();
+        let mut r = ::Response::new();
+        r.hdrs = v;
+
+        {
+            let hdrs = r.headers();
+            for h in hdrs {
+                println!("{}: {}",h.name, h.value);
+            }
+        }
     }
 }

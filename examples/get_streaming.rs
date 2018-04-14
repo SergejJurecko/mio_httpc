@@ -7,8 +7,12 @@ use mio::{Events, Poll};
 fn main() {
     let poll = Poll::new().unwrap();
     let mut htp = Httpc::new(10, None);
-    let args: Vec<String> = ::std::env::args().collect();
-    let mut call = CallBuilder::get(args[1].as_str())
+    let mut args: Vec<String> = ::std::env::args().collect();
+    if args.len() == 1 {
+        args.push("https://www.reddit.com".to_string());
+    }
+    let mut call = CallBuilder::get()
+        .url(args[1].as_str()).expect("Invalid url")
         .call(&mut htp, &poll)
         .expect("Call start failed");
 
@@ -54,7 +58,10 @@ fn main() {
                             break;
                         }
                         RecvState::Response(resp, bsz) => {
-                            println!("Got response {:?}\nbody_sz={}", resp, bsz);
+                            println!("Got response {}\nbody_sz={}", resp.status, bsz);
+                            for h in resp.headers() {
+                                println!("Header={}", h);
+                            }
                             if bsz.is_empty() {
                                 println!("Finish as content-length is 0");
                                 done = true;
