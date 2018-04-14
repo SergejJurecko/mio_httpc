@@ -21,7 +21,8 @@
 //!
 //! let poll = Poll::new().unwrap();
 //! let mut htp = Httpc::new(10,None);
-//! let mut call = CallBuilder::get("https://www.reddit.com")
+//! let mut call = CallBuilder::get()
+//!     .url("https://www.reddit.com").expect("Invalid url")
 //!     .timeout_ms(500)
 //!     .simple_call(&mut htp, &poll)?;
 //!
@@ -42,9 +43,8 @@
 //!
 //!        if call.is_call(&cref) {
 //!            if call.perform(&mut htp, &poll)? {
-//!                let mut resp = call.close()?;
-//!                let v = mio_httpc::extract_body(&mut resp);
-//!                if let Ok(s) = String::from_utf8(v) {
+//!                let (resp,body) = call.finish()?;
+//!                if let Ok(s) = String::from_utf8(body) {
 //!                    println!("Body: {}",s);
 //!                }
 //!                break 'outer;
@@ -60,7 +60,7 @@
 //!
 //! // One line blocking call.
 //!
-//! let (status, hdrs, body) = SyncCall::new().timeout_ms(5000).get(uri).expect("Request failed");
+//! let (response_meta, body) = SyncCall::new().timeout_ms(5000).get("http://www.example.com").expect("Request failed");
 //!
 //! ```
 #![doc(html_root_url = "https://docs.rs/mio_httpc")]
