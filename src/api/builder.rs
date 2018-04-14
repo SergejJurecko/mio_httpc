@@ -20,15 +20,17 @@ type CONNECTOR = tls_api::openssl::TlsConnector;
 #[cfg(not(any(feature = "rustls", feature = "native", feature = "openssl")))]
 type CONNECTOR = tls_api::dummy::TlsConnector;
 
+/// CallBuilder constructs a call. It is finished after calling: exec, simple_call, call or websocket.
+/// 
+/// Headers set automatically if not set manually:
+/// user-agent, connection, host, auth, content-length
+///
 /// If you're only executing a one-off call you should set connection: close as default
 /// is keep-alive.
 ///
 /// If you do not set body, but do set content-length,
 /// it will wait for send body to be provided through Httpc::call_send.
 /// You must use a streaming interface in this case and can not use SimpleCall.
-///
-/// mio_httpc will set headers (if they are not already):
-/// user-agent, connection, host, auth, content-length
 impl CallBuilder {
     pub fn new() -> CallBuilder {
         CallBuilder {
@@ -166,6 +168,35 @@ impl CallBuilder {
     pub fn header(&mut self, key: &str, value: &str) -> &mut CallBuilder {
         self.cb.as_mut().unwrap().header(key, value);
         self
+    }
+
+    /// Execute directly. This will block until completion!
+    pub fn exec(&mut self) -> ::Result<(::Response, Vec<u8>)> {
+        let poll = ::mio::Poll::new()?;
+        let mut htp = Httpc::new(0, None);
+        let mut events = ::mio::Events::with_capacity(2);
+        let mut call = self.simple_call(&mut htp, &poll)?;
+        loop {
+            poll.poll(&mut events, Some(::std::time::Duration::from_millis(100)))?;
+            for cref in htp.timeout().into_iter() {
+                if call.is_ref(cref) {
+                    return Err(::Error::TimeOut);
+                }
+            }
+
+            for ev in events.iter() {
+                let cref = htp.event(&ev);
+
+                if call.is_call(&cref) {
+                    if call.perform(&mut htp, &poll)? {
+                        if let Some((mut resp, v)) = call.finish() {
+                            return Ok((resp, v));
+                        }
+                        return Ok((::Response::new(), Vec::new()));
+                    }
+                }
+            }
+        }
     }
 
     /// Consume and execute HTTP call. Returns SimpleCall interface.

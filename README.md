@@ -34,11 +34,11 @@ For https to work mio_httpc requires you specify one of the TLS implementations 
 
 ```rust
 extern crate mio_httpc;
-use mio_httpc::SyncCall;
+use mio_httpc::CallBuilder;
  
  // One line blocking call.
  
- let (response_data, body) = SyncCall::new().timeout_ms(5000).get(uri).expect("Request failed");
+ let (response_meta, body) = CallBuilder::get().timeout_ms(5000).url("http://www.example.com")?.exec()?;
  
 ```
 

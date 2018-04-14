@@ -56,11 +56,11 @@
 //!
 //! ```no_run
 //! extern crate mio_httpc;
-//! use mio_httpc::SyncCall;
+//! use mio_httpc::CallBuilder;
 //!
 //! // One line blocking call.
 //!
-//! let (response_meta, body) = SyncCall::new().timeout_ms(5000).get("http://www.example.com").expect("Request failed");
+//! let (response_meta, body) = CallBuilder::get().timeout_ms(5000).url("http://www.example.com")?.exec()?;
 //!
 //! ```
 #![doc(html_root_url = "https://docs.rs/mio_httpc")]

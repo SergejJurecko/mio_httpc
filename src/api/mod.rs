@@ -258,8 +258,6 @@ pub use self::websocket::*;
 
 mod simple_call;
 pub use self::simple_call::*;
-mod sync;
-pub use self::sync::*;
 
 mod builder;
 pub use self::builder::*;
