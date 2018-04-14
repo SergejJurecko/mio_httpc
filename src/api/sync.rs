@@ -1,7 +1,7 @@
-use ::{CallBuilder, Httpc};
+use ::{CallBuilder, Httpc, Response};
 use mio::{Events, Poll};
 
-type Response = ::Result<(u16, Vec<u8>)>;
+type SyncResp = ::Result<(Response, Vec<u8>)>;
 
 /// Simplest possible call interface. Will block until complete.
 pub struct SyncCall<'a> {
@@ -50,31 +50,31 @@ impl<'a> SyncCall<'a> {
     // }
 
     /// Execute GET to uri
-    pub fn get(self, uri: &str) -> Response {
+    pub fn get(self, uri: &str) -> SyncResp {
         self.exec(uri, "GET", &[])
     }
     /// Execute POST to uri with body. If from_file set buf is ignored.
-    pub fn post(self, uri: &str, buf: &[u8]) -> Response {
+    pub fn post(self, uri: &str, buf: &[u8]) -> SyncResp {
         self.exec(uri, "POST", buf)
     }
     /// Execute PUT to uri with body. If from_file set buf is ignored.
-    pub fn put(self, uri: &str, buf: &[u8]) -> Response {
+    pub fn put(self, uri: &str, buf: &[u8]) -> SyncResp {
         self.exec(uri, "PUT", buf)
     }
     /// Execute OPTIONS to uri
-    pub fn options(self, uri: &str) -> Response {
+    pub fn options(self, uri: &str) -> SyncResp {
         self.exec(uri, "OPTIONS", &[])
     }
     /// Execute DELETE to uri
-    pub fn delete(self, uri: &str, buf: &[u8]) -> Response {
+    pub fn delete(self, uri: &str, buf: &[u8]) -> SyncResp {
         self.exec(uri, "DELETE", buf)
     }
     /// Execute HEAD to uri
-    pub fn head(self, uri: &str) -> Response {
+    pub fn head(self, uri: &str) -> SyncResp {
         self.exec(uri, "HEAD", &[])
     }
 
-    fn exec(self, uri: &str, method: &'static str, body: &[u8]) -> Response {
+    fn exec(self, uri: &str, method: &'static str, body: &[u8]) -> SyncResp {
         let poll = Poll::new()?;
         let mut htp = Httpc::new(0, None);
         let mut events = Events::with_capacity(2);
@@ -108,9 +108,9 @@ impl<'a> SyncCall<'a> {
                 if call.is_call(&cref) {
                     if call.perform(&mut htp, &poll)? {
                         if let Some((mut resp, v)) = call.finish() {
-                            return Ok((resp.status, v));
+                            return Ok((resp, v));
                         }
-                        return Ok((0, Vec::new()));
+                        return Ok((Response::new(), Vec::new()));
                     }
                 }
             }
