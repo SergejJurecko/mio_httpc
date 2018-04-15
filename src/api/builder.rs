@@ -91,8 +91,16 @@ impl CallBuilder {
 
     /// Default: http
     /// Use https for call.
+    /// Shorthand for set_https(true)
     pub fn https(&mut self) -> &mut Self {
         self.cb.as_mut().unwrap().https();
+        self
+    }
+
+    /// Default: false
+    /// Use https for call.
+    pub fn set_https(&mut self, v: bool) -> &mut Self {
+        self.cb.as_mut().unwrap().set_https(v);
         self
     }
 

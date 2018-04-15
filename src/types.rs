@@ -498,6 +498,22 @@ impl CallBuilderImpl {
         }
         self
     }
+    pub fn set_https(&mut self, v: bool) -> &mut Self {
+        // no change
+        if v == self.tls {
+            return self;
+        }
+        // set tls
+        if v && !self.tls {
+            return self.https();
+        }
+        // turn off tls
+        if self.port == 443 {
+            self.port = 80;
+        }
+        self.tls = false;
+        self
+    }
     pub fn path(&mut self, inpath: &str) -> &mut Self {
         self.bytes.path.truncate(0);
         if inpath.len() > 0 && inpath.as_bytes()[0] != b'/' {
