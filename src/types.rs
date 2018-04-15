@@ -505,9 +505,7 @@ impl CallBuilderImpl {
         self
     }
     pub fn path_segm(&mut self, part: &str) -> &mut Self {
-        if self.bytes.path.len() == 0 {
-            self.bytes.path.push(b'/');
-        }
+        self.bytes.path.push(b'/');
         let enc = utf8_percent_encode(part, PATH_SEGMENT_ENCODE_SET);
         for v in enc {
             self.bytes.path.extend_from_slice(v.as_bytes());
@@ -575,6 +573,31 @@ impl CallBuilderImpl {
     pub fn insecure(&mut self) -> &mut Self {
         self.insecure = true;
         self
+    }
+    pub fn get_url(&mut self) -> String {
+        let mut s = Vec::new();
+        if self.tls {
+            s.extend_from_slice(b"https://")
+        } else {
+            s.extend_from_slice(b"http://")
+        }
+        if self.bytes.us.len() > 0 {
+            s.extend_from_slice(&self.bytes.us);
+        }
+        if self.bytes.pw.len() > 0 {
+            s.push(b':');
+            s.extend_from_slice(&self.bytes.pw);
+            s.push(b'@');
+        }
+        s.extend_from_slice(&self.bytes.host);
+        if self.bytes.path.len() == 0 {
+            s.push(b'/');
+        } else {
+            s.extend_from_slice(&self.bytes.path);
+        }
+        s.extend_from_slice(&self.bytes.query);
+
+        String::from_utf8(s).expect("URL construction broken apparently...")
     }
     pub(crate) fn auth_recv(&mut self, v: AuthenticateInfo) -> &mut Self {
         self.digest = true;

@@ -305,6 +305,11 @@ impl CallBuilder {
         self.cb.as_mut().unwrap().digest_auth(v);
         self
     }
+
+    /// Return constructed URL. 
+    pub fn get_url(&mut self) -> String {
+        self.cb.as_mut().unwrap().get_url()
+    }
 }
 
 pub struct Httpc {
