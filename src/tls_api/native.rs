@@ -1,10 +1,10 @@
+use std::fmt;
 use std::io;
 use std::result;
-use std::fmt;
 
+use native_tls;
 use tls_api;
 use tls_api::{Error, Result};
-use native_tls;
 
 pub struct TlsConnectorBuilder(pub native_tls::TlsConnectorBuilder);
 pub struct TlsConnector(pub native_tls::TlsConnector);
@@ -101,9 +101,8 @@ impl<S: io::Read + io::Write> fmt::Debug for MidHandshakeTlsStream<S> {
     }
 }
 
-impl<
-    S: io::Read + io::Write + fmt::Debug + Send + Sync + 'static,
-> tls_api::MidHandshakeTlsStreamImpl<S> for MidHandshakeTlsStream<S>
+impl<S: io::Read + io::Write + fmt::Debug + Send + Sync + 'static>
+    tls_api::MidHandshakeTlsStreamImpl<S> for MidHandshakeTlsStream<S>
 {
     fn handshake(&mut self) -> result::Result<tls_api::TlsStream<S>, tls_api::HandshakeError<S>> {
         self.0
@@ -159,7 +158,10 @@ impl tls_api::TlsConnector for TlsConnector {
     where
         S: io::Read + io::Write + fmt::Debug + Send + Sync + 'static,
     {
-        self.0.danger_connect_without_providing_domain_for_certificate_verification_and_server_name_indication(stream)
+        self.0
+            .danger_connect_without_providing_domain_for_certificate_verification_and_server_name_indication(
+                stream,
+            )
             .map(|s| tls_api::TlsStream::new(TlsStream(s)))
             .map_err(map_handshake_error)
     }

@@ -1,7 +1,7 @@
 use fnv::FnvHashMap as HashMap;
 // use time;
-use std::time::{Duration, Instant};
 use std::net::IpAddr;
+use std::time::{Duration, Instant};
 
 pub struct DnsCache {
     hm: HashMap<String, (Instant, IpAddr)>,

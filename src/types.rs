@@ -1,13 +1,13 @@
 use dns_cache::DnsCache;
-use mio::Poll;
-use std::time::Duration;
 use httpc::HttpcImpl;
-use tls_api::TlsConnector;
-use pest::Parser;
-use smallvec::SmallVec;
+use mio::Poll;
 use percent_encoding::{utf8_percent_encode, PATH_SEGMENT_ENCODE_SET, QUERY_ENCODE_SET,
                        USERINFO_ENCODE_SET};
+use pest::Parser;
+use smallvec::SmallVec;
 use std::str::{FromStr, from_utf8_unchecked};
+use std::time::Duration;
+use tls_api::TlsConnector;
 use url::Url;
 
 #[derive(Debug)]
@@ -590,6 +590,13 @@ impl CallBuilderImpl {
             s.push(b'@');
         }
         s.extend_from_slice(&self.bytes.host);
+        if !(self.tls && self.port == 443 || !self.tls && self.port == 80) {
+            let mut ar = [0u8; 15];
+            if let Ok(sz) = ::itoa::write(&mut ar[..], self.port) {
+                s.push(b':');
+                s.extend_from_slice(&ar[..sz]);
+            }
+        }
         if self.bytes.path.len() == 0 {
             s.push(b'/');
         } else {

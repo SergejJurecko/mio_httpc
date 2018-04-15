@@ -1,5 +1,5 @@
-use byteorder::{ByteOrder, BigEndian};
-use super::{Opcode, ResponseCode, Header, QueryType, QueryClass};
+use super::{Header, Opcode, QueryClass, QueryType, ResponseCode};
+use byteorder::{BigEndian, ByteOrder};
 
 /// Allows to build a DNS packet
 ///
@@ -12,16 +12,13 @@ pub struct Builder<'a> {
 
 impl<'a> Builder<'a> {
     pub fn new(buf: &'a mut [u8]) -> Builder {
-        Builder {
-            buf,
-            off: 0,
-        }
+        Builder { buf, off: 0 }
     }
     /// Creates a new query
     ///
     /// Initially all sections are empty. You're expected to fill
     /// the questions section with `add_question`
-    pub fn start(&mut self, id: u16, recursion: bool) -> Result<(),()> {
+    pub fn start(&mut self, id: u16, recursion: bool) -> Result<(), ()> {
         // let mut buf = Vec::with_capacity(512);
         if self.buf.len() <= 12 {
             return Err(());
@@ -54,7 +51,12 @@ impl<'a> Builder<'a> {
     /// * Answers, nameservers or additional section has already been written
     /// * There are already 65535 questions in the buffer.
     /// * When name is invalid
-    pub fn add_question(&mut self, qname: &str, qtype: QueryType, qclass: QueryClass) -> Result<(),()> {
+    pub fn add_question(
+        &mut self,
+        qname: &str,
+        qtype: QueryType,
+        qclass: QueryClass,
+    ) -> Result<(), ()> {
         if &self.buf[6..12] != b"\x00\x00\x00\x00\x00\x00" {
             // panic!("Too late to add a question");
             return Err(());
@@ -72,18 +74,18 @@ impl<'a> Builder<'a> {
         if oldq == 65535 {
             return Err(());
         }
-        BigEndian::write_u16(&mut self.buf[4..6], oldq+1);
+        BigEndian::write_u16(&mut self.buf[4..6], oldq + 1);
         Ok(())
     }
 
-    fn write_name(buf: &mut [u8], mut off: usize, name: &str) -> Result<usize,()> {
+    fn write_name(buf: &mut [u8], mut off: usize, name: &str) -> Result<usize, ()> {
         for part in name.split('.') {
             if part.len() >= 63 || part.len() + off + 1 > buf.len() {
                 return Err(());
             }
             buf[off] = part.len() as u8;
             off += 1;
-            buf[off..off+part.len()].copy_from_slice(part.as_bytes());
+            buf[off..off + part.len()].copy_from_slice(part.as_bytes());
             off += part.len();
         }
         buf[off] = 0;
@@ -121,9 +123,9 @@ impl<'a> Builder<'a> {
 
 #[cfg(test)]
 mod test {
-    use super::QueryType as QT;
-    use super::QueryClass as QC;
     use super::Builder;
+    use super::QueryClass as QC;
+    use super::QueryType as QT;
 
     // #[test]
     // fn build_query() {

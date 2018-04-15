@@ -1,6 +1,6 @@
-use std::net::{Ipv4Addr, Ipv6Addr};
+use super::{Error, Name, SoaRecord, Type};
 use byteorder::{BigEndian, ByteOrder};
-use super::{Name, Type, Error, SoaRecord};
+use std::net::{Ipv4Addr, Ipv6Addr};
 use std::str;
 
 /// The enumeration that represents known types of DNS resource records data
@@ -10,26 +10,31 @@ pub enum RRData<'a> {
     NS(Name<'a>),
     A(Ipv4Addr),
     AAAA(Ipv6Addr),
-    SRV { priority: u16, weight: u16, port: u16, target: Name<'a> },
+    SRV {
+        priority: u16,
+        weight: u16,
+        port: u16,
+        target: Name<'a>,
+    },
     SOA(SoaRecord<'a>),
     PTR(Name<'a>),
-    MX { preference: u16, exchange: Name<'a> },
+    MX {
+        preference: u16,
+        exchange: Name<'a>,
+    },
     TXT(String),
     // Anything that can't be parsed yet
     Unknown(&'a [u8]),
 }
 
 impl<'a> RRData<'a> {
-    pub fn parse(typ: Type, rdata: &'a [u8], original: &'a [u8])
-        -> Result<RRData<'a>, Error>
-    {
+    pub fn parse(typ: Type, rdata: &'a [u8], original: &'a [u8]) -> Result<RRData<'a>, Error> {
         match typ {
             Type::A => {
                 if rdata.len() != 4 {
                     return Err(Error::WrongRdataLength);
                 }
-                Ok(RRData::A(
-                    Ipv4Addr::from(BigEndian::read_u32(rdata))))
+                Ok(RRData::A(Ipv4Addr::from(BigEndian::read_u32(rdata))))
             }
             Type::AAAA => {
                 if rdata.len() != 16 {
@@ -46,12 +51,8 @@ impl<'a> RRData<'a> {
                     BigEndian::read_u16(&rdata[14..16]),
                 )))
             }
-            Type::CNAME => {
-                Ok(RRData::CNAME(try!(Name::scan(rdata, original))))
-            }
-            Type::NS => {
-                Ok(RRData::NS(try!(Name::scan(rdata, original))))
-            }
+            Type::CNAME => Ok(RRData::CNAME(try!(Name::scan(rdata, original)))),
+            Type::NS => Ok(RRData::NS(try!(Name::scan(rdata, original)))),
             Type::MX => {
                 if rdata.len() < 3 {
                     return Err(Error::WrongRdataLength);
@@ -61,9 +62,7 @@ impl<'a> RRData<'a> {
                     exchange: try!(Name::scan(&rdata[2..], original)),
                 })
             }
-            Type::PTR => {
-                Ok(RRData::PTR(try!(Name::scan(rdata, original))))
-            }
+            Type::PTR => Ok(RRData::PTR(try!(Name::scan(rdata, original)))),
             Type::SOA => {
                 let mut pos = 0;
                 let primary_name_server = try!(Name::scan(rdata, original));
@@ -76,11 +75,11 @@ impl<'a> RRData<'a> {
                 Ok(RRData::SOA(SoaRecord {
                     primary_ns: primary_name_server,
                     mailbox: mailbox,
-                    serial: BigEndian::read_u32(&rdata[pos..(pos+4)]),
-                    refresh: BigEndian::read_u32(&rdata[(pos+4)..(pos+8)]),
-                    retry: BigEndian::read_u32(&rdata[(pos+8)..(pos+12)]),
-                    expire: BigEndian::read_u32(&rdata[(pos+12)..(pos+16)]),
-                    minimum_ttl: BigEndian::read_u32(&rdata[(pos+16)..(pos+20)]),
+                    serial: BigEndian::read_u32(&rdata[pos..(pos + 4)]),
+                    refresh: BigEndian::read_u32(&rdata[(pos + 4)..(pos + 8)]),
+                    retry: BigEndian::read_u32(&rdata[(pos + 8)..(pos + 12)]),
+                    expire: BigEndian::read_u32(&rdata[(pos + 12)..(pos + 16)]),
+                    minimum_ttl: BigEndian::read_u32(&rdata[(pos + 16)..(pos + 20)]),
                 }))
             }
             Type::SRV => {
@@ -107,7 +106,7 @@ impl<'a> RRData<'a> {
                     if len < rdlen + pos {
                         return Err(Error::WrongRdataLength);
                     }
-                    match str::from_utf8(&rdata[pos..(pos+rdlen)]) {
+                    match str::from_utf8(&rdata[pos..(pos + rdlen)]) {
                         Ok(val) => ret_string.push_str(val),
                         Err(e) => return Err(Error::TxtDataIsNotUTF8 { error: e }),
                     }
@@ -115,9 +114,7 @@ impl<'a> RRData<'a> {
                 }
                 Ok(RRData::TXT(ret_string))
             }
-            _ => {
-                Ok(RRData::Unknown(rdata))
-            }
+            _ => Ok(RRData::Unknown(rdata)),
         }
     }
 }

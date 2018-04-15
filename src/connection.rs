@@ -1,20 +1,20 @@
 use dns::{self, Dns};
 use dns_cache::DnsCache;
-use tls_api::{HandshakeError, MidHandshakeTlsStream, TlsConnector, TlsConnectorBuilder, TlsStream};
-use {CallRef, Result};
-use mio::net::TcpStream;
 use mio::event::Evented;
+use mio::net::TcpStream;
 use mio::{Poll, PollOpt, Ready, Token};
 use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
 use std::time::{Duration, Instant};
+use tls_api::{HandshakeError, MidHandshakeTlsStream, TlsConnector, TlsConnectorBuilder, TlsStream};
+use {CallRef, Result};
 // use http::{Request, Uri};
+use call::CallImpl;
+use fnv::FnvHashMap as HashMap;
+use slab::Slab;
+use smallvec::SmallVec;
 use std::io::{Read, Write};
 use types::{CallBuilderImpl, CallParam, RecvStateInt, SendStateInt};
-use fnv::FnvHashMap as HashMap;
-use smallvec::SmallVec;
-use call::CallImpl;
-use slab::Slab;
 
 // fn is_https(url: &Uri) -> Result<bool> {
 //     if let Some(scheme) = url.scheme_part() {
@@ -577,7 +577,11 @@ impl ConTable {
         None
     }
 
-    pub fn close_call(&mut self, con: u16, call: u16) -> (::types::CallBuilderImpl, Vec<u8>, Vec<u8>) {
+    pub fn close_call(
+        &mut self,
+        con: u16,
+        call: u16,
+    ) -> (::types::CallBuilderImpl, Vec<u8>, Vec<u8>) {
         let con = con as usize;
         let call: CallImpl = Self::extract_call(call, &mut self.cons[con].1);
         let (builder, hdr_buf, body_buf) = call.stop();

@@ -1,17 +1,17 @@
+use byteorder::{ByteOrder, LittleEndian};
 use connection::Con;
+use data_encoding::{BASE64, HEXLOWER};
+use httparse::{self, Response as ParseResp};
+use libflate::gzip::Decoder;
+use md5;
 use mio::Ready;
 use std::io::ErrorKind as IoErrorKind;
-use tls_api::TlsConnector;
-use httparse::{self, Response as ParseResp};
-use std::str::FromStr;
-use std::time::{Instant};
 use std::io::{Read, Write};
-use types::*;
-use data_encoding::{BASE64, HEXLOWER};
-use byteorder::{ByteOrder, LittleEndian};
 use std::str::from_utf8;
-use md5;
-use libflate::gzip::Decoder;
+use std::str::FromStr;
+use std::time::Instant;
+use tls_api::TlsConnector;
+use types::*;
 
 #[derive(PartialEq)]
 enum Dir {
@@ -416,7 +416,9 @@ impl CallImpl {
                             _ if Dir::Done == self.dir && b.is_none() => {
                                 let mut chunkless = Vec::with_capacity(buf.len());
                                 self.chunked.push_to(0, &mut buf, &mut chunkless)?;
-                                ret = Ok(RecvStateInt::DoneWithBody(self.maybe_gunzip(chunkless, None)?));
+                                ret = Ok(RecvStateInt::DoneWithBody(self.maybe_gunzip(
+                                    chunkless, None,
+                                )?));
                             }
                             _ if Dir::Done == self.dir => {
                                 let b = b.unwrap();
@@ -601,7 +603,7 @@ impl CallImpl {
                             }
                             if resp.status == 101 {
                                 return Ok(RecvStateInt::Response(resp, ::ResponseBody::Streamed));
-                            }  else if resp.status >= 300 && resp.status < 400 {
+                            } else if resp.status >= 300 && resp.status < 400 {
                                 return Ok(RecvStateInt::Redirect(resp));
                             }
                             if self.b.chunked_parse {
@@ -631,9 +633,7 @@ impl CallImpl {
                     } else {
                         let mut chunked_done = false;
                         if self.b.chunked_parse {
-                            if self.chunked
-                                .check_done(self.b.max_chunk, &buf)?
-                            {
+                            if self.chunked.check_done(self.b.max_chunk, &buf)? {
                                 chunked_done = true;
                                 self.dir = Dir::Done;
                             }
@@ -651,7 +651,13 @@ impl CallImpl {
         }
     }
 
-    fn read_hdr(&mut self, con: &mut Con, buf: &mut Vec<u8>, resp: &mut ::Response, auth_info: &mut Option<AuthenticateInfo>) -> ::Result<()> {
+    fn read_hdr(
+        &mut self,
+        con: &mut Con,
+        buf: &mut Vec<u8>,
+        resp: &mut ::Response,
+        auth_info: &mut Option<AuthenticateInfo>,
+    ) -> ::Result<()> {
         let mut headers = [httparse::EMPTY_HEADER; 32];
         let mut presp = ParseResp::new(&mut headers);
         let buflen = buf.len();
@@ -696,7 +702,8 @@ impl CallImpl {
                                 resp.ws = true;
                             }
                         }
-                    } else if resp.status == 401 && h.name.eq_ignore_ascii_case("www-authenticate") {
+                    } else if resp.status == 401 && h.name.eq_ignore_ascii_case("www-authenticate")
+                    {
                         if let Ok(val) = from_utf8(h.value) {
                             let mut auth_type = val.split_whitespace();
                             if let Some(auth_type) = auth_type.next() {
@@ -705,9 +712,7 @@ impl CallImpl {
                                         self.dir == Dir::Done;
                                         *auth_info = Some(AuthenticateInfo::new(String::from(val)));
                                     }
-                                } else if auth_type.eq_ignore_ascii_case("basic")
-                                    && self.b.digest
-                                {
+                                } else if auth_type.eq_ignore_ascii_case("basic") && self.b.digest {
                                     return Ok(());
                                 }
                             }
@@ -745,13 +750,10 @@ impl CallImpl {
                 }
                 return Ok(());
             }
-            Ok(httparse::Status::Partial) => {
-                return Ok(())
-            }
+            Ok(httparse::Status::Partial) => return Ok(()),
             Err(e) => {
                 return Err(From::from(e));
             }
         }
     }
 }
-

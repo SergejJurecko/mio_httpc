@@ -1,12 +1,12 @@
+use mio::net::UdpSocket;
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
-use mio::net::UdpSocket;
 // use mio::Poll;
 use dns_parser;
 use dns_parser::{Packet, RRData};
 use rand;
-use std::time::{Duration, Instant};
 use smallvec::SmallVec;
+use std::time::{Duration, Instant};
 
 pub(crate) fn dns_parse(buf: &[u8]) -> Option<IpAddr> {
     let packet = Packet::parse(buf).unwrap();

@@ -1,17 +1,17 @@
 extern crate webpki;
 extern crate webpki_roots;
 
+use std::cell::RefCell;
+use std::fmt;
 use std::io;
 use std::result;
-use std::fmt;
-use std::sync::Arc;
 use std::str;
-use std::cell::RefCell;
+use std::sync::Arc;
 
 use rustls;
 use tls_api;
-use tls_api::{Error, Result};
 use tls_api::rustls::rustls::Session;
+use tls_api::{Error, Result};
 
 thread_local!(static CLIENT_CFG: RefCell<Arc<rustls::ClientConfig>> = RefCell::new(Arc::new(rustls::ClientConfig::new())));
 thread_local!(static CLIENT_CFG_SEALED: RefCell<bool> = RefCell::new(false));

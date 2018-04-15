@@ -1,8 +1,8 @@
 extern crate mio;
 extern crate mio_httpc;
 
-use mio_httpc::{CallBuilder, Httpc, WSPacket};
 use mio::{Events, Poll};
+use mio_httpc::{CallBuilder, Httpc, WSPacket};
 // ws://demos.kaazing.com/echo
 
 fn main() {
@@ -15,7 +15,8 @@ fn main() {
     }
 
     let mut ws = CallBuilder::get()
-        .url(args[1].as_str()).expect("Invalid url")
+        .url(args[1].as_str())
+        .expect("Invalid url")
         .websocket(&mut htp, &poll)
         .expect("Call start failed");
 

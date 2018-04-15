@@ -2,19 +2,19 @@
 
 // Removed panics, unnecessary allocations.
 
+mod builder;
 mod enums;
-mod structs;
-mod name;
-mod parser;
 mod error;
 mod header;
+mod name;
+mod parser;
 mod rrdata;
-mod builder;
+mod structs;
 
-pub use self::enums::{Type, QueryType, Class, QueryClass, ResponseCode, Opcode};
-pub use self::structs::{Question, ResourceRecord, OptRecord, Packet, SoaRecord};
-pub use self::name::{Name};
-pub use self::error::{DnsError as Error};
-pub use self::header::{Header};
-pub use self::rrdata::{RRData};
-pub use self::builder::{Builder};
+pub use self::builder::Builder;
+pub use self::enums::{Class, Opcode, QueryClass, QueryType, ResponseCode, Type};
+pub use self::error::DnsError as Error;
+pub use self::header::Header;
+pub use self::name::Name;
+pub use self::rrdata::RRData;
+pub use self::structs::{OptRecord, Packet, Question, ResourceRecord, SoaRecord};

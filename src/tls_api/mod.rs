@@ -13,14 +13,13 @@ pub mod openssl;
 #[cfg(not(any(feature = "rustls", feature = "native", feature = "openssl")))]
 pub mod dummy;
 
-use std::io;
 use std::fmt;
+use std::io;
 // use std::error;
 use std::result;
 use {Error, Result};
 
-pub trait TlsStreamImpl<S>
-    : io::Read + io::Write + fmt::Debug + Send + Sync + 'static {
+pub trait TlsStreamImpl<S>: io::Read + io::Write + fmt::Debug + Send + Sync + 'static {
     /// Get negotiated ALPN protocol.
     fn get_alpn_protocol(&self) -> Option<Vec<u8>>;
 

@@ -1,17 +1,17 @@
+use super::{Error, Opcode, ResponseCode};
 use byteorder::{BigEndian, ByteOrder};
-use super::{Error, ResponseCode, Opcode};
 
 mod flag {
-    pub const QUERY:               u16 = 0b1000_0000_0000_0000;
-    pub const OPCODE_MASK:         u16 = 0b0111_1000_0000_0000;
-    pub const AUTHORITATIVE:       u16 = 0b0000_0100_0000_0000;
-    pub const TRUNCATED:           u16 = 0b0000_0010_0000_0000;
-    pub const RECURSION_DESIRED:   u16 = 0b0000_0001_0000_0000;
+    pub const QUERY: u16 = 0b1000_0000_0000_0000;
+    pub const OPCODE_MASK: u16 = 0b0111_1000_0000_0000;
+    pub const AUTHORITATIVE: u16 = 0b0000_0100_0000_0000;
+    pub const TRUNCATED: u16 = 0b0000_0010_0000_0000;
+    pub const RECURSION_DESIRED: u16 = 0b0000_0001_0000_0000;
     pub const RECURSION_AVAILABLE: u16 = 0b0000_0000_1000_0000;
-    pub const AUTHENTICATED_DATA:  u16 = 0b0000_0000_0010_0000;
-    pub const CHECKING_DISABLED:   u16 = 0b0000_0000_0001_0000;
-    pub const RESERVED_MASK:       u16 = 0b0000_0000_0100_0000;
-    pub const RESPONSE_CODE_MASK:  u16 = 0b0000_0000_0000_1111;
+    pub const AUTHENTICATED_DATA: u16 = 0b0000_0000_0010_0000;
+    pub const CHECKING_DISABLED: u16 = 0b0000_0000_0001_0000;
+    pub const RESERVED_MASK: u16 = 0b0000_0000_0100_0000;
+    pub const RESPONSE_CODE_MASK: u16 = 0b0000_0000_0000_1111;
 }
 
 /// Represents parsed header of the packet
@@ -45,15 +45,14 @@ impl Header {
         let header = Header {
             id: BigEndian::read_u16(&data[..2]),
             query: flags & flag::QUERY == 0,
-            opcode: ((flags & flag::OPCODE_MASK)
-                     >> flag::OPCODE_MASK.trailing_zeros()).into(),
+            opcode: ((flags & flag::OPCODE_MASK) >> flag::OPCODE_MASK.trailing_zeros()).into(),
             authoritative: flags & flag::AUTHORITATIVE != 0,
             truncated: flags & flag::TRUNCATED != 0,
             recursion_desired: flags & flag::RECURSION_DESIRED != 0,
             recursion_available: flags & flag::RECURSION_AVAILABLE != 0,
             authenticated_data: flags & flag::AUTHENTICATED_DATA != 0,
             checking_disabled: flags & flag::CHECKING_DISABLED != 0,
-            response_code: From::from((flags&flag::RESPONSE_CODE_MASK) as u8),
+            response_code: From::from((flags & flag::RESPONSE_CODE_MASK) as u8),
             questions: BigEndian::read_u16(&data[4..6]),
             answers: BigEndian::read_u16(&data[6..8]),
             nameservers: BigEndian::read_u16(&data[8..10]),
@@ -71,14 +70,23 @@ impl Header {
             panic!("Header size is exactly 12 bytes");
         }
         let mut flags = 0u16;
-        flags |= Into::<u16>::into(self.opcode)
-            << flag::OPCODE_MASK.trailing_zeros();
+        flags |= Into::<u16>::into(self.opcode) << flag::OPCODE_MASK.trailing_zeros();
         flags |= Into::<u8>::into(self.response_code) as u16;
-        if !self.query { flags |= flag::QUERY; }
-        if self.authoritative { flags |= flag::AUTHORITATIVE; }
-        if self.recursion_desired { flags |= flag::RECURSION_DESIRED; }
-        if self.recursion_available { flags |= flag::RECURSION_AVAILABLE; }
-        if self.truncated { flags |= flag::TRUNCATED; }
+        if !self.query {
+            flags |= flag::QUERY;
+        }
+        if self.authoritative {
+            flags |= flag::AUTHORITATIVE;
+        }
+        if self.recursion_desired {
+            flags |= flag::RECURSION_DESIRED;
+        }
+        if self.recursion_available {
+            flags |= flag::RECURSION_AVAILABLE;
+        }
+        if self.truncated {
+            flags |= flag::TRUNCATED;
+        }
         BigEndian::write_u16(&mut data[..2], self.id);
         BigEndian::write_u16(&mut data[2..4], flags);
         BigEndian::write_u16(&mut data[4..6], self.questions);
@@ -90,9 +98,10 @@ impl Header {
         let oldflags = BigEndian::read_u16(&data[2..4]);
         BigEndian::write_u16(&mut data[2..4], oldflags & flag::TRUNCATED);
     }
-    pub fn size() -> usize { 12 }
+    pub fn size() -> usize {
+        12
+    }
 }
-
 
 #[cfg(test)]
 mod test {
@@ -106,22 +115,25 @@ mod test {
         let query = b"\x06%\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00\
                       \x07example\x03com\x00\x00\x01\x00\x01";
         let header = Header::parse(query).unwrap();
-        assert_eq!(header, Header {
-            id: 1573,
-            query: true,
-            opcode: StandardQuery,
-            authoritative: false,
-            truncated: false,
-            recursion_desired: true,
-            recursion_available: false,
-            authenticated_data: false,
-            checking_disabled: false,
-            response_code: NoError,
-            questions: 1,
-            answers: 0,
-            nameservers: 0,
-            additional: 0,
-        });
+        assert_eq!(
+            header,
+            Header {
+                id: 1573,
+                query: true,
+                opcode: StandardQuery,
+                authoritative: false,
+                truncated: false,
+                recursion_desired: true,
+                recursion_available: false,
+                authenticated_data: false,
+                checking_disabled: false,
+                response_code: NoError,
+                questions: 1,
+                answers: 0,
+                nameservers: 0,
+                additional: 0,
+            }
+        );
     }
 
     #[test]
@@ -131,22 +143,25 @@ mod test {
                          \xc0\x0c\x00\x01\x00\x01\x00\x00\x04\xf8\
                          \x00\x04]\xb8\xd8\"";
         let header = Header::parse(response).unwrap();
-        assert_eq!(header, Header {
-            id: 1573,
-            query: false,
-            opcode: StandardQuery,
-            authoritative: false,
-            truncated: false,
-            recursion_desired: true,
-            recursion_available: true,
-            authenticated_data: false,
-            checking_disabled: false,
-            response_code: NoError,
-            questions: 1,
-            answers: 1,
-            nameservers: 0,
-            additional: 0,
-        });
+        assert_eq!(
+            header,
+            Header {
+                id: 1573,
+                query: false,
+                opcode: StandardQuery,
+                authoritative: false,
+                truncated: false,
+                recursion_desired: true,
+                recursion_available: true,
+                authenticated_data: false,
+                checking_disabled: false,
+                response_code: NoError,
+                questions: 1,
+                answers: 1,
+                nameservers: 0,
+                additional: 0,
+            }
+        );
     }
 
     #[test]
@@ -154,22 +169,25 @@ mod test {
         let query = b"\x06%\x01\x20\x00\x01\x00\x00\x00\x00\x00\x00\
                       \x07example\x03com\x00\x00\x01\x00\x01";
         let header = Header::parse(query).unwrap();
-        assert_eq!(header, Header {
-            id: 1573,
-            query: true,
-            opcode: StandardQuery,
-            authoritative: false,
-            truncated: false,
-            recursion_desired: true,
-            recursion_available: false,
-            authenticated_data: true,
-            checking_disabled: false,
-            response_code: NoError,
-            questions: 1,
-            answers: 0,
-            nameservers: 0,
-            additional: 0,
-        });
+        assert_eq!(
+            header,
+            Header {
+                id: 1573,
+                query: true,
+                opcode: StandardQuery,
+                authoritative: false,
+                truncated: false,
+                recursion_desired: true,
+                recursion_available: false,
+                authenticated_data: true,
+                checking_disabled: false,
+                response_code: NoError,
+                questions: 1,
+                answers: 0,
+                nameservers: 0,
+                additional: 0,
+            }
+        );
     }
 
     #[test]
@@ -177,21 +195,24 @@ mod test {
         let query = b"\x06%\x01\x10\x00\x01\x00\x00\x00\x00\x00\x00\
                       \x07example\x03com\x00\x00\x01\x00\x01";
         let header = Header::parse(query).unwrap();
-        assert_eq!(header, Header {
-            id: 1573,
-            query: true,
-            opcode: StandardQuery,
-            authoritative: false,
-            truncated: false,
-            recursion_desired: true,
-            recursion_available: false,
-            authenticated_data: false,
-            checking_disabled: true,
-            response_code: NoError,
-            questions: 1,
-            answers: 0,
-            nameservers: 0,
-            additional: 0,
-        });
+        assert_eq!(
+            header,
+            Header {
+                id: 1573,
+                query: true,
+                opcode: StandardQuery,
+                authoritative: false,
+                truncated: false,
+                recursion_desired: true,
+                recursion_available: false,
+                authenticated_data: false,
+                checking_disabled: true,
+                response_code: NoError,
+                questions: 1,
+                answers: 0,
+                nameservers: 0,
+                additional: 0,
+            }
+        );
     }
 }

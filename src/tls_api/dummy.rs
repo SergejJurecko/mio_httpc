@@ -1,6 +1,6 @@
+use std::fmt;
 use std::io;
 use std::result;
-use std::fmt;
 
 use tls_api;
 use tls_api::{Error, Result};

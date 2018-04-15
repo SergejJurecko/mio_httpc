@@ -112,9 +112,9 @@ mod httpc;
 mod call;
 // #[allow(dead_code, unused_variables)]
 mod api;
+mod tls_api;
 #[allow(dead_code, unused_variables)]
 mod types;
-mod tls_api;
 
 pub use api::*;
 // pub use http::Error as HttpError;
@@ -125,8 +125,6 @@ pub use api::*;
 // pub use http::status::*;
 // pub use http::uri::*;
 // pub use http::version::*;
-#[cfg(feature = "rustls")]
-pub use rustls::TLSError;
 #[cfg(feature = "native")]
 pub use native_tls::Error as TLSError;
 #[cfg(feature = "openssl")]
@@ -135,6 +133,8 @@ pub use openssl::error::Error as OpenSSLError;
 pub use openssl::error::ErrorStack as OpenSSLErrorStack;
 #[cfg(feature = "openssl")]
 pub use openssl::ssl::Error as TLSError;
+#[cfg(feature = "rustls")]
+pub use rustls::TLSError;
 // #[cfg(feature = "openssl")]
 // pub use rustls::TLSError;
 // pub use http::Extensions;
@@ -162,7 +162,6 @@ pub enum Error {
 
     // #[fail(display = "Http error: {}", _0)]
     // Http(#[cause] http::Error),
-
     #[fail(display = "WebSocket setup failed")]
     WebSocketFail(Response),
 
@@ -206,7 +205,7 @@ pub enum Error {
     #[fail(display = "Concurrent connection limit")]
     NoSpace,
 
-    #[fail(display = "URL parse error {}",_0)]
+    #[fail(display = "URL parse error {}", _0)]
     Url(#[cause] url::ParseError),
 
     #[fail(display = "{}", _0)]
@@ -288,7 +287,7 @@ mod tests {
         {
             let hdrs = r.headers();
             for h in hdrs {
-                println!("{}: {}",h.name, h.value);
+                println!("{}: {}", h.name, h.value);
             }
         }
     }

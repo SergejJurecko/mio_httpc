@@ -27,21 +27,21 @@ impl SimpleCall {
     }
 
     /// Replaces self with an empty SimpleCall and returns result if any.
-    pub fn finish_inplace(&mut self) -> Option<(::Response,Vec<u8>)> {
+    pub fn finish_inplace(&mut self) -> Option<(::Response, Vec<u8>)> {
         let out = ::std::mem::replace(self, SimpleCall::empty());
         out.finish()
     }
 
     /// Consume and return response with body.
-    pub fn finish(mut self) -> Option<(::Response,Vec<u8>)> {
+    pub fn finish(mut self) -> Option<(::Response, Vec<u8>)> {
         let r = self.resp.take();
         let b = self.resp_body.take();
         if let Some(rs) = r {
             if let Some(rb) = b {
                 // ::std::mem::replace(rs.body_mut(), rb);
-                return Some((rs,rb));
+                return Some((rs, rb));
             }
-            return Some((rs,Vec::new()));
+            return Some((rs, Vec::new()));
         }
         None
     }

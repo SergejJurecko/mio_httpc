@@ -1,8 +1,8 @@
 extern crate mio;
 extern crate mio_httpc;
 
-use mio_httpc::{CallBuilder, Httpc, HttpcCfg, SimpleCall};
 use mio::{Events, Poll};
+use mio_httpc::{CallBuilder, Httpc, HttpcCfg, SimpleCall};
 
 fn do_call(htp: &mut Httpc, poll: &Poll, mut call: SimpleCall) {
     let to = ::std::time::Duration::from_millis(100);
@@ -21,8 +21,8 @@ fn do_call(htp: &mut Httpc, poll: &Poll, mut call: SimpleCall) {
 
             if call.is_call(&cref) {
                 if call.perform(htp, &poll).expect("Call failed") {
-                    let (resp,body) = call.finish().expect("No response");
-                    println!("done req = {}",resp.status);
+                    let (resp, body) = call.finish().expect("No response");
+                    println!("done req = {}", resp.status);
                     for h in resp.headers() {
                         println!("Header={}", h);
                     }
@@ -68,8 +68,8 @@ fn main() {
     }
 }
 
-use std::fs::{read_dir, File};
 use std::ffi::OsStr;
+use std::fs::{read_dir, File};
 use std::io::Read;
 
 fn read_certs() -> ::std::io::Result<HttpcCfg> {

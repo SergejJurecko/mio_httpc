@@ -1,12 +1,12 @@
+use std::fmt;
 use std::io;
 use std::result;
-use std::fmt;
 
 // use super::tls_api;
+use openssl;
 use tls_api;
 use tls_api::Error;
 use tls_api::Result;
-use openssl;
 
 pub struct TlsConnectorBuilder(pub openssl::ssl::SslConnectorBuilder);
 pub struct TlsConnector(pub openssl::ssl::SslConnector);
@@ -158,9 +158,8 @@ impl<S: io::Read + io::Write> fmt::Debug for MidHandshakeTlsStream<S> {
     }
 }
 
-impl<
-    S: io::Read + io::Write + fmt::Debug + Send + Sync + 'static,
-> tls_api::MidHandshakeTlsStreamImpl<S> for MidHandshakeTlsStream<S>
+impl<S: io::Read + io::Write + fmt::Debug + Send + Sync + 'static>
+    tls_api::MidHandshakeTlsStreamImpl<S> for MidHandshakeTlsStream<S>
 {
     fn handshake(&mut self) -> result::Result<tls_api::TlsStream<S>, tls_api::HandshakeError<S>> {
         self.0

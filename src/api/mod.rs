@@ -1,5 +1,5 @@
+use std::fmt::{Display, Error as FmtError, Formatter};
 use std::str::from_utf8;
-use std::fmt::{Display, Formatter, Error as FmtError};
 
 /// Used when call is in send request state.
 #[derive(Debug)]
@@ -18,7 +18,6 @@ pub enum SendState {
     /// Nothing yet to return.
     Wait,
 }
-
 
 #[derive(Default, Debug)]
 pub struct Response {
@@ -56,21 +55,18 @@ impl Response {
 }
 
 /// A single header
-#[derive(Default,Copy, Clone)]
+#[derive(Default, Copy, Clone)]
 pub struct Header<'a> {
-    pub name: &'a str, 
+    pub name: &'a str,
     pub value: &'a str,
 }
 impl<'a> Header<'a> {
     fn new(n: &'a str, v: &'a str) -> Header<'a> {
-        Header {
-            name: n,
-            value: v,
-        }
+        Header { name: n, value: v }
     }
 
     /// Case insensitive header name comparison
-    pub fn is(&self, v:&str) -> bool {
+    pub fn is(&self, v: &str) -> bool {
         self.name.eq_ignore_ascii_case(v)
     }
 }
@@ -83,7 +79,7 @@ impl<'a> Display for Header<'a> {
 /// Iterator over headers in response
 #[derive(Default, Copy, Clone)]
 pub struct Headers<'a> {
-    headers: [Header<'a>;32],
+    headers: [Header<'a>; 32],
     len: usize,
     next: usize,
 }
@@ -110,7 +106,7 @@ impl<'a> Iterator for Headers<'a> {
             return None;
         }
         self.next += 1;
-        Some(self.headers[self.next-1])
+        Some(self.headers[self.next - 1])
     }
 }
 

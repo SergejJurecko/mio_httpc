@@ -1,8 +1,8 @@
 extern crate mio;
 extern crate mio_httpc;
 
-use mio_httpc::{CallBuilder, Httpc, RecvState, SendState};
 use mio::{Events, Poll};
+use mio_httpc::{CallBuilder, Httpc, RecvState, SendState};
 
 fn main() {
     let poll = Poll::new().unwrap();
@@ -12,7 +12,8 @@ fn main() {
         args.push("https://www.reddit.com".to_string());
     }
     let mut call = CallBuilder::get()
-        .url(args[1].as_str()).expect("Invalid url")
+        .url(args[1].as_str())
+        .expect("Invalid url")
         .call(&mut htp, &poll)
         .expect("Call start failed");
 

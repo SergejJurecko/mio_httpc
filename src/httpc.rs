@@ -1,13 +1,13 @@
-use mio::{Event, Poll, Token};
-use dns_cache::DnsCache;
-use connection::{Con, ConTable};
-use tls_api::TlsConnector;
-use std::collections::VecDeque;
 use call::CallImpl;
+use connection::{Con, ConTable};
+use dns_cache::DnsCache;
+use mio::{Event, Poll, Token};
+use std::collections::VecDeque;
+use tls_api::TlsConnector;
 use types::*;
 // use fnv::FnvHashMap as HashMap;
-use {Call, CallRef, RecvState, Response, Result, SendState};
 use std::time::Instant;
+use {Call, CallRef, RecvState, Response, Result, SendState};
 
 pub struct HttpcImpl {
     cache: DnsCache,

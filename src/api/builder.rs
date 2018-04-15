@@ -1,9 +1,9 @@
-use tls_api;
-use types::{CallBuilderImpl, Method};
 use mio::{Event, Poll};
+use tls_api;
 use tls_api::TlsConnector;
-use {Call, CallRef, Result};
+use types::{CallBuilderImpl, Method};
 use SimpleCall;
+use {Call, CallRef, Result};
 
 /// Used to start a call and get a Call for it.
 #[derive(Debug, Default)]
@@ -21,7 +21,7 @@ type CONNECTOR = tls_api::openssl::TlsConnector;
 type CONNECTOR = tls_api::dummy::TlsConnector;
 
 /// CallBuilder constructs a call. It is finished after calling: exec, simple_call, call or websocket.
-/// 
+///
 /// Headers set automatically if not set manually:
 /// user-agent, connection, host, auth, content-length
 ///
@@ -306,7 +306,7 @@ impl CallBuilder {
         self
     }
 
-    /// Return constructed URL. 
+    /// Return constructed URL.
     pub fn get_url(&mut self) -> String {
         self.cb.as_mut().unwrap().get_url()
     }
