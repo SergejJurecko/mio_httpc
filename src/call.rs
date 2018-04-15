@@ -285,7 +285,7 @@ impl CallImpl {
         } else {
             buf.extend(b"Authorization: Basic ");
             let uslen = self.b.bytes.us.len();
-            let pwlen = self.b.bytes.us.len();
+            let pwlen = self.b.bytes.pw.len();
             let enc_len = BASE64.encode_len(uslen + 1 + pwlen);
             if BASE64.encode_len(uslen + 1 + pwlen) < 512 {
                 let mut ar = [0u8; 512];
@@ -417,7 +417,8 @@ impl CallImpl {
                                 let mut chunkless = Vec::with_capacity(buf.len());
                                 self.chunked.push_to(0, &mut buf, &mut chunkless)?;
                                 ret = Ok(RecvStateInt::DoneWithBody(self.maybe_gunzip(
-                                    chunkless, None,
+                                    chunkless,
+                                    None,
                                 )?));
                             }
                             _ if Dir::Done == self.dir => {

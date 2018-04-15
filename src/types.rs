@@ -1,8 +1,8 @@
 use dns_cache::DnsCache;
 use httpc::HttpcImpl;
 use mio::Poll;
-use percent_encoding::{utf8_percent_encode, PATH_SEGMENT_ENCODE_SET, QUERY_ENCODE_SET,
-                       USERINFO_ENCODE_SET};
+use percent_encoding::{percent_encode, utf8_percent_encode, PATH_SEGMENT_ENCODE_SET,
+                       QUERY_ENCODE_SET, USERINFO_ENCODE_SET};
 use pest::Parser;
 use smallvec::SmallVec;
 use std::str::{FromStr, from_utf8_unchecked};
@@ -475,14 +475,16 @@ impl CallBuilderImpl {
         self
     }
     pub fn auth(&mut self, us: &str, pw: &str) -> &mut Self {
-        let enc = utf8_percent_encode(us, USERINFO_ENCODE_SET);
-        for v in enc {
-            self.bytes.us.extend_from_slice(v.as_bytes());
-        }
-        let enc = utf8_percent_encode(pw, USERINFO_ENCODE_SET);
-        for v in enc {
-            self.bytes.pw.extend_from_slice(v.as_bytes());
-        }
+        self.bytes.us.extend_from_slice(us.as_bytes());
+        self.bytes.pw.extend_from_slice(pw.as_bytes());
+        // let enc = utf8_percent_encode(us, USERINFO_ENCODE_SET);
+        // for v in enc {
+        //     self.bytes.us.extend_from_slice(v.as_bytes());
+        // }
+        // let enc = utf8_percent_encode(pw, USERINFO_ENCODE_SET);
+        // for v in enc {
+        //     self.bytes.pw.extend_from_slice(v.as_bytes());
+        // }
         self
     }
     pub fn host(&mut self, host: &str) -> &mut Self {
@@ -582,11 +584,19 @@ impl CallBuilderImpl {
             s.extend_from_slice(b"http://")
         }
         if self.bytes.us.len() > 0 {
-            s.extend_from_slice(&self.bytes.us);
+            let enc = percent_encode(&self.bytes.us, USERINFO_ENCODE_SET);
+            for v in enc {
+                s.extend_from_slice(v.as_bytes());
+            }
+            // s.extend_from_slice(&self.bytes.us);
         }
         if self.bytes.pw.len() > 0 {
             s.push(b':');
-            s.extend_from_slice(&self.bytes.pw);
+            let enc = percent_encode(&self.bytes.pw, USERINFO_ENCODE_SET);
+            for v in enc {
+                s.extend_from_slice(v.as_bytes());
+            }
+            // s.extend_from_slice(&self.bytes.pw);
             s.push(b'@');
         }
         s.extend_from_slice(&self.bytes.host);
