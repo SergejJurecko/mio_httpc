@@ -1,13 +1,17 @@
 
 mio_httpc is an async http client that runs on top of mio only. 
 
-For convenience it also provides a SyncCall interface. This is a simple one-line HTTP client operation.
+For convenience it also provides CallBuilder::exec for a simple one-line blocking HTTP call.
 
-No call will block (except SyncCall), not even for DNS resolution as it is implemented internally to avoid blocking.
-
-It uses [http crate](https://crates.io/crates/http) for Request/Response types.
+Except CallBuilder::exec no call will block, not even for DNS resolution as it is implemented internally to avoid blocking.
 
 For https to work mio_httpc requires you specify one of the TLS implementations using features: native, openssl or rtls (rustls).
+Default build will fail on any https URI.
+
+CallBuilder also has URL construction functions (host/path_segm/query/set_https/auth/https) which will take care of url-safe encoding.
+
+mio_httpc does a minimal amount of allocation and in general works with buffers you provide and an internal pool
+of buffers that get reused on new calls.
 
 [Documentation](https://docs.rs/mio_httpc/)
 
@@ -18,6 +22,7 @@ For https to work mio_httpc requires you specify one of the TLS implementations 
 - [x] Configurable TLS backend
 - [x] Chunked encoding download
 - [ ] Chunked encoding upload
+- [x] Safe URL construction
 - [x] Basic Auth
 - [x] Digest Auth
 - [x] Automatic redirects
@@ -39,6 +44,19 @@ use mio_httpc::CallBuilder;
  // One line blocking call.
  
  let (response_meta, body) = CallBuilder::get().timeout_ms(5000).url("http://www.example.com")?.exec()?;
+
+ // With URL construction.
+ // This way of building the URL is highly recommended as it will always result in correct
+ // values by procent encoding any URL unsafe characters.
+ // This calls: https://www.example.com/a/b?key1=val1
+ let (response_meta, body) = CallBuilder::get()
+    .timeout_ms(5000)
+    .https()
+    .host("www.example.com")
+    .path_segm("a")
+    .path_segm("b")
+    .query("key1","val1")
+    .exec()?;
  
 ```
 

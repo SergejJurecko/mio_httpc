@@ -118,6 +118,7 @@ pub struct HttpcCfg {
     /// Extra root certificates in pem format.
     pub pem_ca: Vec<Vec<u8>>,
     /// Max 8K buffers to keep cached for subsequent requests.
+    /// Every request requires 2.
     /// Default: 8
     pub cache_buffers: usize,
 }

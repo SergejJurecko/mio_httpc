@@ -9,6 +9,7 @@ use std::str::{FromStr, from_utf8_unchecked};
 use std::time::Duration;
 use tls_api::TlsConnector;
 use url::Url;
+use std::ops::Deref;
 
 #[derive(Debug)]
 pub(crate) enum RecvStateInt {
@@ -428,8 +429,11 @@ impl CallBuilderImpl {
         self.method = Method::from_str(m);
         self
     }
-    pub fn url(&mut self, url: &str) -> ::Result<&mut Self> {
-        let url = Url::parse(url)?;
+    pub fn url(&mut self, url: &str) -> ::Result<&mut Self>
+// where
+    //     I: Deref<Target = str>,
+    {
+        let url = Url::parse(url.deref())?;
         if !url.has_host() {
             return Err(::Error::NoHost);
         }
@@ -457,7 +461,10 @@ impl CallBuilderImpl {
         }
         Ok(self)
     }
-    pub fn query(&mut self, k: &str, v: &str) -> &mut Self {
+    pub fn query(&mut self, k: &str, v: &str) -> &mut Self
+// where
+    //     I: Deref<Target = str>,
+    {
         if self.bytes.query.len() == 0 {
             self.bytes.query.push(b'?');
         } else {

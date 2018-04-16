@@ -1,11 +1,13 @@
 //! mio_httpc is an async http client that runs on top of mio only.
 //!
-//! For convenience it also provides a SyncCall interface. This is a simple one-line HTTP client operation.
+//! For convenience it also provides CallBuilder::exec for a simple one-line blocking HTTP call.
 //!
-//! No call will block (except SyncCall), not even for DNS resolution as it is implemented internally to avoid blocking.
+//! Except CallBuilder::exec no call will block, not even for DNS resolution as it is implemented internally to avoid blocking.
 //!
 //! For https to work you must specify one of the TLS implementations using features: rtls (rustls), native, openssl.
 //! Default build will fail on any https URI.
+//!
+//! CallBuilder also has URL construction functions (host/path_segm/query/set_https/auth/https) which will take care of url-safe encoding.
 //!
 //! mio_httpc does a minimal amount of allocation and in general works with buffers you provide and an internal pool
 //! of buffers that get reused on new calls.

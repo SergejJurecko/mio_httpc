@@ -84,6 +84,7 @@ impl CallBuilder {
         b
     }
 
+    /// Set method: "GET", "POST", "PUT", "OPTIONS", "DELETE" or "HEAD"
     pub fn method(&mut self, m: &str) -> &mut Self {
         self.cb.as_mut().unwrap().method(m);
         self
@@ -151,7 +152,10 @@ impl CallBuilder {
     }
 
     /// Add multiple keu-value pars in one go.
-    pub fn query_list(&mut self, kvl: &[(&str, &str)]) -> &mut Self {
+    pub fn query_list(&mut self, kvl: &[(&str, &str)]) -> &mut Self
+// where
+    //     I: Deref<Target = str>,
+    {
         for &(ref k, ref v) in kvl {
             self.query(k, v);
         }
