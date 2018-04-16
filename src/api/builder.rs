@@ -22,10 +22,10 @@ type CONNECTOR = tls_api::dummy::TlsConnector;
 
 /// CallBuilder constructs a call. It is finished after calling: exec, simple_call, call or websocket.
 ///
-/// Headers set automatically if not set manually:
+/// Some headers are set automatically unless set explicitly:
 /// user-agent, connection, host, auth, content-length
 ///
-/// If you're only executing a one-off call you should set connection: close as default
+/// If you're only executing a one-off call you should set connection header to close as default
 /// is keep-alive.
 ///
 /// If you do not set body, but do set content-length,
@@ -151,7 +151,7 @@ impl CallBuilder {
         self
     }
 
-    /// Add multiple keu-value pars in one go.
+    /// Add multiple key-value pars in one go.
     pub fn query_list(&mut self, kvl: &[(&str, &str)]) -> &mut Self
 // where
     //     I: Deref<Target = str>,
@@ -294,8 +294,9 @@ impl CallBuilder {
         self
     }
 
+    /// Default true.
+    ///
     /// Tell server to gzip response and unzip transparently before returning body to client.
-    /// Default is true.
     pub fn gzip(&mut self, b: bool) -> &mut Self {
         self.cb.as_mut().unwrap().gzip(b);
         self
