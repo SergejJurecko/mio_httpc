@@ -7,8 +7,8 @@ use md5;
 use mio::Ready;
 use std::io::ErrorKind as IoErrorKind;
 use std::io::{Read, Write};
-use std::str::from_utf8;
 use std::str::FromStr;
+use std::str::from_utf8;
 use std::time::Instant;
 use tls_api::TlsConnector;
 use types::*;
@@ -193,7 +193,7 @@ impl CallImpl {
             buf.extend(&self.b.bytes.host);
             buf.extend(b"\r\n");
         }
-        if self.b.digest {
+        if self.b.digest && self.b.bytes.us.len() > 0 {
             if self.b.auth.hdr.len() > 0 {
                 if let Ok(dig) = ::types::AuthDigest::parse(self.b.auth.hdr.as_str()) {
                     buf.extend(b"Authorization: Digest ");
@@ -282,7 +282,7 @@ impl CallImpl {
                     buf.extend(b"\"\r\n");
                 }
             }
-        } else {
+        } else if self.b.bytes.us.len() > 0 {
             buf.extend(b"Authorization: Basic ");
             let uslen = self.b.bytes.us.len();
             let pwlen = self.b.bytes.pw.len();
@@ -581,6 +581,10 @@ impl CallImpl {
                 return Err(::Error::Closed);
             }
             Ok(bytes_rec) => {
+                // if let Ok(sx) = String::from_utf8(Vec::from(&buf[..])) {
+                //     println!("Got: {}", sx);
+                // }
+                // println!("Got: {:?}", &buf[..bytes_rec]);
                 if self.hdr_sz == 0 {
                     let mut auth_info = None;
                     let mut resp = ::Response::new();
