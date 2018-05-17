@@ -1,6 +1,5 @@
 use byteorder::{BigEndian, ByteOrder};
 use mio::Poll;
-use std::ascii::AsciiExt;
 use {Call, CallRef, Httpc, RecvState, ResponseBody, SendState};
 
 /// WebSocket packet received from server.

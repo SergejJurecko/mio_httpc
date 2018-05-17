@@ -9,7 +9,7 @@ use std::io::ErrorKind as IoErrorKind;
 use std::io::{Read, Write};
 use std::str::FromStr;
 use std::str::from_utf8;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tls_api::TlsConnector;
 use types::*;
 
@@ -733,10 +733,11 @@ impl CallImpl {
                 if auth_info.is_some() {
                     return Ok(());
                 }
-                // If switching protocols body is unlimited
+                // If switching protocols body is unlimited and timeout as well
                 if resp.status == 101 {
                     con.set_to_close(true);
                     self.body_sz = usize::max_value();
+                    self.b.dur = Duration::from_secs(3600 * 24 * 365);
                     self.dir = Dir::Receiving(buflen - self.hdr_sz, true);
                     return Ok(());
                 } else if resp.status >= 300 && resp.status < 400 {
