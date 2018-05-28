@@ -6,7 +6,9 @@ use mio::{Poll, PollOpt, Ready, Token};
 use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
 use std::time::{Duration, Instant};
-use tls_api::{HandshakeError, MidHandshakeTlsStream, TlsConnector, TlsConnectorBuilder, TlsStream};
+use tls_api::{
+    HandshakeError, MidHandshakeTlsStream, TlsConnector, TlsConnectorBuilder, TlsStream,
+};
 use {CallRef, Result};
 // use http::{Request, Uri};
 use call::CallImpl;
@@ -425,6 +427,8 @@ impl Eq for ConHost {}
 
 pub struct ConTable {
     cons: Slab<(Con, SmallVec<[CallImpl; 2]>)>,
+    // connections with fixed tokens
+    cons_fixed: HashMap<usize, (Con, CallImpl)>,
     // con that can be used for new requests
     keepalive: HashMap<ConHost, u16>,
 }
@@ -434,6 +438,7 @@ impl ConTable {
         ConTable {
             keepalive: HashMap::with_capacity_and_hasher(4, Default::default()),
             cons: Slab::with_capacity(4),
+            cons_fixed: HashMap::with_capacity_and_hasher(4, Default::default()),
         }
     }
 
@@ -441,12 +446,20 @@ impl ConTable {
         self.cons.len()
     }
 
-    pub fn get_signalled_con(&mut self, id: usize) -> Option<&mut Con> {
+    pub fn signalled_con(&mut self, id: usize) -> bool {
         if let Some(t) = self.cons.get_mut(id) {
             t.0.signalled = true;
-            return Some(&mut t.0);
+            return true;
         }
-        None
+        false
+    }
+
+    pub fn fixed_signalled_con(&mut self, k: usize) -> bool {
+        if let Some((con, _)) = self.cons_fixed.get_mut(&k) {
+            con.signalled = true;
+            return true;
+        }
+        false
     }
 
     pub fn timeout_extend(&mut self, now: Instant, out: &mut Vec<CallRef>) {
@@ -490,13 +503,17 @@ impl ConTable {
     }
     pub fn event_send<C: TlsConnector>(
         &mut self,
-        con: u16,
-        call: u16,
+        call: &::Call,
         cp: &mut CallParam,
         buf: Option<&[u8]>,
     ) -> Result<SendStateInt> {
-        let call = call as usize;
-        let con = con as usize;
+        if call.1 != usize::max_value() {
+            if let Some((con, call)) = self.cons_fixed.get_mut(&call.1) {
+                return call.event_send::<C>(con, cp, buf);
+            }
+        }
+        let con = call.con_id() as usize;
+        let call = call.call_id() as usize;
         let conp = &mut self.cons[con];
         let res = conp.1[call].event_send::<C>(&mut conp.0, cp, buf);
         if res.is_err() && !conp.0.is_first_use() && conp.1[call].can_retry() {
@@ -507,13 +524,17 @@ impl ConTable {
     }
     pub(crate) fn event_recv<C: TlsConnector>(
         &mut self,
-        con: u16,
-        call: u16,
+        call: &::Call,
         cp: &mut CallParam,
         buf: Option<&mut Vec<u8>>,
     ) -> Result<RecvStateInt> {
-        let call = call as usize;
-        let con = con as usize;
+        if call.1 != usize::max_value() {
+            if let Some((con, call)) = self.cons_fixed.get_mut(&call.1) {
+                return call.event_recv::<C>(con, cp, buf);
+            }
+        }
+        let con = call.con_id() as usize;
+        let call = call.call_id() as usize;
         let conp = &mut self.cons[con];
         let res = conp.1[call].event_recv::<C>(&mut conp.0, cp, buf);
         if res.is_err() && !conp.0.is_first_use() && conp.1[call].can_retry() {
@@ -521,6 +542,12 @@ impl ConTable {
             return Ok(RecvStateInt::Retry(res.unwrap_err()));
         }
         res
+    }
+
+    pub fn add_fixed_con(&mut self, mut c: Con, call: CallImpl, poll: &Poll) -> Result<()> {
+        c.update_token(poll, call.settings().evid)?;
+        self.cons_fixed.insert(call.settings().evid, (c, call));
+        Ok(())
     }
 
     pub fn push_con(&mut self, mut c: Con, call: CallImpl, poll: &Poll) -> Result<Option<u16>> {
@@ -542,8 +569,8 @@ impl ConTable {
         Ok(())
     }
 
-    fn extract_call(callid: u16, calls: &mut SmallVec<[CallImpl; 2]>) -> CallImpl {
-        let callid = callid as usize;
+    fn extract_call(call: ::Call, calls: &mut SmallVec<[CallImpl; 2]>) -> CallImpl {
+        let callid = call.call_id() as usize;
         if callid + 1 == calls.len() {
             let res = calls.pop();
             while calls.last().is_some() {
@@ -577,12 +604,13 @@ impl ConTable {
         None
     }
 
-    pub fn close_call(
-        &mut self,
-        con: u16,
-        call: u16,
-    ) -> (::types::CallBuilderImpl, Vec<u8>, Vec<u8>) {
-        let con = con as usize;
+    pub fn close_call(&mut self, call: ::Call) -> (::types::CallBuilderImpl, Vec<u8>, Vec<u8>) {
+        if call.1 != usize::max_value() {
+            if let Some((_con, call)) = self.cons_fixed.remove(&call.1) {
+                return call.stop();
+            }
+        }
+        let con = call.con_id() as usize;
         let call: CallImpl = Self::extract_call(call, &mut self.cons[con].1);
         let (builder, hdr_buf, body_buf) = call.stop();
         // println!("close_call {} {} {}",con, self.cons[con].0.to_close, self.cons.len());

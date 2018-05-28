@@ -66,7 +66,7 @@ impl HttpcImpl {
     }
 
     pub fn call<C: TlsConnector>(&mut self, b: CallBuilderImpl, poll: &Poll) -> Result<Call> {
-        let con_id = if b.bytes.host.len() > 0 {
+        let con_id = if b.bytes.host.len() > 0 && b.evid == usize::max_value() {
             if let Some(con_id) = self.cons.try_keepalive(&b.bytes.host, poll) {
                 Some(con_id)
             } else {
@@ -90,10 +90,20 @@ impl HttpcImpl {
             b.dns_timeout,
             b.insecure,
         )?;
+        let fixed_evid = b.evid;
         let call = CallImpl::new(b, self.get_buf(), self.get_buf());
-        if let Some(con_id) = self.cons.push_con(con, call, poll)? {
-            let id = Call::new(con_id, 0);
-            Ok(id)
+        if fixed_evid == usize::max_value() {
+            if let Some(con_id) = self.cons.push_con(con, call, poll)? {
+                let id = Call::new(con_id, 0);
+                Ok(id)
+            } else {
+                Err(::Error::NoSpace)
+            }
+        } else if fixed_evid < self.con_offset
+            || fixed_evid > self.con_offset + u16::max_value() as usize
+        {
+            self.cons.add_fixed_con(con, call, poll)?;
+            Ok(Call(0, fixed_evid))
         } else {
             Err(::Error::NoSpace)
         }
@@ -107,7 +117,7 @@ impl HttpcImpl {
     }
 
     fn call_close_int(&mut self, id: Call) -> CallBuilderImpl {
-        let (builder, b1, b2) = self.cons.close_call(id.con_id(), id.call_id());
+        let (builder, b1, b2) = self.cons.close_call(id);
         if b1.capacity() > 0 || b1.len() > 0 {
             self.reuse(b1);
         }
@@ -143,11 +153,13 @@ impl HttpcImpl {
 
     pub fn event<C: TlsConnector>(&mut self, ev: &Event) -> Option<CallRef> {
         let mut id = ev.token().0;
-        if id >= self.con_offset && id <= (u16::max_value() as usize) {
+        if id >= self.con_offset && id <= self.con_offset + (u16::max_value() as usize) {
             id -= self.con_offset;
-            if let Some(_) = self.cons.get_signalled_con(id) {
+            if self.cons.signalled_con(id) {
                 return Some(CallRef::new(id as u16, 0));
             }
+        } else if self.cons.fixed_signalled_con(id) {
+            return Some(CallRef(0, id));
         }
         None
     }
@@ -180,12 +192,11 @@ impl HttpcImpl {
                 dns: &mut self.cache,
                 cfg: &self.cfg,
             };
-            self.cons
-                .event_send::<C>(call.con_id(), call.call_id(), &mut cp, buf)
+            self.cons.event_send::<C>(call, &mut cp, buf)
         };
         match cret {
             Ok(SendStateInt::Done) => {
-                self.call_close(Call(call.0));
+                self.call_close(Call(call.0, call.1));
                 call.invalidate();
                 return SendState::Done;
             }
@@ -205,7 +216,7 @@ impl HttpcImpl {
                 return SendState::WaitReqBody;
             }
             Ok(SendStateInt::Retry(_err)) => {
-                let mut b = self.call_close_int(Call(call.0));
+                let mut b = self.call_close_int(Call(call.0, call.1));
                 call.invalidate();
                 b.reused = true;
                 match self.call::<C>(b, poll) {
@@ -219,7 +230,7 @@ impl HttpcImpl {
                 }
             }
             Err(e) => {
-                self.call_close(Call(call.0));
+                self.call_close(Call(call.0, call.1));
                 call.invalidate();
                 return SendState::Error(e);
             }
@@ -241,27 +252,26 @@ impl HttpcImpl {
                 dns: &mut self.cache,
                 cfg: &self.cfg,
             };
-            self.cons
-                .event_recv::<C>(call.con_id(), call.call_id(), &mut cp, buf)
+            self.cons.event_recv::<C>(call, &mut cp, buf)
         };
         match cret {
             Ok(RecvStateInt::Response(r, ::ResponseBody::Sized(0))) => {
-                self.call_close(Call(call.0));
+                self.call_close(Call(call.0, call.1));
                 call.invalidate();
                 return RecvState::Response(r, ::ResponseBody::Sized(0));
             }
             Ok(RecvStateInt::Done) => {
-                self.call_close(Call(call.0));
+                self.call_close(Call(call.0, call.1));
                 call.invalidate();
                 return RecvState::Done;
             }
             Ok(RecvStateInt::DoneWithBody(body)) => {
-                self.call_close(Call(call.0));
+                self.call_close(Call(call.0, call.1));
                 call.invalidate();
                 return RecvState::DoneWithBody(body);
             }
             Ok(RecvStateInt::Retry(_err)) => {
-                let mut b = self.call_close_int(Call(call.0));
+                let mut b = self.call_close_int(Call(call.0, call.1));
                 call.invalidate();
                 b.reused = true;
                 match self.call::<C>(b, poll) {
@@ -275,7 +285,7 @@ impl HttpcImpl {
                 }
             }
             Ok(RecvStateInt::Redirect(r)) => {
-                let mut b = self.call_close_int(Call(call.0));
+                let mut b = self.call_close_int(Call(call.0, call.1));
                 call.invalidate();
                 if b.max_redirects > 0 {
                     b.max_redirects -= 1;
@@ -295,7 +305,7 @@ impl HttpcImpl {
                 return RecvState::Response(r, ::ResponseBody::Sized(0));
             }
             Ok(RecvStateInt::DigestAuth(r, d)) => {
-                let mut b = self.call_close_int(Call(call.0));
+                let mut b = self.call_close_int(Call(call.0, call.1));
                 call.invalidate();
                 if b.auth.hdr.len() > 0 {
                     // If an attempt was already made once, return response.
@@ -313,7 +323,7 @@ impl HttpcImpl {
                 }
             }
             Ok(RecvStateInt::BasicAuth) => {
-                let mut b = self.call_close_int(Call(call.0));
+                let mut b = self.call_close_int(Call(call.0, call.1));
                 call.invalidate();
                 b.digest_auth(false);
                 match self.call::<C>(b, poll) {
@@ -342,7 +352,7 @@ impl HttpcImpl {
             //     return RecvState::Error(e);
             // }
             Err(e) => {
-                self.call_close(Call(call.0));
+                self.call_close(Call(call.0, call.1));
                 call.invalidate();
                 return RecvState::Error(e);
             }

@@ -179,12 +179,12 @@ pub enum RecvState {
 
 /// Call structure.
 #[derive(Debug, PartialEq)] // much fewer derives then ref on purpose. We want a single instance.
-pub struct Call(pub(crate) u32);
+pub struct Call(pub(crate) u32, pub(crate) usize);
 
 impl Call {
     /// Get a CallRef that matches this call.
     pub fn get_ref(&self) -> CallRef {
-        CallRef(self.0)
+        CallRef(self.0, self.1)
     }
 
     pub fn simple(self) -> SimpleCall {
@@ -199,11 +199,11 @@ impl Call {
     pub(crate) fn new(con_id: u16, call_id: u16) -> Call {
         let con_id = con_id as u32;
         let call_id = call_id as u32;
-        Call((call_id << 16) | con_id)
+        Call((call_id << 16) | con_id, usize::max_value())
     }
 
     pub(crate) fn empty() -> Call {
-        Call(0xffff_ffff)
+        Call(0xffff_ffff, usize::max_value())
     }
 
     pub(crate) fn is_empty(&self) -> bool {
@@ -235,13 +235,13 @@ impl Call {
 /// If you have lots of calls, you can use this as a key in a HashMap
 /// (you probably want fnv HashMap).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct CallRef(pub(crate) u32);
+pub struct CallRef(pub(crate) u32, pub(crate) usize);
 impl CallRef {
     // (Call:16, Con:16)
     pub(crate) fn new(con_id: u16, call_id: u16) -> CallRef {
         let con_id = con_id as u32;
         let call_id = call_id as u32;
-        CallRef((call_id << 16) | con_id)
+        CallRef((call_id << 16) | con_id, usize::max_value())
     }
 
     // pub(crate) fn con_id(&self) -> u16 {

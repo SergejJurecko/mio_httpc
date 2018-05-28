@@ -1,15 +1,17 @@
 use dns_cache::DnsCache;
 use httpc::HttpcImpl;
 use mio::Poll;
-use percent_encoding::{percent_encode, utf8_percent_encode, PATH_SEGMENT_ENCODE_SET,
-                       QUERY_ENCODE_SET, USERINFO_ENCODE_SET};
+use percent_encoding::{
+    percent_encode, utf8_percent_encode, PATH_SEGMENT_ENCODE_SET, QUERY_ENCODE_SET,
+    USERINFO_ENCODE_SET,
+};
 use pest::Parser;
 use smallvec::SmallVec;
-use std::str::{FromStr, from_utf8_unchecked};
+use std::ops::Deref;
+use std::str::{from_utf8_unchecked, FromStr};
 use std::time::Duration;
 use tls_api::TlsConnector;
 use url::Url;
-use std::ops::Deref;
 
 #[derive(Debug)]
 pub(crate) enum RecvStateInt {
@@ -400,6 +402,7 @@ pub struct CallBuilderImpl {
     pub content_len_set: bool,
     pub transfer_encoding: TransferEncoding,
     pub bytes: Box<CallBytes>,
+    pub evid: usize,
 }
 
 #[allow(dead_code)]
@@ -415,6 +418,7 @@ impl CallBuilderImpl {
             max_redirects: 4,
             auth: AuthenticateInfo::empty(),
             port: 80,
+            evid: usize::max_value(),
             ..Default::default()
         }
     }
