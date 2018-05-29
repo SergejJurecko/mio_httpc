@@ -7,8 +7,8 @@ use md5;
 use mio::Ready;
 use std::io::ErrorKind as IoErrorKind;
 use std::io::{Read, Write};
-use std::str::FromStr;
 use std::str::from_utf8;
+use std::str::FromStr;
 use std::time::{Duration, Instant};
 use tls_api::TlsConnector;
 use types::*;
@@ -77,11 +77,20 @@ impl CallImpl {
                 // there is some additional data after last offset
                 return &self.buf_body[(*off)..];
             } else if self.buf_body.len() > 0 {
-                self.buf_body.truncate(0);
+                self.truncate();
                 *off = 0;
             }
         }
         &[]
+    }
+
+    fn truncate(&mut self) {
+        // If we had to grow to an unusually large size shrink it down to something managable.
+        if self.buf_body.len() > 1024 * 1024 {
+            self.buf_body.truncate(1024 * 1024);
+            self.buf_body.shrink_to_fit();
+        }
+        self.buf_body.truncate(0);
     }
 
     pub fn try_truncate(&mut self, off: &mut usize) {
@@ -90,7 +99,7 @@ impl CallImpl {
                 return;
             } else if self.buf_body.len() > 0 {
                 // everything after hdr_sz has been processed
-                self.buf_body.truncate(0);
+                self.truncate();
                 *off = 0;
             }
         }
@@ -331,11 +340,11 @@ impl CallImpl {
                 // println!("TrySent: {}", String::from_utf8(buf.clone())?);
                 self.buf_hdr = buf;
                 if let Dir::SendingBody(_) = self.dir {
-                    self.buf_hdr.truncate(0);
+                    self.truncate();
                     // go again
                     return self.event_send::<C>(con, cp, b);
                 } else if let Dir::Receiving(_, _) = self.dir {
-                    self.buf_hdr.truncate(0);
+                    self.truncate();
                 }
                 ret
             }
@@ -417,8 +426,7 @@ impl CallImpl {
                                 let mut chunkless = Vec::with_capacity(buf.len());
                                 self.chunked.push_to(0, &mut buf, &mut chunkless)?;
                                 ret = Ok(RecvStateInt::DoneWithBody(self.maybe_gunzip(
-                                    chunkless,
-                                    None,
+                                    chunkless, None,
                                 )?));
                             }
                             _ if Dir::Done == self.dir => {
@@ -452,7 +460,7 @@ impl CallImpl {
                             self.dir = Dir::Done;
                             return Ok(RecvStateInt::ReceivedBody(self.buf_body.len()));
                         }
-                        self.buf_body.truncate(0);
+                        self.truncate();
                     }
                     self.event_rec_do::<C>(con, cp, false, b)
                 }
