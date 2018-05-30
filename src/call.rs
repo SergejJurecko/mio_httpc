@@ -340,11 +340,11 @@ impl CallImpl {
                 // println!("TrySent: {}", String::from_utf8(buf.clone())?);
                 self.buf_hdr = buf;
                 if let Dir::SendingBody(_) = self.dir {
-                    self.truncate();
+                    self.buf_hdr.truncate(0);
                     // go again
                     return self.event_send::<C>(con, cp, b);
                 } else if let Dir::Receiving(_, _) = self.dir {
-                    self.truncate();
+                    self.buf_hdr.truncate(0);
                 }
                 ret
             }
