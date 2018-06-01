@@ -75,6 +75,21 @@ impl CallImpl {
         if self.body_sz > 0 {
             if self.buf_body.len() > *off {
                 // there is some additional data after last offset
+                let diff = self.buf_body.len() - *off;
+                // Copy down bytes so buffer does not grow unnecessarily.
+                // This can happen if lots of data is being sent in websocket
+                // over localhost as it does not give client enough time to clear data.
+                if *off > 1024 * 1024 {
+                    unsafe {
+                        ::std::ptr::copy(
+                            self.buf_body.as_ptr().offset(*off as _),
+                            self.buf_body.as_mut_ptr(),
+                            diff,
+                        );
+                        self.buf_body.set_len(diff);
+                    }
+                    *off = 0;
+                }
                 return &self.buf_body[(*off)..];
             } else if self.buf_body.len() > 0 {
                 self.truncate();
@@ -154,15 +169,19 @@ impl CallImpl {
         // let cl = self.b.req.headers().get(CONTENT_LENGTH);
         let cl = self.b.content_len_set;
         if cl == false && self.b.body.len() > 0 {
-            let mut ar = [0u8; 15];
             self.body_sz = self.b.body.len();
+        // digest auth requires www-authenticate response first
+        // and one must not send send data for that
+        } else if cl && !(self.b.digest && self.b.auth.hdr.len() == 0) {
+            self.body_sz = self.b.content_len;
+        }
+        if self.body_sz > 0 {
+            let mut ar = [0u8; 15];
             if let Ok(sz) = ::itoa::write(&mut ar[..], self.body_sz) {
                 buf.extend(b"Content-Length: ");
                 buf.extend(&ar[..sz]);
                 buf.extend(b"\r\n");
             }
-        } else if cl {
-            self.body_sz = self.b.content_len;
         }
         if self.b.transfer_encoding == TransferEncoding::Chunked {
             self.send_encoding = TransferEncoding::Chunked;
@@ -425,9 +444,9 @@ impl CallImpl {
                             _ if Dir::Done == self.dir && b.is_none() => {
                                 let mut chunkless = Vec::with_capacity(buf.len());
                                 self.chunked.push_to(0, &mut buf, &mut chunkless)?;
-                                ret = Ok(RecvStateInt::DoneWithBody(self.maybe_gunzip(
-                                    chunkless, None,
-                                )?));
+                                ret = Ok(RecvStateInt::DoneWithBody(
+                                    self.maybe_gunzip(chunkless, None)?,
+                                ));
                             }
                             _ if Dir::Done == self.dir => {
                                 let b = b.unwrap();
@@ -528,7 +547,7 @@ impl CallImpl {
                             return Ok(SendStateInt::Receiving);
                         }
                         self.dir = Dir::SendingBody(pos + sz);
-                        return Ok(SendStateInt::SentBody(pos + sz));
+                        return Ok(SendStateInt::SentBody(sz));
                     } else {
                         return Ok(SendStateInt::SentBody(sz));
                     }
@@ -722,7 +741,7 @@ impl CallImpl {
                             if let Some(auth_type) = auth_type.next() {
                                 if auth_type.eq_ignore_ascii_case("digest") {
                                     if ::types::AuthDigest::parse(val).is_ok() {
-                                        self.dir == Dir::Done;
+                                        self.dir = Dir::Done;
                                         *auth_info = Some(AuthenticateInfo::new(String::from(val)));
                                     }
                                 } else if auth_type.eq_ignore_ascii_case("basic") && self.b.digest {
@@ -751,12 +770,13 @@ impl CallImpl {
                 } else if resp.status >= 300 && resp.status < 400 {
                     return Ok(());
                 } else if self.body_sz == 0 {
-                    self.dir == Dir::Done;
+                    self.dir = Dir::Done;
                 } else {
                     self.dir = Dir::Receiving(buflen - self.hdr_sz, false);
                 }
                 if self.b.chunked_parse {
-                    if self.chunked
+                    if self
+                        .chunked
                         .check_done(self.b.max_chunk, &buf[self.hdr_sz..])?
                     {
                         self.dir = Dir::Done;

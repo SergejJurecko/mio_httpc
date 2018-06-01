@@ -439,6 +439,7 @@ impl WebSocket {
         } else if self.state == State::Done {
             return Err(::Error::Closed);
         } else {
+            // htp.peek_body(&self.id, &mut self.recv_lover);
             self.perform(htp, poll)?;
         }
         self.read_packet(htp)
@@ -615,6 +616,12 @@ impl WebSocket {
                         break;
                     }
                     RecvState::ReceivedBody(_) => {}
+                }
+                // Since ws gets called in a loop rely on that for receiving
+                // Otherwise too much data can be received at the same time and
+                // buffers get inflated.
+                if self.state == State::Active {
+                    break;
                 }
             }
         }

@@ -546,6 +546,7 @@ impl CallBuilderImpl {
             if let Ok(bsz) = usize::from_str(value) {
                 self.content_len = bsz;
                 self.content_len_set = true;
+                return self;
             }
         } else if key.eq_ignore_ascii_case("transfer-encoding") {
             if value.eq_ignore_ascii_case("chunked") {

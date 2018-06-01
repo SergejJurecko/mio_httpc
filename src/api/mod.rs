@@ -6,7 +6,7 @@ use std::str::from_utf8;
 pub enum SendState {
     /// Unrecoverable error has occured and call is finished.
     Error(::Error),
-    /// How many bytes of body have been sent.
+    /// How many bytes of body have just been sent.
     SentBody(usize),
     /// Waiting for body to be provided for sending.
     WaitReqBody,
