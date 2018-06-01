@@ -91,6 +91,7 @@ impl CallBuilder {
     }
 
     /// Default: http
+    ///
     /// Use https for call.
     /// Shorthand for set_https(true)
     pub fn https(&mut self) -> &mut Self {
@@ -99,6 +100,7 @@ impl CallBuilder {
     }
 
     /// Default: false
+    ///
     /// Use https for call.
     pub fn set_https(&mut self, v: bool) -> &mut Self {
         self.cb.as_mut().unwrap().set_https(v);
@@ -129,15 +131,15 @@ impl CallBuilder {
         self
     }
 
-    /// Set full path. No procent encoding is done. Will fail later if it contains invalid characters.
+    /// Set full path. No percent encoding is done. Will fail later if it contains invalid characters.
     pub fn path(&mut self, inpath: &str) -> &mut Self {
         self.cb.as_mut().unwrap().path(inpath);
         self
     }
 
     /// Add a single segment of path. Parts are delimited by / which are added automatically.
-    /// Any path unsafe characters are procent encoded.
-    /// If part contains /, it will be procent encoded!
+    /// Any path unsafe characters are percent encoded.
+    /// If part contains /, it will be percent encoded!
     pub fn path_segm(&mut self, segm: &str) -> &mut Self {
         self.cb.as_mut().unwrap().path_segm(segm);
         self
@@ -151,7 +153,7 @@ impl CallBuilder {
         self
     }
 
-    /// Add a key-value pair to query. Any url unsafe characters are procent encoded.
+    /// Add a key-value pair to query. Any url unsafe characters are percent encoded.
     pub fn query(&mut self, k: &str, v: &str) -> &mut Self {
         self.cb.as_mut().unwrap().query(k, v);
         self
@@ -169,7 +171,7 @@ impl CallBuilder {
     }
 
     /// Set full URL. If not valid it will return error. Be mindful of characters
-    /// that need to be procent encoded. Using https, path_segm, query and auth functions
+    /// that need to be percent encoded. Using https, path_segm, query and auth functions
     /// to construct URL is much safer as those encode data automatically.
     pub fn url(&mut self, url: &str) -> ::Result<&mut Self> {
         self.cb.as_mut().unwrap().url(url)?;

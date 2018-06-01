@@ -47,7 +47,7 @@ use mio_httpc::CallBuilder;
 
  // With URL construction.
  // This way of building the URL is highly recommended as it will always result in correct
- // values by procent encoding any URL unsafe characters.
+ // values by percent encoding any URL unsafe characters.
  // This calls: https://www.example.com/a/b?key1=val1
  let (response_meta, body) = CallBuilder::get()
     .timeout_ms(5000)
