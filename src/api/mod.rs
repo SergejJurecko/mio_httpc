@@ -110,16 +110,17 @@ impl<'a> Iterator for Headers<'a> {
     }
 }
 
-/// Top level configuration for mio_http. For now just additional root ssl certificates.
+/// Top level configuration for mio_http.
 #[derive(Default)]
 pub struct HttpcCfg {
     /// Extra root certificates in der format.
     pub der_ca: Vec<Vec<u8>>,
     /// Extra root certificates in pem format.
     pub pem_ca: Vec<Vec<u8>>,
+    /// Default: 8
+    ///
     /// Max 8K buffers to keep cached for subsequent requests.
     /// Every request requires 2.
-    /// Default: 8
     pub cache_buffers: usize,
 }
 
