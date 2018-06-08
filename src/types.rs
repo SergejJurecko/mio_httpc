@@ -534,7 +534,9 @@ impl CallBuilderImpl {
         self
     }
     pub fn path_segm(&mut self, part: &str) -> &mut Self {
-        self.bytes.path.push(b'/');
+        if self.bytes.path.last().unwrap_or(&b'.') != &b'/' {
+            self.bytes.path.push(b'/');
+        }
         let enc = utf8_percent_encode(part, PATH_SEGMENT_ENCODE_SET);
         for v in enc {
             self.bytes.path.extend_from_slice(v.as_bytes());
