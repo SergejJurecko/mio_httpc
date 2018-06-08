@@ -495,10 +495,26 @@ impl ConTable {
         }
     }
 
-    pub fn peek_body(&mut self, con: u16, call: u16, off: &mut usize) -> &[u8] {
+    pub fn peek_body(&mut self, call: &::Call, off: &mut usize) -> &[u8] {
+        if call.1 != usize::max_value() {
+            if let Some((_con, call)) = self.cons_fixed.get_mut(&call.1) {
+                return call.peek_body(off);
+            }
+            return &[];
+        }
+        let con = call.con_id() as usize;
+        let call = call.call_id() as usize;
         self.cons[con as usize].1[call as usize].peek_body(off)
     }
-    pub fn try_truncate(&mut self, con: u16, call: u16, off: &mut usize) {
+    pub fn try_truncate(&mut self, call: &::Call, off: &mut usize) {
+        if call.1 != usize::max_value() {
+            if let Some((_con, call)) = self.cons_fixed.get_mut(&call.1) {
+                call.try_truncate(off);
+            }
+            return;
+        }
+        let con = call.con_id() as usize;
+        let call = call.call_id() as usize;
         self.cons[con as usize].1[call as usize].try_truncate(off);
     }
     pub fn event_send<C: TlsConnector>(

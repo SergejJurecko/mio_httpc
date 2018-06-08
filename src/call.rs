@@ -608,7 +608,7 @@ impl CallImpl {
                 return Err(::Error::Closed);
             }
             Ok(bytes_rec) => {
-                // if let Ok(sx) = String::from_utf8(Vec::from(&buf[..])) {
+                // if let Ok(sx) = String::from_utf8(Vec::from(&buf[..bytes_rec])) {
                 //     println!("Got: {}", sx);
                 // }
                 // println!("Got: {:?}", &buf[..bytes_rec]);

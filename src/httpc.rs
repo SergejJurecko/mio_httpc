@@ -168,13 +168,13 @@ impl HttpcImpl {
         if call.is_empty() {
             return &[];
         }
-        self.cons.peek_body(call.con_id(), call.call_id(), off)
+        self.cons.peek_body(call, off)
     }
     pub fn try_truncate(&mut self, call: &::Call, off: &mut usize) {
         if call.is_empty() {
             return;
         }
-        self.cons.try_truncate(call.con_id(), call.call_id(), off);
+        self.cons.try_truncate(call, off);
     }
 
     pub fn call_send<C: TlsConnector>(
