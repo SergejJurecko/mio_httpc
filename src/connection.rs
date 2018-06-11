@@ -471,7 +471,7 @@ impl ConTable {
             }
             if calls.len() == 0 {
                 if con.idle_timeout(now) {
-                    cons_to_close.push(call_id);
+                    cons_to_close.push(con_id as _);
                 }
                 continue;
             }
@@ -603,7 +603,6 @@ impl ConTable {
     }
 
     pub fn try_keepalive(&mut self, host: &[u8], poll: &Poll) -> Option<u16> {
-        // let mut cons_to_close: SmallVec<[u16; 16]> = SmallVec::new();
         let con_to_close;
         let nh = ConHost::new(host);
         if let Some(con) = self.keepalive.remove(&nh) {
@@ -629,7 +628,7 @@ impl ConTable {
         let con = call.con_id() as usize;
         let call: CallImpl = Self::extract_call(call, &mut self.cons[con].1);
         let (builder, hdr_buf, body_buf) = call.stop();
-        // println!("close_call {} {} {}",con, self.cons[con].0.to_close, self.cons.len());
+        // println!("close_call {} toclose={} {}",con, self.cons[con].0.to_close, self.cons.len());
         {
             let host = &builder.bytes.host;
             if !self.cons[con].0.to_close {
