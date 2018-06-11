@@ -88,11 +88,16 @@ where
                 self.session.write_tls(&mut self.stream)?;
             }
             if self.session.is_handshaking() && self.session.wants_read() {
-                self.session.read_tls(&mut self.stream)?;
+                let r = self.session.read_tls(&mut self.stream)?;
+                if r == 0 {
+                    return Err(IntermediateError::Io(::std::io::Error::new(
+                        ::std::io::ErrorKind::UnexpectedEof,
+                        ::std::io::Error::new(::std::io::ErrorKind::Other, "closed mid handshake"),
+                    )));
+                }
                 self.session.process_new_packets()?;
             }
         }
-
         Ok(())
     }
 
