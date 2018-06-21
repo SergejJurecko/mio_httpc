@@ -356,7 +356,7 @@ impl CallImpl {
                 let hdr_sz = self.hdr_sz;
 
                 let ret = self.event_send_do::<C>(con, cp, 0, &buf[pos..hdr_sz]);
-                // println!("TrySent: {}", String::from_utf8(buf.clone())?);
+                // println!("TrySent ({:?}): {}", ret, String::from_utf8(buf.clone())?);
                 self.buf_hdr = buf;
                 if let Dir::SendingBody(_) = self.dir {
                     self.buf_hdr.truncate(0);
@@ -608,7 +608,8 @@ impl CallImpl {
                 return Err(::Error::Closed);
             }
             Ok(bytes_rec) => {
-                // if let Ok(sx) = String::from_utf8(Vec::from(&buf[..bytes_rec])) {
+                // if let Ok(sx) = String::from_utf8(Vec::from(&buf[..entire_sz]))
+                // {
                 //     println!("Got: {}", sx);
                 // }
                 // println!("Got: {:?}", &buf[..bytes_rec]);

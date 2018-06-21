@@ -114,8 +114,12 @@ impl Con {
         &self.host
     }
 
-    pub fn update_token(&mut self, poll: &Poll, inc: usize) -> Result<()> {
-        self.token = Token(self.token.0 + inc);
+    pub fn update_token(&mut self, poll: &Poll, fixed: bool, v: usize) -> Result<()> {
+        self.token = if !fixed {
+            Token(self.token.0 + v)
+        } else {
+            Token(v)
+        };
         self.register(poll, self.token, self.reg_for, PollOpt::edge())?;
         Ok(())
     }
@@ -561,7 +565,7 @@ impl ConTable {
     }
 
     pub fn add_fixed_con(&mut self, mut c: Con, call: CallImpl, poll: &Poll) -> Result<()> {
-        c.update_token(poll, call.settings().evid)?;
+        c.update_token(poll, true, call.settings().evid)?;
         self.cons_fixed.insert(call.settings().evid, (c, call));
         Ok(())
     }
@@ -572,7 +576,7 @@ impl ConTable {
         }
         let entry = self.cons.vacant_entry();
         let key = entry.key();
-        c.update_token(poll, key)?;
+        c.update_token(poll, false, key)?;
         let mut v = SmallVec::new();
         v.push(call);
         entry.insert((c, v));
@@ -580,7 +584,6 @@ impl ConTable {
     }
 
     pub fn push_ka_con(&mut self, con: u16, call: CallImpl) -> Result<()> {
-        // self.cons[con as usize].0.update_token(poll, con as usize)?;
         self.cons[con as usize].1.push(call);
         Ok(())
     }
