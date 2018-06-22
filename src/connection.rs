@@ -224,6 +224,14 @@ impl Con {
         }
     }
 
+    pub fn is_signalled(&self) -> bool {
+        self.signalled
+    }
+
+    pub fn set_signalled(&mut self, v: bool) {
+        self.signalled = v;
+    }
+
     pub fn signalled<'a, C: TlsConnector, T>(
         &mut self,
         cp: &mut CallParam,
@@ -452,7 +460,7 @@ impl ConTable {
 
     pub fn signalled_con(&mut self, id: usize) -> bool {
         if let Some(t) = self.cons.get_mut(id) {
-            t.0.signalled = true;
+            t.0.set_signalled(true);
             return true;
         }
         false
@@ -460,7 +468,7 @@ impl ConTable {
 
     pub fn fixed_signalled_con(&mut self, k: usize) -> bool {
         if let Some((con, _)) = self.cons_fixed.get_mut(&k) {
-            con.signalled = true;
+            con.set_signalled(true);
             return true;
         }
         false
