@@ -224,8 +224,8 @@ pub enum Error {
     /// Eror while parsing chunked stream
     #[fail(display = "Error parsing WWW-Authenticate header")]
     AuthenticateParse,
-    /// Chunk was larger than configured CallBuilder::cunked_max_chunk.
-    #[fail(display = "Chunk was larger than configured CallBuilder::cunked_max_chunk. {}", _0)]
+    /// Chunk was larger than configured CallBuilder::chunked_max_chunk.
+    #[fail(display = "Chunk was larger than configured CallBuilder::chunked_max_chunk. {}", _0)]
     ChunkOverlimit(usize),
 }
 
