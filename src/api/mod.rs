@@ -1,4 +1,7 @@
+use std::ffi::OsStr;
 use std::fmt::{Display, Error as FmtError, Formatter};
+use std::fs;
+use std::io::Read;
 use std::str::from_utf8;
 
 /// Used when call is in send request state.
@@ -111,7 +114,7 @@ impl<'a> Iterator for Headers<'a> {
 }
 
 /// Top level configuration for mio_http.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct HttpcCfg {
     /// Extra root certificates in der format.
     pub der_ca: Vec<Vec<u8>>,
@@ -130,6 +133,40 @@ impl HttpcCfg {
             cache_buffers: 8,
             ..Default::default()
         }
+    }
+
+    /// Will read pem files (extensions .crt or .pem) from path.
+    /// Path can be to file or folder.
+    pub fn certs_from_path(path: &str) -> ::std::io::Result<HttpcCfg> {
+        let mut cfg = HttpcCfg::new();
+        let certs = [OsStr::new("crt"), OsStr::new("pem")];
+        let metadata = fs::metadata(path)?;
+        if metadata.is_file() {
+            let mut file = fs::File::open(path)?;
+            let mut contents = Vec::new();
+            file.read_to_end(&mut contents)?;
+            cfg.pem_ca.push(contents);
+            return Ok(cfg);
+        }
+        for de in fs::read_dir(path)? {
+            if de.is_err() {
+                continue;
+            }
+            let de = de.unwrap();
+            match de.path().extension() {
+                Some(ex) if certs.contains(&ex) => {
+                    let meta = fs::metadata(de.path())?;
+                    if meta.len() < 1024 * 8 {
+                        let mut file = fs::File::open(de.path())?;
+                        let mut contents = Vec::new();
+                        file.read_to_end(&mut contents)?;
+                        cfg.pem_ca.push(contents);
+                    }
+                }
+                _ => {}
+            }
+        }
+        Ok(cfg)
     }
 }
 

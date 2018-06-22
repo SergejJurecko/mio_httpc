@@ -82,6 +82,11 @@ impl SimpleCall {
         self.state == State::Done
     }
 
+    /// Are we in receiving state
+    pub fn is_receiving(&self) -> bool {
+        self.state == State::Receiving
+    }
+
     /// Perform operation. Returns true if request is finished.
     pub fn perform(&mut self, htp: &mut Httpc, poll: &::mio::Poll) -> ::Result<bool> {
         if self.is_done() {
