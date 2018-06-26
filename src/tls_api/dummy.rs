@@ -39,6 +39,10 @@ impl tls_api::TlsConnectorBuilder for TlsConnectorBuilder {
     fn build(self) -> Result<TlsConnector> {
         Err(Error::Other("No TLS"))
     }
+
+    fn danger_accept_invalid_certs(&mut self) -> Result<&mut Self> {
+        Err(Error::Other("No TLS"))
+    }
 }
 
 impl tls_api::TlsConnector for TlsConnector {
@@ -59,17 +63,17 @@ impl tls_api::TlsConnector for TlsConnector {
         Err(tls_api::HandshakeError::Failure(Error::Other("No TLS")))
     }
 
-    fn danger_connect_without_providing_domain_for_certificate_verification_and_server_name_indication<
-        S,
-    >(
-        &self,
-        _stream: S,
-    ) -> result::Result<tls_api::TlsStream<S>, tls_api::HandshakeError<S>>
-    where
-        S: io::Read + io::Write + fmt::Debug + Send + Sync + 'static,
-    {
-        Err(tls_api::HandshakeError::Failure(Error::Other("No TLS")))
-    }
+    // fn danger_connect_without_providing_domain_for_certificate_verification_and_server_name_indication<
+    //     S,
+    // >(
+    //     &self,
+    //     _stream: S,
+    // ) -> result::Result<tls_api::TlsStream<S>, tls_api::HandshakeError<S>>
+    // where
+    //     S: io::Read + io::Write + fmt::Debug + Send + Sync + 'static,
+    // {
+    //     Err(tls_api::HandshakeError::Failure(Error::Other("No TLS")))
+    // }
 }
 
 // TlsAcceptor and TlsAcceptorBuilder

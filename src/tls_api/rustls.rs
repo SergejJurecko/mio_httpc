@@ -318,6 +318,28 @@ impl tls_api::TlsConnectorBuilder for TlsConnectorBuilder {
         Ok(())
     }
 
+    fn danger_accept_invalid_certs(&mut self) -> Result<&mut Self> {
+        struct NoCertificateVerifier;
+
+        impl rustls::ServerCertVerifier for NoCertificateVerifier {
+            fn verify_server_cert(
+                &self,
+                _roots: &rustls::RootCertStore,
+                _presented_certs: &[rustls::Certificate],
+                _dns_name: webpki::DNSNameRef,
+                _ocsp_response: &[u8],
+            ) -> result::Result<rustls::ServerCertVerified, rustls::TLSError> {
+                Ok(rustls::ServerCertVerified::assertion())
+            }
+        }
+        if let Some(ref mut cfg) = self.0 {
+            cfg.dangerous()
+                .set_certificate_verifier(Arc::new(NoCertificateVerifier));
+        }
+
+        Ok(self)
+    }
+
     fn build(mut self) -> Result<TlsConnector> {
         if let Some(mut cfg) = self.0.take() {
             cfg.root_store
@@ -365,53 +387,6 @@ impl tls_api::TlsConnector for TlsConnector {
         Err(tls_api::HandshakeError::Failure(Error::Other(
             "invalid domain",
         )))
-    }
-
-    fn danger_connect_without_providing_domain_for_certificate_verification_and_server_name_indication<
-        S,
-    >(
-        &self,
-        stream: S,
-    ) -> result::Result<tls_api::TlsStream<S>, tls_api::HandshakeError<S>>
-    where
-        S: io::Read + io::Write + fmt::Debug + Send + 'static,
-    {
-        // TODO: Clone current config: https://github.com/ctz/rustls/pull/78
-        let mut client_config = rustls::ClientConfig::new();
-
-        struct NoCertificateVerifier;
-
-        impl rustls::ServerCertVerifier for NoCertificateVerifier {
-            fn verify_server_cert(
-                &self,
-                _roots: &rustls::RootCertStore,
-                _presented_certs: &[rustls::Certificate],
-                _dns_name: webpki::DNSNameRef,
-                _ocsp_response: &[u8],
-            ) -> result::Result<rustls::ServerCertVerified, rustls::TLSError> {
-                Ok(rustls::ServerCertVerified::assertion())
-            }
-        }
-
-        client_config
-            .dangerous()
-            .set_certificate_verifier(Arc::new(NoCertificateVerifier));
-
-        let tls_stream = if let Ok(domain) = webpki::DNSNameRef::try_from_ascii_str("ignore") {
-            let mut session = rustls::ClientSession::new(&Arc::new(client_config), domain);
-            session.set_buffer_limit(16 * 1024);
-            TlsStream {
-                stream: stream,
-                session,
-                write_skip: 0,
-            }
-        } else {
-            return Err(tls_api::HandshakeError::Failure(Error::Other(
-                "invalid domain",
-            )));
-        };
-
-        tls_stream.complete_handleshake_mid()
     }
 }
 

@@ -266,18 +266,21 @@ impl Con {
                 for rca in cp.cfg.pem_ca.iter() {
                     let _ = connector.add_pem_certificate(rca);
                 }
+                if self.insecure {
+                    let _ = connector.danger_accept_invalid_certs();
+                }
                 let connector = connector.build()?;
                 self.reg(cp.poll, Ready::readable())?;
                 let tcp = self.sock.take().unwrap();
 
-                let r = if self.insecure {
-                    connector
-                        .danger_connect_without_providing_domain_for_certificate_verification_and_server_name_indication(
-                            tcp,
-                        )
-                } else {
-                    connector.connect(self.host.as_ref(), tcp)
-                };
+                // let r = if self.insecure {
+                //     connector
+                //         .danger_connect_without_providing_domain_for_certificate_verification_and_server_name_indication(
+                //             tcp,
+                //         )
+                // } else {
+                let r = connector.connect(self.host.as_ref(), tcp);
+                // };
                 self.handshake_resp::<C>(r)?;
             }
             if self.mid_tls.is_some() {

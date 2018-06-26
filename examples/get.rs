@@ -46,55 +46,26 @@ fn main() {
         args.push("https://www.reddit.com".to_string());
     }
 
-    let cfg = if let Ok(cfg) = read_certs() {
+    let cfg = if let Ok(cfg) = HttpcCfg::certs_from_path(".") {
         Some(cfg)
     } else {
         None
     };
+    let cfg = None;
     let mut htp = Httpc::new(10, cfg);
 
     for i in 1..args.len() {
         println!("Get {}", args[i].as_str());
         let call = CallBuilder::get()
-            .url(args[i].as_str()).expect("Invalid url")
+            .url(args[i].as_str())
+            .expect("Invalid url")
             .timeout_ms(10000)
             .digest_auth(true)
-            // .insecure_do_not_verify_domain()
+            .insecure_do_not_verify_domain()
             .simple_call(&mut htp, &poll)
             .expect("Call start failed");
         do_call(&mut htp, &poll, call);
 
         println!("Open connections={}", htp.open_connections());
     }
-}
-
-use std::ffi::OsStr;
-use std::fs::{read_dir, File};
-use std::io::Read;
-
-fn read_certs() -> ::std::io::Result<HttpcCfg> {
-    let mut cfg = HttpcCfg::new();
-    let certs = [OsStr::new("crt"), OsStr::new("pem")];
-    let der = [OsStr::new("der")];
-    for de in read_dir(".")? {
-        let de = de?;
-        match de.path().extension() {
-            Some(ex) if der.contains(&ex) => {
-                println!("Adding {:?}", de.path());
-                let mut file = File::open(de.path())?;
-                let mut contents = Vec::new();
-                file.read_to_end(&mut contents)?;
-                cfg.der_ca.push(contents);
-            }
-            Some(ex) if certs.contains(&ex) => {
-                println!("Adding {:?}", de.path());
-                let mut file = File::open(de.path())?;
-                let mut contents = Vec::new();
-                file.read_to_end(&mut contents)?;
-                cfg.pem_ca.push(contents);
-            }
-            _ => {}
-        }
-    }
-    Ok(cfg)
 }

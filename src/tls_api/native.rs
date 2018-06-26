@@ -32,7 +32,7 @@ impl tls_api::TlsConnectorBuilder for TlsConnectorBuilder {
     fn add_der_certificate(&mut self, cert: &[u8]) -> Result<&mut Self> {
         let cert = native_tls::Certificate::from_der(cert)?;
 
-        self.0.add_root_certificate(cert)?;
+        self.0.add_root_certificate(cert);
 
         Ok(self)
     }
@@ -40,8 +40,15 @@ impl tls_api::TlsConnectorBuilder for TlsConnectorBuilder {
     fn add_pem_certificate(&mut self, cert: &[u8]) -> Result<&mut Self> {
         let cert = native_tls::Certificate::from_pem(cert)?;
 
-        self.0.add_root_certificate(cert)?;
+        self.0.add_root_certificate(cert);
 
+        Ok(self)
+    }
+
+    fn danger_accept_invalid_certs(&mut self) -> Result<&mut Self> {
+        self.0
+            .danger_accept_invalid_certs(true)
+            .danger_accept_invalid_hostnames(true);
         Ok(self)
     }
 
@@ -120,7 +127,7 @@ where
 {
     match e {
         native_tls::HandshakeError::Failure(e) => tls_api::HandshakeError::Failure(From::from(e)),
-        native_tls::HandshakeError::Interrupted(s) => tls_api::HandshakeError::Interrupted(
+        native_tls::HandshakeError::WouldBlock(s) => tls_api::HandshakeError::Interrupted(
             tls_api::MidHandshakeTlsStream::new(MidHandshakeTlsStream(Some(s))),
         ),
     }
@@ -130,9 +137,9 @@ impl tls_api::TlsConnector for TlsConnector {
     type Builder = TlsConnectorBuilder;
 
     fn builder() -> Result<TlsConnectorBuilder> {
-        native_tls::TlsConnector::builder()
-            .map(TlsConnectorBuilder)
-            .map_err(From::from)
+        Ok(TlsConnectorBuilder(native_tls::TlsConnector::builder()))
+        // .map(TlsConnectorBuilder)
+        // .map_err(From::from)
     }
 
     fn connect<S>(
@@ -144,24 +151,8 @@ impl tls_api::TlsConnector for TlsConnector {
         S: io::Read + io::Write + fmt::Debug + Send + Sync + 'static,
     {
         self.0
+            // .build()?
             .connect(domain, stream)
-            .map(|s| tls_api::TlsStream::new(TlsStream(s)))
-            .map_err(map_handshake_error)
-    }
-
-    fn danger_connect_without_providing_domain_for_certificate_verification_and_server_name_indication<
-        S,
-    >(
-        &self,
-        stream: S,
-    ) -> result::Result<tls_api::TlsStream<S>, tls_api::HandshakeError<S>>
-    where
-        S: io::Read + io::Write + fmt::Debug + Send + Sync + 'static,
-    {
-        self.0
-            .danger_connect_without_providing_domain_for_certificate_verification_and_server_name_indication(
-                stream,
-            )
             .map(|s| tls_api::TlsStream::new(TlsStream(s)))
             .map_err(map_handshake_error)
     }
@@ -171,11 +162,11 @@ impl tls_api::TlsConnector for TlsConnector {
 
 impl TlsAcceptorBuilder {
     pub fn from_pkcs12(pkcs12: &[u8], password: &str) -> Result<TlsAcceptorBuilder> {
-        let pkcs12 = native_tls::Pkcs12::from_der(pkcs12, password)?;
+        let pkcs12 = native_tls::Identity::from_pkcs12(pkcs12, password)?;
 
-        native_tls::TlsAcceptor::builder(pkcs12)
-            .map(TlsAcceptorBuilder)
-            .map_err(From::from)
+        Ok(TlsAcceptorBuilder(native_tls::TlsAcceptor::builder(pkcs12)))
+        // .map(TlsAcceptorBuilder)
+        // .map_err(From::from)
     }
 }
 
