@@ -496,7 +496,7 @@ impl CallImpl {
         in_pos: usize,
         b: &[u8],
     ) -> ::Result<SendStateInt> {
-        if !con.is_signalled() {
+        if !con.is_signalled_wr() {
             return Ok(SendStateInt::Wait);
         }
         con.signalled::<C, Vec<u8>>(cp, &self.b).map_err(|e| {
@@ -521,7 +521,6 @@ impl CallImpl {
                         return Ok(SendStateInt::Wait);
                     } else if ie.kind() == IoErrorKind::WouldBlock {
                         con.reg(cp.poll, Ready::writable())?;
-                        con.set_signalled(false);
                         return Ok(SendStateInt::Wait);
                     } else {
                         return Err(::Error::Closed);
@@ -570,7 +569,7 @@ impl CallImpl {
         internal: bool,
         buf: &mut Vec<u8>,
     ) -> ::Result<RecvStateInt> {
-        if !con.is_signalled() {
+        if !con.is_signalled_rd() {
             return Ok(RecvStateInt::Wait);
         }
         let mut orig_len = self.reserve_space(internal, buf)?;
@@ -589,7 +588,6 @@ impl CallImpl {
                     } else if ie.kind() == IoErrorKind::WouldBlock {
                         buf.truncate(orig_len);
                         con.reg(cp.poll, Ready::readable())?;
-                        con.set_signalled(false);
                         if entire_sz == 0 {
                             return Ok(RecvStateInt::Wait);
                         }

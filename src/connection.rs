@@ -1,51 +1,22 @@
+use call::CallImpl;
 use dns::{self, Dns};
 use dns_cache::DnsCache;
+use fnv::FnvHashMap as HashMap;
 use mio::event::Evented;
 use mio::net::TcpStream;
 use mio::{Poll, PollOpt, Ready, Token};
+use slab::Slab;
+use smallvec::SmallVec;
+use std::io::ErrorKind as IoErrorKind;
+use std::io::{Read, Write};
 use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
 use std::time::{Duration, Instant};
 use tls_api::{
     HandshakeError, MidHandshakeTlsStream, TlsConnector, TlsConnectorBuilder, TlsStream,
 };
-use {CallRef, Result};
-// use http::{Request, Uri};
-use call::CallImpl;
-use fnv::FnvHashMap as HashMap;
-use slab::Slab;
-use smallvec::SmallVec;
-use std::io::{Read, Write};
 use types::{CallBuilderImpl, CallParam, RecvStateInt, SendStateInt};
-
-// fn is_https(url: &Uri) -> Result<bool> {
-//     if let Some(scheme) = url.scheme_part() {
-//         if scheme == "https" {
-//             return Ok(true);
-//         } else if scheme == "http" {
-//             return Ok(false);
-//         } else if scheme == "ws" {
-//             return Ok(false);
-//         } else if scheme == "wss" {
-//             return Ok(true);
-//         } else {
-//             return Err(::Error::InvalidScheme);
-//         }
-//     } else {
-//         return Err(::Error::InvalidScheme);
-//     }
-// }
-
-// fn url_port(url: &Uri) -> Result<u16> {
-//     if let Some(p) = url.port() {
-//         return Ok(p);
-//     }
-//     if is_https(url)? {
-//         Ok(443)
-//     } else {
-//         Ok(80)
-//     }
-// }
+use {CallRef, Result};
 
 fn connect(addr: SocketAddr) -> Result<TcpStream> {
     let tcp = TcpStream::connect(&addr)?;
@@ -68,7 +39,8 @@ pub struct Con {
     to_close: bool,
     idle_since: Instant,
     insecure: bool,
-    signalled: bool,
+    signalled_rd: bool,
+    signalled_wr: bool,
     is_tls: bool,
 }
 
@@ -101,7 +73,8 @@ impl Con {
             is_tls: cb.tls, //is_https(req.uri())?,
             tls: None,
             mid_tls: None,
-            signalled: false,
+            signalled_rd: true,
+            signalled_wr: true,
         };
         res.create_sock(cache)?;
         if res.sock.is_none() {
@@ -192,6 +165,7 @@ impl Con {
     pub fn is_first_use(&self) -> bool {
         self.first_use
     }
+    #[inline]
     pub fn set_idle(&mut self, b: bool) {
         self.first_use = false;
         if b {
@@ -199,6 +173,7 @@ impl Con {
         }
         // self.idle = b;
     }
+    #[inline]
     pub fn first_use_done(&mut self) {
         self.first_use = false;
     }
@@ -206,10 +181,6 @@ impl Con {
     pub fn set_to_close(&mut self, b: bool) {
         self.to_close = b;
     }
-    // #[inline]
-    // pub fn to_close(&self) -> bool {
-    //     self.to_close
-    // }
 
     pub fn reg(&mut self, poll: &Poll, rdy: Ready) -> ::std::io::Result<()> {
         if self.reg_for.contains(rdy) {
@@ -219,17 +190,32 @@ impl Con {
             self.reg_for = rdy;
             self.register(poll, self.token, self.reg_for, PollOpt::edge())
         } else {
-            self.reg_for |= rdy;
-            self.reregister(poll, self.token, self.reg_for, PollOpt::edge())
+            if !self.reg_for.contains(rdy) {
+                self.reg_for |= rdy;
+                return self.reregister(poll, self.token, self.reg_for, PollOpt::edge());
+            }
+            Ok(())
         }
     }
 
-    pub fn is_signalled(&self) -> bool {
-        self.signalled
+    #[inline]
+    pub fn is_signalled_rd(&self) -> bool {
+        self.signalled_rd
     }
 
-    pub fn set_signalled(&mut self, v: bool) {
-        self.signalled = v;
+    #[inline]
+    fn set_signalled_rd(&mut self, v: bool) {
+        self.signalled_rd = v;
+    }
+
+    #[inline]
+    pub fn is_signalled_wr(&self) -> bool {
+        self.signalled_wr
+    }
+
+    #[inline]
+    fn set_signalled_wr(&mut self, v: bool) {
+        self.signalled_wr = v;
     }
 
     pub fn signalled<'a, C: TlsConnector, T>(
@@ -237,7 +223,7 @@ impl Con {
         cp: &mut CallParam,
         req: &CallBuilderImpl,
     ) -> Result<()> {
-        if !self.signalled {
+        if !self.signalled_rd && !self.signalled_wr {
             return Ok(());
         }
         if self.dns.is_some() {
@@ -272,15 +258,7 @@ impl Con {
                 let connector = connector.build()?;
                 self.reg(cp.poll, Ready::readable())?;
                 let tcp = self.sock.take().unwrap();
-
-                // let r = if self.insecure {
-                //     connector
-                //         .danger_connect_without_providing_domain_for_certificate_verification_and_server_name_indication(
-                //             tcp,
-                //         )
-                // } else {
                 let r = connector.connect(self.host.as_ref(), tcp);
-                // };
                 self.handshake_resp::<C>(r)?;
             }
             if self.mid_tls.is_some() {
@@ -314,31 +292,49 @@ impl Con {
 
 impl Read for Con {
     fn read(&mut self, buf: &mut [u8]) -> ::std::io::Result<usize> {
-        if let Some(ref mut tcp) = self.sock {
+        let res = if let Some(ref mut tcp) = self.sock {
             tcp.read(buf)
         } else if let Some(ref mut tls) = self.tls {
             tls.read(buf)
         } else {
-            Err(::std::io::Error::new(
+            return Err(::std::io::Error::new(
                 ::std::io::ErrorKind::WouldBlock,
                 "No socket",
-            ))
+            ));
+        };
+        match &res {
+            &Err(ref ie) => {
+                if ie.kind() == IoErrorKind::WouldBlock {
+                    self.set_signalled_rd(false);
+                }
+            }
+            _ => {}
         }
+        res
     }
 }
 
 impl Write for Con {
     fn write(&mut self, buf: &[u8]) -> ::std::io::Result<usize> {
-        if let Some(ref mut tcp) = self.sock {
+        let res = if let Some(ref mut tcp) = self.sock {
             tcp.write(buf)
         } else if let Some(ref mut tls) = self.tls {
             tls.write(buf)
         } else {
-            Err(::std::io::Error::new(
+            return Err(::std::io::Error::new(
                 ::std::io::ErrorKind::WouldBlock,
                 "No socket",
-            ))
+            ));
+        };
+        match &res {
+            &Err(ref ie) => {
+                if ie.kind() == IoErrorKind::WouldBlock {
+                    self.set_signalled_wr(false);
+                }
+            }
+            _ => {}
         }
+        res
     }
 
     fn flush(&mut self) -> ::std::io::Result<()> {
@@ -461,17 +457,27 @@ impl ConTable {
         self.cons.len()
     }
 
-    pub fn signalled_con(&mut self, id: usize) -> bool {
+    pub fn signalled_con(&mut self, id: usize, rdy: Ready) -> bool {
         if let Some(t) = self.cons.get_mut(id) {
-            t.0.set_signalled(true);
+            if rdy.is_readable() {
+                t.0.set_signalled_rd(true);
+            }
+            if rdy.is_writable() {
+                t.0.set_signalled_wr(true);
+            }
             return true;
         }
         false
     }
 
-    pub fn fixed_signalled_con(&mut self, k: usize) -> bool {
+    pub fn fixed_signalled_con(&mut self, k: usize, rdy: Ready) -> bool {
         if let Some((con, _)) = self.cons_fixed.get_mut(&k) {
-            con.set_signalled(true);
+            if rdy.is_readable() {
+                con.set_signalled_rd(true);
+            }
+            if rdy.is_writable() {
+                con.set_signalled_wr(true);
+            }
             return true;
         }
         false

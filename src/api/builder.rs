@@ -387,9 +387,14 @@ impl Httpc {
         self.h.timeout_extend(out)
     }
     /// Get CallRef for ev if token in configured range for Httpc.
-    /// Compare CallRef external call.
+    /// Compare CallRef with external Call to find out which call this
+    /// event belongs to if any.
     ///
-    /// First you must call call_send until you get a SendState::Receiving
+    /// This call is mandatory as it sets up internal data structures for when something
+    /// is signalled! Even if you know which call is being signalled, you must call event
+    /// to let mio_httpc know what state socket is in.
+    ///
+    /// For streaming API first you must call call_send until you get a SendState::Receiving
     /// after that call is in receive state and you must call call_recv.
     pub fn event(&mut self, ev: &Event) -> Option<CallRef> {
         self.h.event::<CONNECTOR>(ev)

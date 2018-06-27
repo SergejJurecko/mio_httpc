@@ -155,10 +155,10 @@ impl HttpcImpl {
         let mut id = ev.token().0;
         if id >= self.con_offset && id <= self.con_offset + (u16::max_value() as usize) {
             id -= self.con_offset;
-            if self.cons.signalled_con(id) {
+            if self.cons.signalled_con(id, ev.readiness()) {
                 return Some(CallRef::new(id as u16, 0));
             }
-        } else if self.cons.fixed_signalled_con(id) {
+        } else if self.cons.fixed_signalled_con(id, ev.readiness()) {
             return Some(CallRef(0, id));
         }
         None

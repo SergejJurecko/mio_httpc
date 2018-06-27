@@ -51,7 +51,6 @@ fn main() {
     } else {
         None
     };
-    let cfg = None;
     let mut htp = Httpc::new(10, cfg);
 
     for i in 1..args.len() {
