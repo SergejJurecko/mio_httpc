@@ -18,3 +18,9 @@ run_streaming:
 
 run:
 	cargo run --example get --features "native" -- $(URL)
+
+openssl:
+	OPENSSL_DIR=/usr/local/opt/openssl/ \
+	OPENSSL_LIB_DIR=/usr/local/opt/openssl/lib/ \
+	OPENSSL_INCLUDE_DIR=/usr/local/opt/openssl/include/ \
+	cargo run --example get --features "openssl" -- "https://edition.cnn.com"

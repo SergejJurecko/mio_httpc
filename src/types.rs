@@ -157,7 +157,7 @@ impl<'a> AuthDigest<'a> {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub(crate) struct AuthenticateInfo {
     pub(crate) nc: usize,
     pub(crate) hdr: String,
@@ -278,7 +278,7 @@ type PathBuf = SmallVec<[u8; 256]>;
 type QueryBuf = SmallVec<[u8; 256]>;
 type HeaderBuf = SmallVec<[u8; 1024 * 2]>;
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct CallBytes {
     pub us: AuthBuf,
     pub pw: AuthBuf,
@@ -314,7 +314,7 @@ impl CallBytes {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Method {
     GET,
     PUT,
@@ -358,7 +358,7 @@ impl Method {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum TransferEncoding {
     Identity,
     Chunked,
@@ -376,7 +376,7 @@ pub struct CallParam<'a> {
 }
 
 /// Start configure call.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct CallBuilderImpl {
     // pub req: Request<Vec<u8>>,
     pub chunked_parse: bool,
