@@ -685,6 +685,14 @@ impl CallImpl {
                 }
             }
             Err(e) => {
+                if let Dir::Receiving(_pos, false) = self.dir {
+                    // If we do not know content-length and it is not chunked, return normal done response.
+                    if self.body_sz == usize::max_value() && !self.b.chunked_parse {
+                        self.dir = Dir::Done;
+                        con.set_to_close(true);
+                        return Ok(RecvStateInt::Done);
+                    }
+                }
                 return Err(From::from(e));
             }
         }
