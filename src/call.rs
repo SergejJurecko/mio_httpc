@@ -707,6 +707,15 @@ impl CallImpl {
                     self.buf_body.extend_from_slice(&buf[hdr_sz..]);
                 }
                 resp.status = presp.code.unwrap_or(0);
+                if resp.status == 204
+                    || resp.status == 304
+                    || resp.status >= 100 && resp.status < 200
+                    || self.b.method == Method::HEAD
+                {
+                    self.body_sz = 0;
+                } else {
+                    self.body_sz = usize::max_value();
+                }
                 let mut chunked_parse = false;
                 let mut gzip = false;
                 for h in presp.headers.iter() {

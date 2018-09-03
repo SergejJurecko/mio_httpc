@@ -314,7 +314,7 @@ impl CallBytes {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Method {
     GET,
     PUT,
