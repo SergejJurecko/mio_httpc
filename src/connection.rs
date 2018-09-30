@@ -79,6 +79,9 @@ impl Con {
         res.create_sock(cache)?;
         if res.sock.is_none() {
             res.create_dns(dns_timeout)?;
+        } else {
+            res.set_signalled_rd(false);
+            res.set_signalled_wr(false);
         }
         Ok(res)
     }
@@ -237,6 +240,8 @@ impl Con {
                     self.deregister(cp.poll)?;
                     self.sock = Some(connect(SocketAddr::new(ip, req.port))?);
                     self.reg_for = Ready::writable();
+                    self.set_signalled_rd(false);
+                    self.set_signalled_wr(false);
                     self.register(cp.poll, self.token, self.reg_for, PollOpt::edge())?;
 
                     return Ok(());
