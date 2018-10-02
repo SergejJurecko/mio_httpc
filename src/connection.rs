@@ -53,7 +53,7 @@ impl Con {
         dns_timeout: u64,
         insecure: bool,
     ) -> Result<Con> {
-        let rdy = Ready::writable();
+        let rdy = Ready::writable() | Ready::readable();
         let port = cb.port; //url_port(req.uri())?;
         if cb.bytes.host.len() == 0 {
             return Err(::Error::NoHost);
@@ -239,7 +239,7 @@ impl Con {
                     self.dns = None;
                     self.deregister(cp.poll)?;
                     self.sock = Some(connect(SocketAddr::new(ip, req.port))?);
-                    self.reg_for = Ready::writable();
+                    self.reg_for = Ready::writable() | Ready::readable();
                     self.set_signalled_rd(false);
                     self.set_signalled_wr(false);
                     self.register(cp.poll, self.token, self.reg_for, PollOpt::edge())?;

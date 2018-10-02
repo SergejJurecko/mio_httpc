@@ -81,14 +81,15 @@ pub struct AuthDigest<'a> {
 
 impl<'a> AuthDigest<'a> {
     pub fn parse(s: &'a str) -> ::Result<AuthDigest<'a>> {
-        // println!("Digest in {}",s);
+        // println!("Digest in {}", s);
         let mut realm = "";
         let mut nonce = "";
         let mut opaque = "";
         let mut qop = DigestQop::None;
         let mut stale = false;
         let mut alg = DigestAlg::MD5;
-        if let Ok(pairs) = AuthParser::parse(Rule::auth, s) {
+        let res_parse = AuthParser::parse(Rule::auth, s);
+        if let Ok(pairs) = res_parse {
             for pair in pairs {
                 for inner_pair in pair.into_inner() {
                     match inner_pair.as_rule() {
@@ -152,6 +153,8 @@ impl<'a> AuthDigest<'a> {
                 stale,
                 qop,
             });
+        } else if let Err(_e) = res_parse {
+            // println!("Error parsing {}", e);
         }
         Err(::Error::AuthenticateParse)
     }

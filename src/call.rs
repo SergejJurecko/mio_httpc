@@ -763,9 +763,12 @@ impl CallImpl {
                             let mut auth_type = val.split_whitespace();
                             if let Some(auth_type) = auth_type.next() {
                                 if auth_type.eq_ignore_ascii_case("digest") {
-                                    if ::types::AuthDigest::parse(val).is_ok() {
+                                    let de = ::types::AuthDigest::parse(val);
+                                    if de.is_ok() {
                                         self.dir = Dir::Done;
                                         *auth_info = Some(AuthenticateInfo::new(String::from(val)));
+                                    } else if let Err(_e) = de {
+                                        // println!("Digest parse failed! {:?}", e);
                                     }
                                 } else if auth_type.eq_ignore_ascii_case("basic") && self.b.digest {
                                     return Ok(());

@@ -170,7 +170,9 @@ pub enum Error {
     #[fail(display = "Sync call timed out")]
     TimeOut,
     /// Request structure did not contain body and CallSimple was used for POST/PUT.
-    #[fail(display = "Request structure did not contain body and CallSimple was used for POST/PUT.")]
+    #[fail(
+        display = "Request structure did not contain body and CallSimple was used for POST/PUT."
+    )]
     MissingBody,
     // /// No call for mio::Token
     // #[fail(display = "No call for token")]
@@ -225,7 +227,10 @@ pub enum Error {
     #[fail(display = "Error parsing WWW-Authenticate header")]
     AuthenticateParse,
     /// Chunk was larger than configured CallBuilder::chunked_max_chunk.
-    #[fail(display = "Chunk was larger than configured CallBuilder::chunked_max_chunk. {}", _0)]
+    #[fail(
+        display = "Chunk was larger than configured CallBuilder::chunked_max_chunk. {}",
+        _0
+    )]
     ChunkOverlimit(usize),
 }
 

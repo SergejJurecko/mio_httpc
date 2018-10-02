@@ -1,7 +1,7 @@
-whitespace = _{ " " | "\t" | "\r" | "\n" }
+WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
 
 quote = _{ "\"" }
-string = @{(!("\"" | "\\") ~ ANY)*}
+string = {(!("\"" | "\\") ~ ANY)*}
 qword = _{ quote ~ string ~ quote }
 
 auth_type = { ^"Digest" | ^"Basic" }
