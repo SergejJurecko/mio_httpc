@@ -1,7 +1,7 @@
 whitespace = _{ " " | "\t" | "\r" | "\n" }
 
 quote = _{ "\"" }
-string = @{(!("\"" | "\\") ~ any)*}
+string = @{(!("\"" | "\\") ~ ANY)*}
 qword = _{ quote ~ string ~ quote }
 
 auth_type = { ^"Digest" | ^"Basic" }
@@ -18,4 +18,4 @@ opaque = { ^"opaque"  ~ "=" ~ qword}
 algorithm = { ^"algorithm" ~ "=" ~ alg}
 stale = { ^"stale" ~ "=" ~ bool}
 
-auth = { soi ~ auth_type ~ ((realm | qop | nonce | opaque | algorithm) ~ ","?)+ ~ eoi }
+auth = { SOI ~ auth_type ~ ((realm | qop | nonce | opaque | algorithm) ~ ","?)+ ~ EOI }
