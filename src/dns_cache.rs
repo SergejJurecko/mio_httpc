@@ -3,44 +3,108 @@ use fnv::FnvHashMap as HashMap;
 use std::net::IpAddr;
 use std::time::{Duration, Instant};
 
-pub struct DnsCache {
-    hm: HashMap<String, (Instant, IpAddr)>,
-    last_check: Instant,
+struct CacheEntry {
+    expires: Instant,
+    ip: IpAddr,
 }
 
-static MAX_AGE: u64 = 5 * 60 * 1000;
-
-fn too_old(now: Instant, age: Instant) -> bool {
-    now.duration_since(age) > Duration::from_millis(MAX_AGE)
+pub struct DnsCache {
+    max_age: Duration,
+    cache: HashMap<String, CacheEntry>,
+    next_expiration_check: Instant,
 }
 
 impl DnsCache {
     pub fn new() -> DnsCache {
+        let max_age = Duration::from_millis(5 * 60 * 1000);
         DnsCache {
-            last_check: Instant::now() - Duration::from_millis(MAX_AGE),
-            hm: HashMap::default(),
+            max_age,
+            next_expiration_check: Instant::now() + max_age,
+            cache: HashMap::default(),
         }
     }
 
     pub fn find(&mut self, host: &str) -> Option<IpAddr> {
         let now = Instant::now();
-        if too_old(now, self.last_check) {
+        if self.next_expiration_check < now {
             self.cleanup(now);
         }
-        if let Some(&(_, v)) = self.hm.get(host) {
-            return Some(v);
+        if let Some(&CacheEntry { ip, .. }) = self.cache.get(host) {
+            return Some(ip);
         }
         None
     }
 
     pub fn save(&mut self, host: &str, ip: IpAddr) {
         let now = Instant::now();
-        self.hm.insert(String::from(host), (now, ip));
+        let expires = now + self.max_age;
+        self.cache.insert(
+            String::from(host),
+            CacheEntry { expires, ip },
+        );
         self.cleanup(now);
     }
 
     fn cleanup(&mut self, now: Instant) {
-        self.hm.retain(|_, &mut (age, _)| !too_old(now, age));
-        self.last_check = now;
+        let mut smallest_expiration = now + self.max_age;
+        self.cache.retain(|_, &mut CacheEntry { expires, .. }| {
+            if expires < smallest_expiration {
+                smallest_expiration = expires
+            }
+            expires > now
+        });
+        self.next_expiration_check = smallest_expiration;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::Ipv4Addr;
+    use std::thread;
+
+    fn ip(index: u8) -> IpAddr {
+        IpAddr::V4(Ipv4Addr::new(127, 0, 0, index))
+    }
+
+    fn new_cache() -> DnsCache {
+        let max_age = Duration::from_millis(100);
+        DnsCache {
+            max_age,
+            next_expiration_check: Instant::now() + max_age,
+            cache: HashMap::default(),
+        }
+    }
+
+    #[test]
+    fn test_cache() {
+        let mut cache = new_cache();
+
+        // 0 ms after start
+        assert!(cache.find("h1").is_none());
+        cache.save("h1", ip(1));
+        assert_eq!(ip(1), cache.find("h1").unwrap());
+
+        thread::sleep(Duration::from_millis(50));
+        // 50 ms after start
+        assert_eq!(ip(1), cache.find("h1").unwrap());
+        cache.save("h2", ip(2));
+        assert_eq!(ip(2), cache.find("h2").unwrap());
+
+        thread::sleep(Duration::from_millis(60));
+        // 110 ms after start
+        assert!(cache.find("h1").is_none());
+        assert_eq!(ip(2), cache.find("h2").unwrap());
+        cache.save("h3", ip(3));
+        assert_eq!(ip(3), cache.find("h3").unwrap());
+
+        thread::sleep(Duration::from_millis(60));
+        // 170 ms after start
+        assert!(cache.find("h2").is_none());
+        assert_eq!(ip(3), cache.find("h3").unwrap());
+
+        thread::sleep(Duration::from_millis(50));
+        // 220 ms after start
+        assert!(cache.find("h3").is_none());
     }
 }
