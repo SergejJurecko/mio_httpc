@@ -100,33 +100,19 @@ extern crate failure;
 #[macro_use]
 extern crate matches;
 
-// #[allow(dead_code, unused_variables)]
-mod dns_cache;
-// #[allow(dead_code, unused_variables)]
+mod api;
+mod call;
+mod connection;
 mod dns;
+mod dns_cache;
 #[allow(dead_code, unused_imports)]
 mod dns_parser;
-// #[allow(dead_code, unused_variables)]
-mod connection;
-// #[allow(dead_code, unused_variables)]
 mod httpc;
-// #[allow(dead_code, unused_variables, unused_imports)]
-mod call;
-// #[allow(dead_code, unused_variables)]
-mod api;
 mod tls_api;
 #[allow(dead_code, unused_variables)]
 mod types;
 
 pub use api::*;
-// pub use http::Error as HttpError;
-// pub use http::header::*;
-// pub use http::method::*;
-// // pub use http::request::*;
-// pub use http::response::*;
-// pub use http::status::*;
-// pub use http::uri::*;
-// pub use http::version::*;
 #[cfg(feature = "native")]
 pub use native_tls::Error as TLSError;
 #[cfg(feature = "openssl")]
@@ -137,10 +123,6 @@ pub use openssl::error::ErrorStack as OpenSSLErrorStack;
 pub use openssl::ssl::Error as TLSError;
 #[cfg(feature = "rustls")]
 pub use rustls::TLSError;
-// #[cfg(feature = "openssl")]
-// pub use rustls::TLSError;
-// pub use http::Extensions;
-// use failure::Error;
 
 pub type Result<T> = ::std::result::Result<T, Error>;
 #[derive(Debug, Fail)]
@@ -162,8 +144,6 @@ pub enum Error {
     #[fail(display = "Httparse error: {}", _0)]
     Httparse(#[cause] httparse::Error),
 
-    // #[fail(display = "Http error: {}", _0)]
-    // Http(#[cause] http::Error),
     #[fail(display = "WebSocket setup failed")]
     WebSocketFail(Response),
 
@@ -174,9 +154,6 @@ pub enum Error {
         display = "Request structure did not contain body and CallSimple was used for POST/PUT."
     )]
     MissingBody,
-    // /// No call for mio::Token
-    // #[fail(display = "No call for token")]
-    // InvalidToken,
     /// Response over max_response limit
     #[fail(display = "Response over max_response limit")]
     ResponseTooBig,
@@ -201,10 +178,6 @@ pub enum Error {
     #[cfg(feature = "openssl")]
     #[fail(display = "OpenSSL error {}", _0)]
     OpenSSLError(#[cause] OpenSSLError),
-
-    // /// TLS handshake failed.
-    // #[fail(display = "Handshake failed {}",_0)]
-    // TlsHandshake(#[cause] tls_api::Error),
     /// All 0xFFFF slots for connections are full.
     #[fail(display = "Concurrent connection limit")]
     NoSpace,
@@ -262,21 +235,11 @@ impl From<OpenSSLError> for Error {
         Error::OpenSSLError(e)
     }
 }
-// impl From<tls_api::Error> for Error {
-//     fn from(e: tls_api::Error) -> Self {
-//         Error::Tls(e)
-//     }
-// }
 impl From<httparse::Error> for Error {
     fn from(e: httparse::Error) -> Self {
         Error::Httparse(e)
     }
 }
-// impl From<http::Error> for Error {
-//     fn from(e: http::Error) -> Self {
-//         Error::Http(e)
-//     }
-// }
 impl From<std::string::FromUtf8Error> for Error {
     fn from(e: std::string::FromUtf8Error) -> Self {
         Error::FromUtf8(e)

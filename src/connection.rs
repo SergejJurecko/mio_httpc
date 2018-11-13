@@ -258,7 +258,7 @@ impl Con {
                     let _ = connector.add_pem_certificate(rca);
                 }
                 if self.insecure {
-                    let _ = connector.danger_accept_invalid_certs();
+                    let _ = connector.danger_accept_invalid_certs().unwrap();
                 }
                 let connector = connector.build()?;
                 self.reg(cp.poll, Ready::readable())?;

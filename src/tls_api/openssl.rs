@@ -214,7 +214,7 @@ impl tls_api::TlsConnector for TlsConnector {
             let cfgr = match self.0.configure() {
                 Ok(mut cfg) => {
                     cfg.set_verify_hostname(false);
-                    cfg.set_use_server_name_indication(false);
+                    cfg.set_verify(::openssl::ssl::SslVerifyMode::NONE);
                     cfg.connect(domain, stream)
                 }
                 Err(e) => {

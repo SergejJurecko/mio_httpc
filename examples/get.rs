@@ -60,7 +60,7 @@ fn main() {
             .expect("Invalid url")
             .timeout_ms(10000)
             .digest_auth(true)
-            .insecure_do_not_verify_domain()
+            // .insecure_do_not_verify_domain()
             .simple_call(&mut htp, &poll)
             .expect("Call start failed");
         do_call(&mut htp, &poll, call);
