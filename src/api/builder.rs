@@ -231,7 +231,9 @@ impl CallBuilder {
     /// CallBuilder is invalid after this call and will panic if used again.
     pub fn call(&mut self, httpc: &mut Httpc, poll: &Poll) -> Result<Call> {
         // self.finish()?;
-        let cb = self.cb.take().unwrap();
+        let mut cb = self.cb.take().unwrap();
+        // cant stream response with gzip on
+        cb.gzip(false);
         httpc.call::<CONNECTOR>(cb, poll)
     }
 
