@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use mio::net::UdpSocket;
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
@@ -7,6 +8,11 @@ use dns_parser::{Packet, RRData};
 use rand;
 use smallvec::SmallVec;
 use std::time::{Duration, Instant};
+
+mod cache;
+pub use self::cache::DnsCache;
+#[cfg(any(target_os = "ios", target_os = "macos"))]
+mod apple;
 
 pub(crate) fn dns_parse(buf: &[u8]) -> Option<IpAddr> {
     let packet = Packet::parse(buf).unwrap();
@@ -129,28 +135,69 @@ impl Dns {
     // }
 }
 
-#[cfg(target_os = "macos")]
+// #[cfg(target_os = "macos")]
+// pub fn get_dns_servers(srvs: &mut SmallVec<[IpAddr; 4]>) {
+//     let out = ::std::process::Command::new("scutil").arg("--dns").output();
+//     if let Ok(out) = out {
+//         if let Ok(s) = String::from_utf8(out.stdout) {
+//             scutil_parse(srvs, s);
+//         }
+//     }
+//     if srvs.len() == 0 {
+//         get_google(srvs)
+//     }
+// }
+#[cfg(any(target_os = "ios", target_os = "macos"))]
 pub fn get_dns_servers(srvs: &mut SmallVec<[IpAddr; 4]>) {
-    let out = ::std::process::Command::new("scutil").arg("--dns").output();
-    if let Ok(out) = out {
-        if let Ok(s) = String::from_utf8(out.stdout) {
-            return scutil_parse(srvs, s);
+    unsafe {
+        let mut sockaddr = ::std::mem::zeroed::<[apple::res_9_sockaddr_union; 4]>();
+        let mut state = ::std::mem::zeroed::<apple::__res_9_state>();
+        if apple::res_9_ninit(&mut state) >= 0 {
+            let n = apple::res_9_getservers(&mut state, &mut sockaddr[0] as _, sockaddr.len() as _);
+            if n > 0 {
+                for i in 0..(n as usize) {
+                    if sockaddr[i].sin.sin_len > 0 {
+                        let ip4 = Ipv4Addr::from(u32::from_be(sockaddr[i].sin.sin_addr.s_addr));
+                        if ip4.is_unspecified()
+                            || ip4.is_broadcast()
+                            || ip4.is_multicast()
+                            || ip4.is_documentation()
+                        {
+                            continue;
+                        }
+                        srvs.push(IpAddr::V4(ip4));
+                    }
+                    if sockaddr[i].sin6.sin6_len > 0 {
+                        let s = sockaddr[i].sin6.sin6_addr.__u6_addr.__u6_addr16;
+                        let ip6 = IpAddr::V6(Ipv6Addr::new(
+                            s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7],
+                        ));
+                        if ip6.is_unspecified() || ip6.is_multicast() {
+                            continue;
+                        }
+                        srvs.push(ip6);
+                    }
+                }
+            }
         }
     }
-    get_google(srvs)
+    if srvs.len() == 0 {
+        get_google(srvs)
+    }
 }
 
-#[cfg(unix)]
-#[cfg(not(target_os = "macos"))]
+#[cfg(all(unix, not(target_os = "macos"), not(target_os = "ios")))]
 pub fn get_dns_servers(srvs: &mut SmallVec<[IpAddr; 4]>) {
     if let Ok(mut file) = ::std::fs::File::open("/etc/resolv.conf") {
         let mut contents = String::new();
         use std::io::Read;
         if file.read_to_string(&mut contents).is_ok() {
-            return resolv_parse(srvs, contents);
+            resolv_parse(srvs, contents);
         }
     }
-    get_google(srvs)
+    if srvs.len() == 0 {
+        get_google(srvs)
+    }
 }
 
 #[cfg(windows)]
@@ -164,8 +211,6 @@ fn get_google(srvs: &mut SmallVec<[IpAddr; 4]>) {
     // ["8.8.8.8".parse().unwrap(), "8.8.4.4".parse().unwrap()]
 }
 
-#[cfg(unix)]
-#[cfg(not(target_os = "macos"))]
 fn resolv_parse(srvs: &mut SmallVec<[IpAddr; 4]>, s: String) {
     // let mut out = Vec::with_capacity(2);
     for line in s.lines() {
@@ -183,21 +228,21 @@ fn resolv_parse(srvs: &mut SmallVec<[IpAddr; 4]>, s: String) {
     }
 }
 
-fn scutil_parse(srvs: &mut SmallVec<[IpAddr; 4]>, s: String) {
-    for line in s.lines() {
-        let mut words = line.split_whitespace();
-        if let Some(s) = words.next() {
-            if s.starts_with("nameserver[") {
-                if let Some(s) = words.next() {
-                    if s == ":" {
-                        if let Some(s) = words.next() {
-                            if let Ok(adr) = s.parse() {
-                                srvs.push(adr);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
+// fn scutil_parse(srvs: &mut SmallVec<[IpAddr; 4]>, s: String) {
+//     for line in s.lines() {
+//         let mut words = line.split_whitespace();
+//         if let Some(s) = words.next() {
+//             if s.starts_with("nameserver[") {
+//                 if let Some(s) = words.next() {
+//                     if s == ":" {
+//                         if let Some(s) = words.next() {
+//                             if let Ok(adr) = s.parse() {
+//                                 srvs.push(adr);
+//                             }
+//                         }
+//                     }
+//                 }
+//             }
+//         }
+//     }
+// }

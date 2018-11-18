@@ -1,10 +1,9 @@
 use call::CallImpl;
-use dns::{self, Dns};
-use dns_cache::DnsCache;
 use fnv::FnvHashMap as HashMap;
 use mio::event::Evented;
 use mio::net::TcpStream;
 use mio::{Poll, PollOpt, Ready, Token};
+use resolve::{self, Dns, DnsCache};
 use slab::Slab;
 use smallvec::SmallVec;
 use std::io::ErrorKind as IoErrorKind;
@@ -115,25 +114,7 @@ impl Con {
         Ok(())
     }
 
-    // pub fn retry<C: TlsConnector, T>(
-    //     &mut self,
-    //     req: &Request<T>,
-    //     cache: &mut DnsCache,
-    //     poll: &Poll,
-    //     dns_timeout: u64,
-    // ) -> Result<()> {
-    //     let _ = self.deregister(poll);
-    //     self.create_sock(cache)?;
-    //     self.reg_for = Ready::writable();
-    //     if self.sock.is_none() {
-    //         self.create_dns(dns_timeout)?;
-    //     }
-    //     self.register(poll, self.token, self.reg_for, PollOpt::edge())?;
-    //     Ok(())
-    // }
-
     pub fn reuse(&mut self, poll: &Poll) -> Result<()> {
-        // self.deregister(poll)?;
         self.reg_for = Ready::writable() | Ready::readable();
         self.reregister(poll, self.token, self.reg_for, PollOpt::edge())?;
         Ok(())
@@ -233,7 +214,7 @@ impl Con {
             let dns = self.dns.take().unwrap();
             let mut buf: [u8; 512] = unsafe { ::std::mem::uninitialized() };
             if let Ok(sz) = dns.sock.recv(&mut buf[..]) {
-                if let Some(ip) = dns::dns_parse(&buf[..sz]) {
+                if let Some(ip) = resolve::dns_parse(&buf[..sz]) {
                     // let host = req.uri().host().unwrap();
                     cp.dns.save(self.host.as_ref(), ip);
                     self.dns = None;

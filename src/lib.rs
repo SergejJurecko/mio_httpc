@@ -103,11 +103,10 @@ extern crate matches;
 mod api;
 mod call;
 mod connection;
-mod dns;
-mod dns_cache;
 #[allow(dead_code, unused_imports)]
 mod dns_parser;
 mod httpc;
+mod resolve;
 mod tls_api;
 #[allow(dead_code, unused_variables)]
 mod types;

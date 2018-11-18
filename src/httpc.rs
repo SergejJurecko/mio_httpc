@@ -1,7 +1,7 @@
 use call::CallImpl;
 use connection::{Con, ConTable};
-use dns_cache::DnsCache;
 use mio::{Event, Poll, Token};
+use resolve::DnsCache;
 use std::collections::VecDeque;
 use tls_api::TlsConnector;
 use types::*;

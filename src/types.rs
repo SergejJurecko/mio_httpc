@@ -1,4 +1,3 @@
-use dns_cache::DnsCache;
 use httpc::HttpcImpl;
 use mio::Poll;
 use percent_encoding::{
@@ -6,6 +5,7 @@ use percent_encoding::{
     USERINFO_ENCODE_SET,
 };
 use pest::Parser;
+use resolve::DnsCache;
 use smallvec::SmallVec;
 use std::ops::Deref;
 use std::str::{from_utf8_unchecked, FromStr};
