@@ -125,6 +125,10 @@ pub struct HttpcCfg {
     /// Max 8K buffers to keep cached for subsequent requests.
     /// Every request requires 2.
     pub cache_buffers: usize,
+    /// Set DNS servers if library can not easily get them from system (like Android).
+    /// macOS, iOS and unix with /etc/resolv.conf are supported ATM.
+    /// If none provided and library can't get them, google DNS servers (8.8.8.8:53, 8.8.4.4:53) will be used.
+    pub dns_servers: Vec<::std::net::SocketAddr>,
 }
 
 impl HttpcCfg {

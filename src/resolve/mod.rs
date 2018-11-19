@@ -30,7 +30,7 @@ pub(crate) fn dns_parse(buf: &[u8]) -> Option<IpAddr> {
     None
 }
 pub struct Dns {
-    srvs: SmallVec<[IpAddr; 4]>,
+    srvs: SmallVec<[SocketAddr; 4]>,
     pub sock: UdpSocket,
     pos: u8,
     last_send: Instant,
@@ -38,9 +38,17 @@ pub struct Dns {
 }
 
 impl Dns {
-    pub fn new(host: &str, retry_in: u64) -> ::Result<Dns> {
+    pub fn new(host: &str, retry_in: u64, servers: &[SocketAddr]) -> ::Result<Dns> {
         let mut srvs = SmallVec::with_capacity(2);
-        get_dns_servers(&mut srvs);
+        for s in servers.iter() {
+            srvs.push(*s);
+        }
+        if srvs.len() == 0 {
+            get_dns_servers(&mut srvs);
+        }
+        if srvs.len() == 0 {
+            get_google(&mut srvs)
+        }
         let sock = Self::start_lookup(&srvs[..], host)?;
         Ok(Dns {
             srvs,
@@ -87,7 +95,7 @@ impl Dns {
         Ok(s6)
     }
 
-    fn start_lookup(srvs: &[IpAddr], host: &str) -> ::Result<UdpSocket> {
+    fn start_lookup(srvs: &[SocketAddr], host: &str) -> ::Result<UdpSocket> {
         let mut pos = 0;
         if let Ok(sock) = Self::get_socket_v4() {
             if let Ok(_) = Self::lookup_on(srvs, &sock, &mut pos, host) {
@@ -99,7 +107,12 @@ impl Dns {
         Ok(s)
     }
 
-    fn lookup_on(srvs: &[IpAddr], sock: &UdpSocket, pos: &mut usize, host: &str) -> ::Result<()> {
+    fn lookup_on(
+        srvs: &[SocketAddr],
+        sock: &UdpSocket,
+        pos: &mut usize,
+        host: &str,
+    ) -> ::Result<()> {
         let len_srvs = srvs.len();
         let mut last_err = io::Error::new(io::ErrorKind::Other, "");
         // let rnd = (self.rng.next_u32() & 0x0000_FFFF) as u16;
@@ -107,7 +120,8 @@ impl Dns {
         for _ in 0..len_srvs {
             let srv = *pos % srvs.len();
             *pos += 1;
-            let sockaddr = SocketAddr::new(srvs[srv], 53);
+            // let sockaddr = SocketAddr::new(srvs[srv], 53);
+            let sockaddr = srvs[srv];
 
             let mut buf_send = [0; 512];
             let nsend = {
@@ -148,7 +162,7 @@ impl Dns {
 //     }
 // }
 #[cfg(any(target_os = "ios", target_os = "macos"))]
-pub fn get_dns_servers(srvs: &mut SmallVec<[IpAddr; 4]>) {
+pub fn get_dns_servers(srvs: &mut SmallVec<[SocketAddr; 4]>) {
     unsafe {
         let mut sockaddr = ::std::mem::zeroed::<[apple::res_9_sockaddr_union; 4]>();
         let mut state = ::std::mem::zeroed::<apple::__res_9_state>();
@@ -165,7 +179,7 @@ pub fn get_dns_servers(srvs: &mut SmallVec<[IpAddr; 4]>) {
                         {
                             continue;
                         }
-                        srvs.push(IpAddr::V4(ip4));
+                        srvs.push(SocketAddr::new(IpAddr::V4(ip4), 53));
                     }
                     if sockaddr[i].sin6.sin6_len > 0 {
                         let s = sockaddr[i].sin6.sin6_addr.__u6_addr.__u6_addr16;
@@ -175,19 +189,16 @@ pub fn get_dns_servers(srvs: &mut SmallVec<[IpAddr; 4]>) {
                         if ip6.is_unspecified() || ip6.is_multicast() {
                             continue;
                         }
-                        srvs.push(ip6);
+                        srvs.push(SocketAddr::new(ip6, 53));
                     }
                 }
             }
         }
     }
-    if srvs.len() == 0 {
-        get_google(srvs)
-    }
 }
 
 #[cfg(all(unix, not(target_os = "macos"), not(target_os = "ios")))]
-pub fn get_dns_servers(srvs: &mut SmallVec<[IpAddr; 4]>) {
+pub fn get_dns_servers(srvs: &mut SmallVec<[SocketAddr; 4]>) {
     if let Ok(mut file) = ::std::fs::File::open("/etc/resolv.conf") {
         let mut contents = String::new();
         use std::io::Read;
@@ -195,23 +206,19 @@ pub fn get_dns_servers(srvs: &mut SmallVec<[IpAddr; 4]>) {
             resolv_parse(srvs, contents);
         }
     }
-    if srvs.len() == 0 {
-        get_google(srvs)
-    }
 }
 
 #[cfg(windows)]
-pub fn get_dns_servers(srvs: &mut SmallVec<[IpAddr; 4]>) {
+pub fn get_dns_servers(srvs: &mut SmallVec<[SocketAddr; 4]>) {
     get_google(srvs)
 }
 
-fn get_google(srvs: &mut SmallVec<[IpAddr; 4]>) {
-    srvs.push("8.8.8.8".parse().unwrap());
-    srvs.push("8.8.4.4".parse().unwrap());
-    // ["8.8.8.8".parse().unwrap(), "8.8.4.4".parse().unwrap()]
+fn get_google(srvs: &mut SmallVec<[SocketAddr; 4]>) {
+    srvs.push(SocketAddr::new(IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)), 53));
+    srvs.push(SocketAddr::new(IpAddr::V4(Ipv4Addr::new(8, 8, 4, 4)), 53));
 }
 
-fn resolv_parse(srvs: &mut SmallVec<[IpAddr; 4]>, s: String) {
+fn resolv_parse(srvs: &mut SmallVec<[SocketAddr; 4]>, s: String) {
     // let mut out = Vec::with_capacity(2);
     for line in s.lines() {
         let mut words = line.split_whitespace();
@@ -228,7 +235,7 @@ fn resolv_parse(srvs: &mut SmallVec<[IpAddr; 4]>, s: String) {
     }
 }
 
-// fn scutil_parse(srvs: &mut SmallVec<[IpAddr; 4]>, s: String) {
+// fn scutil_parse(srvs: &mut SmallVec<[SocketAddr; 4]>, s: String) {
 //     for line in s.lines() {
 //         let mut words = line.split_whitespace();
 //         if let Some(s) = words.next() {

@@ -89,6 +89,7 @@ impl HttpcImpl {
             // poll,
             b.dns_timeout,
             b.insecure,
+            &self.cfg,
         )?;
         let fixed_evid = b.evid;
         let call = CallImpl::new(b, self.get_buf(), self.get_buf());

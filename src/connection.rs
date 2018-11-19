@@ -15,7 +15,7 @@ use tls_api::{
     HandshakeError, MidHandshakeTlsStream, TlsConnector, TlsConnectorBuilder, TlsStream,
 };
 use types::{CallBuilderImpl, CallParam, RecvStateInt, SendStateInt};
-use {CallRef, Result};
+use {CallRef, HttpcCfg, Result};
 
 fn connect(addr: SocketAddr) -> Result<TcpStream> {
     let tcp = TcpStream::connect(&addr)?;
@@ -51,6 +51,7 @@ impl Con {
         // poll: &Poll,
         dns_timeout: u64,
         insecure: bool,
+        cfg: &HttpcCfg,
     ) -> Result<Con> {
         let rdy = Ready::writable() | Ready::readable();
         let port = cb.port; //url_port(req.uri())?;
@@ -77,7 +78,7 @@ impl Con {
         };
         res.create_sock(cache)?;
         if res.sock.is_none() {
-            res.create_dns(dns_timeout)?;
+            res.create_dns(dns_timeout, cfg)?;
         } else {
             res.set_signalled_rd(false);
             res.set_signalled_wr(false);
@@ -99,9 +100,9 @@ impl Con {
         Ok(())
     }
 
-    fn create_dns(&mut self, dns_timeout: u64) -> Result<()> {
+    fn create_dns(&mut self, dns_timeout: u64, cfg: &HttpcCfg) -> Result<()> {
         self.reg_for = Ready::readable();
-        self.dns = Some(Dns::new(self.host.as_ref(), dns_timeout)?);
+        self.dns = Some(Dns::new(self.host.as_ref(), dns_timeout, &cfg.dns_servers)?);
         Ok(())
     }
 
