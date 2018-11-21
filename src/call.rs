@@ -579,6 +579,7 @@ impl CallImpl {
             con.set_to_close(true);
             e
         })?;
+        let mut would_block = false;
         loop {
             io_ret = con.read(&mut buf[orig_len..]);
             match &io_ret {
@@ -588,7 +589,8 @@ impl CallImpl {
                     } else if ie.kind() == IoErrorKind::WouldBlock {
                         buf.truncate(orig_len);
                         con.reg(cp.poll, Ready::readable())?;
-                        if entire_sz == 0 {
+                        would_block = true;
+                        if entire_sz == 0 && orig_len == 0 {
                             return Ok(RecvStateInt::Wait);
                         }
                         break;
@@ -606,13 +608,10 @@ impl CallImpl {
             }
             break;
         }
-        if entire_sz > 0 {
+        if entire_sz > 0 || would_block {
             io_ret = Ok(entire_sz);
         }
         match io_ret {
-            Ok(0) => {
-                return Err(::Error::Closed);
-            }
             Ok(bytes_rec) => {
                 // if let Ok(sx) = String::from_utf8(Vec::from(&buf[..entire_sz])) {
                 //     println!("Got: {}", sx);
@@ -627,6 +626,9 @@ impl CallImpl {
                     match self.read_hdr(con, buf, &mut resp, &mut auth_info) {
                         Ok(()) => {
                             if self.hdr_sz == 0 {
+                                if bytes_rec == 0 {
+                                    return Err(::Error::Closed);
+                                }
                                 return Ok(RecvStateInt::Wait);
                             }
                             buf.truncate(self.hdr_sz);
@@ -679,6 +681,9 @@ impl CallImpl {
                         if !chunked_done {
                             self.dir = Dir::Receiving(pos + bytes_rec, duplex);
                         }
+                    }
+                    if bytes_rec == 0 && Dir::Done != self.dir && !would_block {
+                        return Err(::Error::Closed);
                     }
                     return Ok(RecvStateInt::ReceivedBody(bytes_rec));
                 }
@@ -799,14 +804,6 @@ impl CallImpl {
                     self.dir = Dir::Done;
                 } else {
                     self.dir = Dir::Receiving(buflen - self.hdr_sz, false);
-                }
-                if self.b.chunked_parse {
-                    if self
-                        .chunked
-                        .check_done(self.b.max_chunk, &buf[self.hdr_sz..])?
-                    {
-                        self.dir = Dir::Done;
-                    }
                 }
                 return Ok(());
             }
