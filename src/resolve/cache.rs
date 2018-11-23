@@ -57,11 +57,12 @@ impl DnsCache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::net::Ipv4Addr;
+    use std::net::{IpAddr, Ipv4Addr};
     use std::thread;
+    use smallvec::SmallVec;
 
-    fn ip(index: u8) -> IpAddr {
-        IpAddr::V4(Ipv4Addr::new(127, 0, 0, index))
+    fn ip(index: u8) -> IpList {
+        SmallVec::from_vec(vec!(IpAddr::V4(Ipv4Addr::new(127, 0, 0, index))))
     }
 
     fn new_cache() -> DnsCache {
