@@ -246,9 +246,13 @@ impl ChunkIndex {
     fn get_chunk_size(&mut self, b: &[u8]) -> ::Result<Option<(usize, usize)>> {
         let blen = b.len();
         let mut num: usize = 0;
+        let mut chunk_ext = false;
         for i in 0..blen {
             if i + 1 <= blen && b[i] == b'\r' && b[i + 1] == b'\n' {
                 return Ok(Some((num, i + 2)));
+            }
+            if chunk_ext {
+                continue;
             }
             if let Some(v) = ascii_hex_to_num(b[i]) {
                 if let Some(num1) = num.checked_mul(16) {
@@ -261,6 +265,8 @@ impl ChunkIndex {
                 } else {
                     return Err(::Error::ChunkedParse);
                 }
+            } else if b[i] == b';' {
+                chunk_ext = true;
             } else {
                 return Err(::Error::ChunkedParse);
             }
