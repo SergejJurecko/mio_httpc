@@ -14,20 +14,26 @@ pub use self::cache::DnsCache;
 #[cfg(any(target_os = "ios", target_os = "macos"))]
 mod apple;
 
-pub(crate) fn dns_parse(buf: &[u8]) -> Option<IpAddr> {
+pub(crate) fn dns_parse(buf: &[u8], vec: &mut SmallVec<[IpAddr; 2]>) {
     let packet = Packet::parse(buf).unwrap();
+    let mut have_ip4 = false;
+    let mut have_ip6 = false;
     for a in packet.answers {
         match a.data {
-            RRData::A(ip) => {
-                return Some(IpAddr::V4(ip));
+            RRData::A(ip) if !have_ip4 => {
+                have_ip4 = true;
+                vec.push(IpAddr::V4(ip));
             }
-            RRData::AAAA(ip) => {
-                return Some(IpAddr::V6(ip));
+            RRData::AAAA(ip) if !have_ip6 => {
+                have_ip6 = true;
+                vec.push(IpAddr::V6(ip));
             }
             _ => {}
         }
+        if vec.len() == vec.capacity() {
+            return;
+        }
     }
-    None
 }
 pub struct Dns {
     srvs: SmallVec<[SocketAddr; 4]>,

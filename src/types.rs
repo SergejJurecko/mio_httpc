@@ -223,7 +223,9 @@ impl ChunkIndex {
                     dst.extend(&src[off + next_off..off + next_off + num]);
                     off += next_off + num + 2;
                     num_copied += num;
-                    continue;
+                    if num > 0 {
+                        continue;
+                    }
                 }
             }
             if hdr != off {
@@ -245,7 +247,7 @@ impl ChunkIndex {
         let blen = b.len();
         let mut num: usize = 0;
         for i in 0..blen {
-            if i + 1 < blen && b[i] == b'\r' && b[i + 1] == b'\n' {
+            if i + 1 <= blen && b[i] == b'\r' && b[i + 1] == b'\n' {
                 return Ok(Some((num, i + 2)));
             }
             if let Some(v) = ascii_hex_to_num(b[i]) {
@@ -275,6 +277,7 @@ fn ascii_hex_to_num(ch: u8) -> Option<usize> {
         _ => None,
     }
 }
+pub(crate) type IpList = SmallVec<[::std::net::IpAddr; 2]>;
 type AuthBuf = SmallVec<[u8; 32]>;
 type HostBuf = SmallVec<[u8; 64]>;
 type PathBuf = SmallVec<[u8; 256]>;

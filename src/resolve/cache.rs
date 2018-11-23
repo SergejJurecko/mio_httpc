@@ -1,11 +1,10 @@
 use fnv::FnvHashMap as HashMap;
-// use time;
-use std::net::IpAddr;
 use std::time::{Duration, Instant};
+use types::IpList;
 
 struct CacheEntry {
     expires: Instant,
-    ip: IpAddr,
+    ip: IpList,
 }
 
 pub struct DnsCache {
@@ -24,24 +23,22 @@ impl DnsCache {
         }
     }
 
-    pub fn find(&mut self, host: &str) -> Option<IpAddr> {
+    pub fn find(&mut self, host: &str) -> Option<IpList> {
         let now = Instant::now();
         if self.next_expiration_check < now {
             self.cleanup(now);
         }
-        if let Some(&CacheEntry { ip, .. }) = self.cache.get(host) {
-            return Some(ip);
+        if let Some(&CacheEntry { ref ip, .. }) = self.cache.get(host) {
+            return Some(ip.clone());
         }
         None
     }
 
-    pub fn save(&mut self, host: &str, ip: IpAddr) {
+    pub fn save(&mut self, host: &str, ip: IpList) {
         let now = Instant::now();
         let expires = now + self.max_age;
-        self.cache.insert(
-            String::from(host),
-            CacheEntry { expires, ip },
-        );
+        self.cache
+            .insert(String::from(host), CacheEntry { expires, ip });
         self.cleanup(now);
     }
 

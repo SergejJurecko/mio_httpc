@@ -245,7 +245,7 @@ impl Call {
     }
 
     pub(crate) fn empty() -> Call {
-        Call(0xffff_ffff, usize::max_value())
+        Call(u32::max_value(), usize::max_value())
     }
 
     pub(crate) fn is_empty(&self) -> bool {

@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 use tls_api::TlsConnector;
 use types::*;
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 enum Dir {
     SendingHdr(usize),
     SendingBody(usize),
@@ -400,10 +400,17 @@ impl CallImpl {
         b: Option<&mut Vec<u8>>,
     ) -> ::Result<RecvStateInt> {
         match self.dir {
-            Dir::Done => {
+            Dir::Done if self.buf_body.len() == 0 => {
                 return Ok(RecvStateInt::Done);
             }
-            Dir::Receiving(rec_pos, _) => {
+            Dir::SendingBody(_) => Ok(RecvStateInt::Sending),
+            Dir::SendingHdr(_) => Ok(RecvStateInt::Sending),
+            _ => {
+                let rec_pos = if let Dir::Receiving(rec_pos, _) = self.dir {
+                    rec_pos
+                } else {
+                    self.buf_body.len()
+                };
                 if self.hdr_sz == 0 || b.is_none() || self.b.chunked_parse || self.b.gzip {
                     let (mut buf, is_hdr) = if self.hdr_sz == 0 {
                         (::std::mem::replace(&mut self.buf_hdr, Vec::new()), true)
@@ -425,12 +432,17 @@ impl CallImpl {
                             return Ok(RecvStateInt::DoneWithBody(self.maybe_gunzip(buf, None)?));
                         }
                     }
-                    let mut ret = self.event_rec_do::<C>(con, cp, true, &mut buf);
-
+                    let mut ret = if self.dir != Dir::Done {
+                        self.event_rec_do::<C>(con, cp, true, &mut buf)
+                    } else {
+                        // if we are done and here, this is really only for chunked parse
+                        Ok(RecvStateInt::Done)
+                    };
                     if self.b.chunked_parse && self.hdr_sz > 0 {
                         match ret {
                             Err(_) => {}
                             // Ok(RecvStateInt::Error(_)) => {}
+                            // Ok(RecvStateInt::Response(r, ::ResponseBody::)) => {}
                             Ok(RecvStateInt::Response(_, _)) => {}
                             _ if b.is_some() && !self.b.gzip && Dir::Done != self.dir => {
                                 let b = b.unwrap();
@@ -484,8 +496,6 @@ impl CallImpl {
                     self.event_rec_do::<C>(con, cp, false, b)
                 }
             }
-            Dir::SendingBody(_) => Ok(RecvStateInt::Sending),
-            Dir::SendingHdr(_) => Ok(RecvStateInt::Sending),
         }
     }
 

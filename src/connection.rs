@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 use tls_api::{
     HandshakeError, MidHandshakeTlsStream, TlsConnector, TlsConnectorBuilder, TlsStream,
 };
-use types::{CallBuilderImpl, CallParam, RecvStateInt, SendStateInt};
+use types::{CallBuilderImpl, CallParam, IpList, RecvStateInt, SendStateInt};
 use {CallRef, HttpcCfg, Result};
 
 fn connect(addr: SocketAddr) -> Result<TcpStream> {
@@ -31,6 +31,7 @@ pub struct Con {
     mid_tls: Option<MidHandshakeTlsStream<TcpStream>>,
     dns: Option<Dns>,
     host: ConHost,
+    resolved: IpList,
     con_port: u16,
     is_closed: bool,
     first_use: bool,
@@ -70,6 +71,7 @@ impl Con {
             insecure,
             host: ConHost::new(&cb.bytes.host),
             idle_since: Instant::now(),
+            resolved: SmallVec::default(),
             is_tls: cb.tls, //is_https(req.uri())?,
             tls: None,
             mid_tls: None,
@@ -107,8 +109,14 @@ impl Con {
     }
 
     fn create_sock(&mut self, cache: &mut DnsCache) -> Result<()> {
-        if let Some(ip) = cache.find(self.host.as_ref()) {
+        if let Some(ip) = self.resolved.pop() {
             self.sock = Some(connect(SocketAddr::new(ip, self.con_port))?);
+        } else if let Some(ip) = cache.find(self.host.as_ref()) {
+            self.resolved = ip;
+            self.sock = Some(connect(SocketAddr::new(
+                self.resolved.pop().unwrap(),
+                self.con_port,
+            ))?);
         } else if let Ok(ip) = IpAddr::from_str(self.host.as_ref()) {
             self.sock = Some(connect(SocketAddr::new(ip, self.con_port))?);
         }
@@ -215,9 +223,12 @@ impl Con {
             let dns = self.dns.take().unwrap();
             let mut buf: [u8; 512] = unsafe { ::std::mem::uninitialized() };
             if let Ok(sz) = dns.sock.recv(&mut buf[..]) {
-                if let Some(ip) = resolve::dns_parse(&buf[..sz]) {
+                resolve::dns_parse(&buf[..sz], &mut self.resolved);
+                // if let Some(ip) =  {
+                if self.resolved.len() > 0 {
                     // let host = req.uri().host().unwrap();
-                    cp.dns.save(self.host.as_ref(), ip);
+                    cp.dns.save(self.host.as_ref(), self.resolved.clone());
+                    let ip = self.resolved.pop().unwrap();
                     self.dns = None;
                     self.deregister(cp.poll)?;
                     self.sock = Some(connect(SocketAddr::new(ip, req.port))?);
