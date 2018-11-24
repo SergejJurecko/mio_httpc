@@ -399,7 +399,7 @@ impl TlsAcceptorBuilder {
             .into_iter()
             .map(|c| rustls::Certificate(c.to_vec()))
             .collect();
-        config.set_single_cert(certs, rustls::PrivateKey(key.to_vec()));
+        config.set_single_cert(certs, rustls::PrivateKey(key.to_vec()))?;
         Ok(TlsAcceptorBuilder(config))
     }
 }
