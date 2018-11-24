@@ -251,9 +251,9 @@ impl Call {
     pub(crate) fn is_empty(&self) -> bool {
         *self == Call::empty()
     }
-    pub(crate) fn call_id(&self) -> u16 {
-        ((self.0 >> 16) & 0xFFFF) as u16
-    }
+    // pub(crate) fn call_id(&self) -> u16 {
+    //     ((self.0 >> 16) & 0xFFFF) as u16
+    // }
     pub(crate) fn con_id(&self) -> u16 {
         (self.0 & 0xFFFF) as u16
     }

@@ -60,11 +60,11 @@ impl CallImpl {
         }
     }
 
-    pub fn empty() -> CallImpl {
-        let mut res = Self::new(CallBuilderImpl::new(), Vec::new(), Vec::new());
-        res.dir = Dir::Done;
-        res
-    }
+    // pub fn empty() -> CallImpl {
+    //     let mut res = Self::new(CallBuilderImpl::new(), Vec::new(), Vec::new());
+    //     res.dir = Dir::Done;
+    //     res
+    // }
 
     #[inline]
     pub fn start_time(&self) -> Instant {
@@ -441,8 +441,6 @@ impl CallImpl {
                     if self.b.chunked_parse && self.hdr_sz > 0 {
                         match ret {
                             Err(_) => {}
-                            // Ok(RecvStateInt::Error(_)) => {}
-                            // Ok(RecvStateInt::Response(r, ::ResponseBody::)) => {}
                             Ok(RecvStateInt::Response(_, _)) => {}
                             _ if b.is_some() && !self.b.gzip && Dir::Done != self.dir => {
                                 let b = b.unwrap();
@@ -509,7 +507,7 @@ impl CallImpl {
         if !con.is_signalled_wr() {
             return Ok(SendStateInt::Wait);
         }
-        con.signalled::<C, Vec<u8>>(cp, &self.b).map_err(|e| {
+        con.signalled::<C, Vec<u8>>(cp).map_err(|e| {
             con.set_to_close(true);
             e
         })?;
@@ -585,7 +583,7 @@ impl CallImpl {
         let mut orig_len = self.reserve_space(internal, buf)?;
         let mut io_ret;
         let mut entire_sz = 0;
-        con.signalled::<C, Vec<u8>>(cp, &self.b).map_err(|e| {
+        con.signalled::<C, Vec<u8>>(cp).map_err(|e| {
             con.set_to_close(true);
             e
         })?;

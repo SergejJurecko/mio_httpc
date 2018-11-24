@@ -72,7 +72,7 @@ impl Con {
             host: ConHost::new(&cb.bytes.host),
             idle_since: Instant::now(),
             resolved: SmallVec::default(),
-            is_tls: cb.tls, //is_https(req.uri())?,
+            is_tls: cb.tls,
             tls: None,
             mid_tls: None,
             signalled_rd: true,
@@ -135,20 +135,12 @@ impl Con {
         }
     }
 
-    pub fn idle_timeout(&mut self, now: Instant) -> bool {
+    fn idle_timeout(&mut self, now: Instant) -> bool {
         if now - self.idle_since >= Duration::from_secs(60) {
             return true;
         }
         false
     }
-
-    // pub fn close(&mut self) {
-    //     self.sock = None;
-    //     self.tls = None;
-    //     // self.dns_sock = None;
-    //     self.dns = None;
-    //     self.is_closed = true;
-    // }
 
     #[inline]
     pub fn is_closed(&self) -> bool {
@@ -164,7 +156,6 @@ impl Con {
         if b {
             self.idle_since = Instant::now();
         }
-        // self.idle = b;
     }
     #[inline]
     pub fn first_use_done(&mut self) {
@@ -211,11 +202,7 @@ impl Con {
         self.signalled_wr = v;
     }
 
-    pub fn signalled<'a, C: TlsConnector, T>(
-        &mut self,
-        cp: &mut CallParam,
-        req: &CallBuilderImpl,
-    ) -> Result<()> {
+    pub fn signalled<'a, C: TlsConnector, T>(&mut self, cp: &mut CallParam) -> Result<()> {
         if !self.signalled_rd && !self.signalled_wr {
             return Ok(());
         }
@@ -231,7 +218,7 @@ impl Con {
                     let ip = self.resolved.pop().unwrap();
                     self.dns = None;
                     self.deregister(cp.poll)?;
-                    self.sock = Some(connect(SocketAddr::new(ip, req.port))?);
+                    self.sock = Some(connect(SocketAddr::new(ip, self.con_port))?);
                     self.reg_for = Ready::writable() | Ready::readable();
                     self.set_signalled_rd(false);
                     self.set_signalled_wr(false);
@@ -435,7 +422,7 @@ impl PartialEq for ConHost {
 impl Eq for ConHost {}
 
 pub struct ConTable {
-    cons: Slab<(Con, SmallVec<[CallImpl; 2]>)>,
+    cons: Slab<(Con, Option<CallImpl>)>,
     // connections with fixed tokens
     cons_fixed: HashMap<usize, (Con, CallImpl)>,
     // con that can be used for new requests
@@ -457,6 +444,9 @@ impl ConTable {
 
     pub fn signalled_con(&mut self, id: usize, rdy: Ready) -> bool {
         if let Some(t) = self.cons.get_mut(id) {
+            if t.1.is_none() {
+                return false;
+            }
             if rdy.is_readable() {
                 t.0.set_signalled_rd(true);
             }
@@ -488,7 +478,7 @@ impl ConTable {
             if con.is_closed() {
                 continue;
             }
-            if calls.len() == 0 {
+            if calls.is_none() {
                 if con.idle_timeout(now) {
                     cons_to_close.push(con_id as _);
                 }
@@ -522,8 +512,12 @@ impl ConTable {
             return &[];
         }
         let con = call.con_id() as usize;
-        let call = call.call_id() as usize;
-        self.cons[con as usize].1[call as usize].peek_body(off)
+        // let call = call.call_id() as usize;
+        self.cons[con as usize]
+            .1
+            .as_mut()
+            .map(|c| c.peek_body(off))
+            .unwrap_or(&[])
     }
     pub fn try_truncate(&mut self, call: &::Call, off: &mut usize) {
         if call.1 != usize::max_value() {
@@ -533,8 +527,11 @@ impl ConTable {
             return;
         }
         let con = call.con_id() as usize;
-        let call = call.call_id() as usize;
-        self.cons[con as usize].1[call as usize].try_truncate(off);
+        // let call = call.call_id() as usize;
+        self.cons[con as usize]
+            .1
+            .as_mut()
+            .map(|c| c.try_truncate(off));
     }
     pub fn event_send<C: TlsConnector>(
         &mut self,
@@ -548,10 +545,17 @@ impl ConTable {
             }
         }
         let con = call.con_id() as usize;
-        let call = call.call_id() as usize;
+        // let call = call.call_id() as usize;
         let conp = &mut self.cons[con];
-        let res = conp.1[call].event_send::<C>(&mut conp.0, cp, buf);
-        if res.is_err() && !conp.0.is_first_use() && conp.1[call].can_retry() {
+        // Take CallImpl out so we can call it without borrowing issues.
+        let mut call_impl = conp.1.take().unwrap();
+        let res = call_impl.event_send::<C>(&mut conp.0, cp, buf);
+        // put it back
+        conp.1 = Some(call_impl);
+        if res.is_err()
+            && !conp.0.is_first_use()
+            && conp.1.as_ref().map(|c| c.can_retry()).unwrap_or(false)
+        {
             conp.0.set_to_close(true);
             return Ok(SendStateInt::Retry(res.unwrap_err()));
         }
@@ -569,10 +573,17 @@ impl ConTable {
             }
         }
         let con = call.con_id() as usize;
-        let call = call.call_id() as usize;
+        // let call = call.call_id() as usize;
         let conp = &mut self.cons[con];
-        let res = conp.1[call].event_recv::<C>(&mut conp.0, cp, buf);
-        if res.is_err() && !conp.0.is_first_use() && conp.1[call].can_retry() {
+        // check-out
+        let mut call_impl = conp.1.take().unwrap();
+        let res = call_impl.event_recv::<C>(&mut conp.0, cp, buf);
+        // check-in
+        conp.1 = Some(call_impl);
+        if res.is_err()
+            && !conp.0.is_first_use()
+            && conp.1.as_ref().map(|c| c.can_retry()).unwrap_or(false)
+        {
             conp.0.set_to_close(true);
             return Ok(RecvStateInt::Retry(res.unwrap_err()));
         }
@@ -592,32 +603,15 @@ impl ConTable {
         let entry = self.cons.vacant_entry();
         let key = entry.key();
         c.update_token(poll, false, key)?;
-        let mut v = SmallVec::new();
-        v.push(call);
-        entry.insert((c, v));
+        // let mut v = SmallVec::new();
+        // v.push(call);
+        entry.insert((c, Some(call)));
         Ok(Some(key as u16))
     }
 
     pub fn push_ka_con(&mut self, con: u16, call: CallImpl) -> Result<()> {
-        self.cons[con as usize].1.push(call);
+        self.cons[con as usize].1 = Some(call);
         Ok(())
-    }
-
-    fn extract_call(call: ::Call, calls: &mut SmallVec<[CallImpl; 2]>) -> CallImpl {
-        let callid = call.call_id() as usize;
-        if callid + 1 == calls.len() {
-            let res = calls.pop();
-            while calls.last().is_some() {
-                if calls.last().unwrap().is_done() {
-                    let _ = calls.pop();
-                } else {
-                    break;
-                }
-            }
-            res.unwrap()
-        } else {
-            ::std::mem::replace(&mut calls[callid], CallImpl::empty())
-        }
     }
 
     pub fn try_keepalive(&mut self, host: &[u8], poll: &Poll) -> Option<u16> {
@@ -644,13 +638,13 @@ impl ConTable {
             }
         }
         let con = call.con_id() as usize;
-        let call: CallImpl = Self::extract_call(call, &mut self.cons[con].1);
+        let call: CallImpl = self.cons[con].1.take().unwrap(); //Self::extract_call(call, &mut self.cons[con].1);
         let (builder, hdr_buf, body_buf) = call.stop();
         // println!("close_call {} toclose={} {}",con, self.cons[con].0.to_close, self.cons.len());
         {
             let host = &builder.bytes.host;
             if !self.cons[con].0.to_close {
-                if self.cons[con].1.len() == 0 {
+                if self.cons[con].1.is_none() {
                     self.cons[con].0.set_idle(true);
                 } else {
                     self.cons[con].0.first_use_done();
