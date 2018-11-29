@@ -128,7 +128,7 @@ impl WebSocket {
     /// If cid is none will return false.
     pub fn is_call(&self, cid: &Option<CallRef>) -> bool {
         if let &Some(ref b) = cid {
-            return self.id.0 == b.0;
+            return self.id.is_ref(*b);
         }
         false
     }
@@ -138,7 +138,7 @@ impl WebSocket {
     pub fn is_opt_call(a: &Option<WebSocket>, b: &Option<CallRef>) -> bool {
         if let &Some(ref a) = a {
             if let &Some(ref b) = b {
-                return a.id.0 == b.0;
+                return a.id.is_ref(*b);
             }
         }
         false
@@ -172,11 +172,7 @@ impl WebSocket {
 
     // only append do not send.
     fn send_buf_append(&mut self, op: u8, status: Option<u16>, fin: bool, body: Option<&[u8]>) {
-        let body_sz = if let Some(body) = body {
-            body.len()
-        } else {
-            0
-        };
+        let body_sz = if let Some(body) = body { body.len() } else { 0 };
         let mut send_buf = ::std::mem::replace(&mut self.send_buf, Vec::new());
         let start_pos = send_buf.len();
         send_buf.resize(start_pos + body_sz + 16, 0);
@@ -217,6 +213,18 @@ impl WebSocket {
             self.send_buf_pos = 0;
         } else {
             self.send_buf_pos += sent;
+            if self.send_buf_pos > 1024 * 1024 {
+                let diff = send_buf.len() - self.send_buf_pos;
+                unsafe {
+                    ::std::ptr::copy(
+                        send_buf.as_ptr().offset(self.send_buf_pos as _),
+                        send_buf.as_mut_ptr(),
+                        diff,
+                    );
+                }
+                self.send_buf_pos = 0;
+                send_buf.truncate(diff);
+            }
         }
         self.send_buf = send_buf;
         Ok(())

@@ -129,6 +129,7 @@ pub struct HttpcCfg {
     /// macOS, iOS and unix with /etc/resolv.conf are supported ATM.
     /// If none provided and library can't get them, google DNS servers (8.8.8.8:53, 8.8.4.4:53) will be used.
     pub dns_servers: Vec<::std::net::SocketAddr>,
+    pub(crate) con_offset: usize,
 }
 
 impl HttpcCfg {
@@ -221,12 +222,18 @@ pub enum RecvState {
 
 /// Call structure.
 #[derive(Debug, PartialEq)] // much fewer derives then ref on purpose. We want a single instance.
-pub struct Call(pub(crate) u32, pub(crate) usize);
+pub struct Call {
+    id: u64,
+    // two connections possible, we try connecting to
+    // ipv4 and ipv6 resolved IP. First one to establish connection wins.
+    con1: usize,
+    con2: usize,
+} //(u64, usize);
 
 impl Call {
     /// Get a CallRef that matches this call.
     pub fn get_ref(&self) -> CallRef {
-        CallRef(self.0, self.1)
+        CallRef(self.id)
     }
 
     pub fn simple(self) -> SimpleCall {
@@ -235,60 +242,80 @@ impl Call {
 
     /// Is CallRef for this call.
     pub fn is_ref(&self, r: CallRef) -> bool {
-        self.0 == r.0
+        self.id == r.0
     }
-    // (Call:16, Con:16)
-    pub(crate) fn new(con_id: u16, call_id: u16) -> Call {
-        let con_id = con_id as u32;
-        let call_id = call_id as u32;
-        Call((call_id << 16) | con_id, usize::max_value())
+
+    pub(crate) fn remove_con(&mut self, conid: usize) {
+        if conid == self.con1 {
+            self.con1 = usize::max_value();
+        } else if conid == self.con2 {
+            self.con2 = usize::max_value();
+        }
+    }
+    pub(crate) fn id(&self) -> u64 {
+        self.id
+    }
+    // pub(crate) fn set_con1(&mut self, con: usize) {
+    //     self.con1 = con;
+    // }
+    // pub(crate) fn set_con2(&mut self, con: usize) {
+    //     self.con2 = con;
+    // }
+    pub(crate) fn new(id: u64, con1: usize, con2: usize) -> Call {
+        Call { id, con1, con2 }
+    }
+    pub(crate) fn con(&self) -> usize {
+        if self.con1 == usize::max_value() {
+            self.con2
+        } else {
+            self.con1
+        }
+    }
+    pub(crate) fn cons(&self) -> [usize; 2] {
+        [self.con1, self.con2]
+    }
+
+    // keep this functionality internal to lib
+    pub(crate) fn clone(&self) -> Call {
+        Call {
+            id: self.id,
+            con1: self.con1,
+            con2: self.con2,
+        }
     }
 
     pub(crate) fn empty() -> Call {
-        Call(u32::max_value(), usize::max_value())
+        Call::new(u64::max_value(), usize::max_value(), usize::max_value())
     }
 
     pub(crate) fn is_empty(&self) -> bool {
-        *self == Call::empty()
+        self.con1 == self.con2 && self.con1 == usize::max_value()
     }
     // pub(crate) fn call_id(&self) -> u16 {
     //     ((self.0 >> 16) & 0xFFFF) as u16
     // }
-    pub(crate) fn con_id(&self) -> u16 {
-        (self.0 & 0xFFFF) as u16
-    }
+    // pub(crate) fn con_id(&self) -> u16 {
+    //     (self.0 & 0xFFFF) as u16
+    // }
     // Once call finished it gets invalidated.
     // This is a fail-safe so we can destroy Call structure
     // from Httpc on error or request finished.
     pub(crate) fn invalidate(&mut self) {
-        *self = Call::empty();
+        // *self = Call::empty();
+        self.con1 = usize::max_value();
+        self.con2 = usize::max_value();
     }
 }
-
-// I wish...Need httpc.
-// impl Drop for Call {
-//     fn drop(&mut self) {
-//         if !self.is_empty() {
-//         }
-//     }
-// }
 
 /// Reference to call. Used for matching mio Token with call.
 /// If you have lots of calls, you can use this as a key in a HashMap
 /// (you probably want fnv HashMap).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct CallRef(pub(crate) u32, pub(crate) usize);
+pub struct CallRef(u64);
 impl CallRef {
-    // (Call:16, Con:16)
-    pub(crate) fn new(con_id: u16, call_id: u16) -> CallRef {
-        let con_id = con_id as u32;
-        let call_id = call_id as u32;
-        CallRef((call_id << 16) | con_id, usize::max_value())
+    pub(crate) fn new(call_id: u64) -> CallRef {
+        CallRef(call_id)
     }
-
-    // pub(crate) fn con_id(&self) -> u16 {
-    //     (self.0 & 0xFFFF) as u16
-    // }
 }
 
 #[allow(unused_imports)]

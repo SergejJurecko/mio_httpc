@@ -23,6 +23,7 @@ enum Dir {
 }
 
 pub struct CallImpl {
+    call_id: u64,
     b: CallBuilderImpl,
     start: Instant,
     buf_hdr: Vec<u8>,
@@ -35,10 +36,16 @@ pub struct CallImpl {
 }
 
 impl CallImpl {
-    pub fn new(b: CallBuilderImpl, mut buf_hdr: Vec<u8>, mut buf_body: Vec<u8>) -> CallImpl {
+    pub fn new(
+        call_id: u64,
+        b: CallBuilderImpl,
+        mut buf_hdr: Vec<u8>,
+        mut buf_body: Vec<u8>,
+    ) -> CallImpl {
         buf_hdr.truncate(0);
         buf_body.truncate(0);
         CallImpl {
+            call_id,
             dir: Dir::SendingHdr(0),
             start: Instant::now(),
             b,
@@ -58,6 +65,10 @@ impl CallImpl {
             Dir::SendingBody(pos) if pos > 0 && self.b.body.len() == 0 => false,
             _ => true,
         }
+    }
+
+    pub fn call_id(&self) -> u64 {
+        self.call_id
     }
 
     // pub fn empty() -> CallImpl {
@@ -86,8 +97,8 @@ impl CallImpl {
                             self.buf_body.as_mut_ptr(),
                             diff,
                         );
-                        self.buf_body.set_len(diff);
                     }
+                    self.buf_body.truncate(diff);
                     *off = 0;
                 }
                 return &self.buf_body[(*off)..];

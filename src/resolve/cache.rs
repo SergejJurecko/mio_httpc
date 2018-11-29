@@ -34,11 +34,20 @@ impl DnsCache {
         None
     }
 
-    pub fn save(&mut self, host: &str, ip: IpList) {
+    pub fn save(&mut self, host: &str, ipl: IpList) {
         let now = Instant::now();
         let expires = now + self.max_age;
-        self.cache
-            .insert(String::from(host), CacheEntry { expires, ip });
+        if let Some(exe) = self.cache.get_mut(host) {
+            for ip in ipl {
+                if !exe.ip.contains(&ip) {
+                    exe.ip.push(ip);
+                }
+            }
+            return;
+        }
+
+        let host = String::from(host);
+        self.cache.insert(host, CacheEntry { expires, ip: ipl });
         self.cleanup(now);
     }
 
@@ -57,12 +66,12 @@ impl DnsCache {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use smallvec::SmallVec;
     use std::net::{IpAddr, Ipv4Addr};
     use std::thread;
-    use smallvec::SmallVec;
 
     fn ip(index: u8) -> IpList {
-        SmallVec::from_vec(vec!(IpAddr::V4(Ipv4Addr::new(127, 0, 0, index))))
+        SmallVec::from_vec(vec![IpAddr::V4(Ipv4Addr::new(127, 0, 0, index))])
     }
 
     fn new_cache() -> DnsCache {

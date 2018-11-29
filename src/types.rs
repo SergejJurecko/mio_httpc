@@ -414,7 +414,7 @@ pub struct CallBuilderImpl {
     pub content_len_set: bool,
     pub transfer_encoding: TransferEncoding,
     pub bytes: Box<CallBytes>,
-    pub evid: usize,
+    // pub evid: usize,
 }
 
 #[allow(dead_code)]
@@ -430,7 +430,7 @@ impl CallBuilderImpl {
             max_redirects: 4,
             auth: AuthenticateInfo::empty(),
             port: 80,
-            evid: usize::max_value(),
+            // evid: usize::max_value(),
             ..Default::default()
         }
     }

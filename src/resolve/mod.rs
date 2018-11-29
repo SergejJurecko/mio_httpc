@@ -22,9 +22,11 @@ pub(crate) fn dns_parse(buf: &[u8], vec: &mut SmallVec<[IpAddr; 2]>) {
         match a.data {
             RRData::A(ip) if !have_ip4 => {
                 have_ip4 = true;
+                // println!("GOT IP {}", ip);
                 vec.push(IpAddr::V4(ip));
             }
             RRData::AAAA(ip) if !have_ip6 => {
+                // println!("GOT IP6 {}", ip);
                 have_ip6 = true;
                 vec.push(IpAddr::V6(ip));
             }
@@ -41,10 +43,11 @@ pub struct Dns {
     pos: u8,
     last_send: Instant,
     retry_in: Duration,
+    ipv4: bool,
 }
 
 impl Dns {
-    pub fn new(host: &str, retry_in: u64, servers: &[SocketAddr]) -> ::Result<Dns> {
+    pub fn new(host: &str, retry_in: u64, servers: &[SocketAddr], ipv4: bool) -> ::Result<Dns> {
         let mut srvs = SmallVec::with_capacity(2);
         for s in servers.iter() {
             srvs.push(*s);
@@ -55,8 +58,9 @@ impl Dns {
         if srvs.len() == 0 {
             get_google(&mut srvs)
         }
-        let sock = Self::start_lookup(&srvs[..], host)?;
+        let sock = Self::start_lookup(ipv4, &srvs[..], host)?;
         Ok(Dns {
+            ipv4,
             srvs,
             sock,
             pos: 0,
@@ -68,7 +72,7 @@ impl Dns {
     pub fn check_retry(&mut self, now: Instant, host: &str) {
         if now - self.last_send >= self.retry_in {
             let mut pos = self.pos as usize;
-            let _ = Self::lookup_on(&self.srvs, &self.sock, &mut pos, host);
+            let _ = Self::lookup_on(self.ipv4, &self.srvs, &self.sock, &mut pos, host);
             self.pos = (pos & 0xff) as u8;
             self.last_send = now;
             let secdur = Duration::from_millis(1000);
@@ -101,19 +105,20 @@ impl Dns {
         Ok(s6)
     }
 
-    fn start_lookup(srvs: &[SocketAddr], host: &str) -> ::Result<UdpSocket> {
+    fn start_lookup(ipv4: bool, srvs: &[SocketAddr], host: &str) -> ::Result<UdpSocket> {
         let mut pos = 0;
         if let Ok(sock) = Self::get_socket_v4() {
-            if let Ok(_) = Self::lookup_on(srvs, &sock, &mut pos, host) {
+            if let Ok(_) = Self::lookup_on(ipv4, srvs, &sock, &mut pos, host) {
                 return Ok(sock);
             }
         }
         let s = Self::get_socket_v6()?;
-        Self::lookup_on(srvs, &s, &mut pos, host)?;
+        Self::lookup_on(ipv4, srvs, &s, &mut pos, host)?;
         Ok(s)
     }
 
     fn lookup_on(
+        ipv4: bool,
         srvs: &[SocketAddr],
         sock: &UdpSocket,
         pos: &mut usize,
@@ -133,11 +138,20 @@ impl Dns {
             let nsend = {
                 let mut builder = dns_parser::Builder::new(&mut buf_send[..]);
                 let _ = builder.start(rnd, true);
-                let _ = builder.add_question(
-                    host,
-                    dns_parser::QueryType::A,
-                    dns_parser::QueryClass::IN,
-                );
+                if ipv4 {
+                    let _ = builder.add_question(
+                        host,
+                        dns_parser::QueryType::A,
+                        dns_parser::QueryClass::IN,
+                    );
+                } else {
+                    let _ = builder.add_question(
+                        host,
+                        dns_parser::QueryType::AAAA,
+                        dns_parser::QueryClass::IN,
+                    );
+                }
+
                 builder.finish()
             };
             let res = sock.send_to(&buf_send[..nsend], &sockaddr);

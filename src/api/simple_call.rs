@@ -61,7 +61,7 @@ impl SimpleCall {
     /// If cid is none will return false.
     pub fn is_call(&self, cid: &Option<CallRef>) -> bool {
         if let &Some(ref b) = cid {
-            return self.id.0 == b.0;
+            return self.id.is_ref(*b);
         }
         false
     }
@@ -71,7 +71,7 @@ impl SimpleCall {
     pub fn is_opt_callid(a: &Option<SimpleCall>, b: &Option<CallRef>) -> bool {
         if let &Some(ref a) = a {
             if let &Some(ref b) = b {
-                return a.id.0 == b.0;
+                return a.is_ref(*b);
             }
         }
         false

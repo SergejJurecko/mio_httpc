@@ -119,11 +119,11 @@ impl CallBuilder {
         self
     }
 
-    /// Specifically set token for call. Must be outside of token range specified im Httpc::new
-    pub fn event_token(&mut self, p: usize) -> &mut Self {
-        self.cb.as_mut().unwrap().evid = p;
-        self
-    }
+    // /// Specifically set token for call. Must be outside of token range specified im Httpc::new
+    // pub fn event_token(&mut self, p: usize) -> &mut Self {
+    //     self.cb.as_mut().unwrap().evid = p;
+    //     self
+    // }
 
     /// Use http authentication with username and password.
     pub fn auth(&mut self, us: &str, pw: &str) -> &mut Self {

@@ -12,25 +12,29 @@ use {Call, CallRef, RecvState, Response, Result, SendState};
 pub struct HttpcImpl {
     cache: DnsCache,
     // timed_out_calls: HashMap<CallRef,CallImpl>,
-    con_offset: usize,
+    // con_offset: usize,
     free_bufs: VecDeque<Vec<u8>>,
     cons: ConTable,
     last_timeout: Instant,
     cfg: ::HttpcCfg,
+    call_idgen: u64,
 }
 
 const BUF_SZ: usize = 4096 * 2;
 
 impl HttpcImpl {
     pub fn new(con_offset: usize, cfg: Option<::HttpcCfg>) -> HttpcImpl {
+        let mut cfg = cfg.unwrap_or_default();
+        cfg.con_offset = con_offset;
         let mut r = HttpcImpl {
-            cfg: cfg.unwrap_or_default(),
+            cfg,
             // timed_out_calls: HashMap::default(),
             last_timeout: Instant::now(),
             cache: DnsCache::new(),
-            con_offset,
+            // con_offset,
             free_bufs: VecDeque::new(),
             cons: ConTable::new(),
+            call_idgen: 10,
         };
         r.free_bufs.push_back(Vec::with_capacity(BUF_SZ));
         r.free_bufs.push_back(Vec::with_capacity(BUF_SZ));
@@ -66,7 +70,7 @@ impl HttpcImpl {
     }
 
     pub fn call<C: TlsConnector>(&mut self, b: CallBuilderImpl, poll: &Poll) -> Result<Call> {
-        let con_id = if b.bytes.host.len() > 0 && b.evid == usize::max_value() {
+        let con_id = if b.bytes.host.len() > 0 {
             if let Some(con_id) = self.cons.try_keepalive(&b.bytes.host, poll) {
                 Some(con_id)
             } else {
@@ -75,15 +79,18 @@ impl HttpcImpl {
         } else {
             None
         };
+        let call_id = self.call_idgen;
+        self.call_idgen += 1;
         if let Some(con_id) = con_id {
-            let call = CallImpl::new(b, self.get_buf(), self.get_buf());
+            let call = CallImpl::new(call_id, b, self.get_buf(), self.get_buf());
             self.cons.push_ka_con(con_id, call)?;
-            let id = Call::new(con_id, 0);
+            let id = Call::new(call_id, con_id as _, usize::max_value());
             return Ok(id);
         }
         // cons.push_con will set actual mio token
-        let con = Con::new::<C, Vec<u8>>(
-            Token::from(self.con_offset),
+        let con1 = Con::new::<C, Vec<u8>>(
+            call_id,
+            Token::from(self.cfg.con_offset),
             &b,
             &mut self.cache,
             // poll,
@@ -91,20 +98,14 @@ impl HttpcImpl {
             b.insecure,
             &self.cfg,
         )?;
-        let fixed_evid = b.evid;
-        let call = CallImpl::new(b, self.get_buf(), self.get_buf());
-        if fixed_evid == usize::max_value() {
-            if let Some(con_id) = self.cons.push_con(con, call, poll)? {
-                let id = Call::new(con_id, 0);
-                Ok(id)
-            } else {
-                Err(::Error::NoSpace)
-            }
-        } else if fixed_evid < self.con_offset
-            || fixed_evid > self.con_offset + u16::max_value() as usize
-        {
-            self.cons.add_fixed_con(con, call, poll)?;
-            Ok(Call(0, fixed_evid))
+
+        let call = CallImpl::new(call_id, b, self.get_buf(), self.get_buf());
+        if let Some((con_id1, con_id2)) = self.cons.push_con(con1, call, poll, &self.cfg)? {
+            let mut call = Call::new(call_id, con_id1, con_id2);
+            // if con1.resolved().len() > 0 {
+            //     // if let Some(con_id) = self.cons.push_other_con(mut c: Con, first: usize, poll: &Poll)
+            // }
+            Ok(call)
         } else {
             Err(::Error::NoSpace)
         }
@@ -154,13 +155,11 @@ impl HttpcImpl {
 
     pub fn event<C: TlsConnector>(&mut self, ev: &Event) -> Option<CallRef> {
         let mut id = ev.token().0;
-        if id >= self.con_offset && id <= self.con_offset + (u16::max_value() as usize) {
-            id -= self.con_offset;
-            if self.cons.signalled_con(id, ev.readiness()) {
-                return Some(CallRef::new(id as u16, 0));
+        if id >= self.cfg.con_offset && id <= self.cfg.con_offset + (u16::max_value() as usize) {
+            id -= self.cfg.con_offset;
+            if let Some(call_id) = self.cons.signalled_con(id, ev.readiness()) {
+                return Some(CallRef::new(call_id));
             }
-        } else if self.cons.fixed_signalled_con(id, ev.readiness()) {
-            return Some(CallRef(0, id));
         }
         None
     }
@@ -197,7 +196,7 @@ impl HttpcImpl {
         };
         match cret {
             Ok(SendStateInt::Done) => {
-                self.call_close(Call(call.0, call.1));
+                self.call_close(call.clone());
                 call.invalidate();
                 return SendState::Done;
             }
@@ -217,12 +216,12 @@ impl HttpcImpl {
                 return SendState::WaitReqBody;
             }
             Ok(SendStateInt::Retry(_err)) => {
-                let mut b = self.call_close_int(Call(call.0, call.1));
+                let mut b = self.call_close_int(call.clone());
                 call.invalidate();
                 b.reused = true;
                 match self.call::<C>(b, poll) {
                     Ok(nc) => {
-                        call.0 = nc.0;
+                        *call = nc;
                         return SendState::Wait;
                     }
                     Err(e) => {
@@ -231,7 +230,7 @@ impl HttpcImpl {
                 }
             }
             Err(e) => {
-                self.call_close(Call(call.0, call.1));
+                self.call_close(call.clone());
                 call.invalidate();
                 return SendState::Error(e);
             }
@@ -257,27 +256,27 @@ impl HttpcImpl {
         };
         match cret {
             Ok(RecvStateInt::Response(r, ::ResponseBody::Sized(0))) => {
-                self.call_close(Call(call.0, call.1));
+                self.call_close(call.clone());
                 call.invalidate();
                 return RecvState::Response(r, ::ResponseBody::Sized(0));
             }
             Ok(RecvStateInt::Done) => {
-                self.call_close(Call(call.0, call.1));
+                self.call_close(call.clone());
                 call.invalidate();
                 return RecvState::Done;
             }
             Ok(RecvStateInt::DoneWithBody(body)) => {
-                self.call_close(Call(call.0, call.1));
+                self.call_close(call.clone());
                 call.invalidate();
                 return RecvState::DoneWithBody(body);
             }
             Ok(RecvStateInt::Retry(_err)) => {
-                let mut b = self.call_close_int(Call(call.0, call.1));
+                let mut b = self.call_close_int(call.clone());
                 call.invalidate();
                 b.reused = true;
                 match self.call::<C>(b, poll) {
                     Ok(nc) => {
-                        call.0 = nc.0;
+                        *call = nc;
                         return RecvState::Sending;
                     }
                     Err(e) => {
@@ -286,7 +285,7 @@ impl HttpcImpl {
                 }
             }
             Ok(RecvStateInt::Redirect(r)) => {
-                let mut b = self.call_close_int(Call(call.0, call.1));
+                let mut b = self.call_close_int(call.clone());
                 call.invalidate();
                 if b.max_redirects > 0 {
                     b.max_redirects -= 1;
@@ -295,7 +294,7 @@ impl HttpcImpl {
                 if Self::fix_location(&r, &mut b) {
                     match self.call::<C>(b, poll) {
                         Ok(nc) => {
-                            call.0 = nc.0;
+                            *call = nc;
                             return RecvState::Sending;
                         }
                         Err(e) => {
@@ -306,7 +305,7 @@ impl HttpcImpl {
                 return RecvState::Response(r, ::ResponseBody::Sized(0));
             }
             Ok(RecvStateInt::DigestAuth(r, d)) => {
-                let mut b = self.call_close_int(Call(call.0, call.1));
+                let mut b = self.call_close_int(call.clone());
                 call.invalidate();
                 if b.auth.hdr.len() > 0 {
                     // If an attempt was already made once, return response.
@@ -315,7 +314,7 @@ impl HttpcImpl {
                 b.auth_recv(d);
                 match self.call::<C>(b, poll) {
                     Ok(nc) => {
-                        call.0 = nc.0;
+                        *call = nc;
                         return RecvState::Sending;
                     }
                     Err(e) => {
@@ -324,12 +323,12 @@ impl HttpcImpl {
                 }
             }
             Ok(RecvStateInt::BasicAuth) => {
-                let mut b = self.call_close_int(Call(call.0, call.1));
+                let mut b = self.call_close_int(call.clone());
                 call.invalidate();
                 b.digest_auth(false);
                 match self.call::<C>(b, poll) {
                     Ok(nc) => {
-                        call.0 = nc.0;
+                        *call = nc;
                         return RecvState::Sending;
                     }
                     Err(e) => {
@@ -353,7 +352,7 @@ impl HttpcImpl {
             //     return RecvState::Error(e);
             // }
             Err(e) => {
-                self.call_close(Call(call.0, call.1));
+                self.call_close(call.clone());
                 call.invalidate();
                 return RecvState::Error(e);
             }
