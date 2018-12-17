@@ -360,8 +360,8 @@ impl Httpc {
         self.h.try_truncate(id, off);
     }
     /// Reconfigure httpc.
-    pub fn recfg(&mut self, cfg: ::HttpcCfg) {
-        self.h.recfg(cfg);
+    pub fn cfg_mut(&mut self) -> &mut ::HttpcCfg {
+        self.h.cfg_mut()
     }
     /// Number of currently open connections (in active and idle keep-alive state)
     pub fn open_connections(&self) -> usize {
