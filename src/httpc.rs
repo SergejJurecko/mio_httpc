@@ -41,7 +41,8 @@ impl HttpcImpl {
         r
     }
 
-    pub fn recfg(&mut self, cfg: ::HttpcCfg) {
+    pub fn recfg(&mut self, mut cfg: ::HttpcCfg) {
+        cfg.con_offset = self.cfg.con_offset;
         self.cfg = cfg;
     }
 
