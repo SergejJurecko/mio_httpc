@@ -51,7 +51,6 @@ fn main() {
     } else {
         Default::default()
     };
-    cfg.pins.push((String::from("onyx.biocoded.com"),vec!["sha256/eazwKuC8hyTtT3oAltE/OTDAMo6r/Tx/4ct3oUWKVCk=".to_string()]));
     let mut htp = Httpc::new(10, Some(cfg));
 
     for i in 1..args.len() {
