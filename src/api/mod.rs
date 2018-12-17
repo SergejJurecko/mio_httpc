@@ -134,7 +134,6 @@ pub struct HttpcCfg {
     /// mio_httpc will check if public key of server matches any of the pins before
     /// sending the HTTP request.
     pub pins: Vec<(String, Vec<String>)>,
-    pub(crate) con_offset: usize,
 }
 
 impl HttpcCfg {

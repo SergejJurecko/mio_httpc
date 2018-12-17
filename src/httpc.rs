@@ -17,6 +17,7 @@ pub struct HttpcImpl {
     cons: ConTable,
     last_timeout: Instant,
     cfg: ::HttpcCfg,
+    con_offset: usize,
     call_idgen: u64,
 }
 
@@ -24,14 +25,13 @@ const BUF_SZ: usize = 4096 * 2;
 
 impl HttpcImpl {
     pub fn new(con_offset: usize, cfg: Option<::HttpcCfg>) -> HttpcImpl {
-        let mut cfg = cfg.unwrap_or_default();
-        cfg.con_offset = con_offset;
+        let cfg = cfg.unwrap_or_default();
         let mut r = HttpcImpl {
             cfg,
             // timed_out_calls: HashMap::default(),
             last_timeout: Instant::now(),
             cache: DnsCache::new(),
-            // con_offset,
+            con_offset,
             free_bufs: VecDeque::new(),
             cons: ConTable::new(),
             call_idgen: 10,
@@ -41,9 +41,8 @@ impl HttpcImpl {
         r
     }
 
-    pub fn recfg(&mut self, mut cfg: ::HttpcCfg) {
-        cfg.con_offset = self.cfg.con_offset;
-        self.cfg = cfg;
+    pub fn cfg_mut(&mut self) -> &mut ::HttpcCfg {
+        &mut self.cfg
     }
 
     pub fn open_connections(&self) -> usize {
@@ -91,7 +90,7 @@ impl HttpcImpl {
         // cons.push_con will set actual mio token
         let con1 = Con::new::<C, Vec<u8>>(
             call_id,
-            Token::from(self.cfg.con_offset),
+            Token::from(self.con_offset),
             &b,
             &mut self.cache,
             // poll,
@@ -101,7 +100,10 @@ impl HttpcImpl {
         )?;
 
         let call = CallImpl::new(call_id, b, self.get_buf(), self.get_buf());
-        if let Some((con_id1, con_id2)) = self.cons.push_con(con1, call, poll, &self.cfg)? {
+        if let Some((con_id1, con_id2)) =
+            self.cons
+                .push_con(con1, call, poll, &self.cfg, self.con_offset)?
+        {
             let mut call = Call::new(call_id, con_id1, con_id2);
             // if con1.resolved().len() > 0 {
             //     // if let Some(con_id) = self.cons.push_other_con(mut c: Con, first: usize, poll: &Poll)
@@ -156,8 +158,8 @@ impl HttpcImpl {
 
     pub fn event<C: TlsConnector>(&mut self, ev: &Event) -> Option<CallRef> {
         let mut id = ev.token().0;
-        if id >= self.cfg.con_offset && id <= self.cfg.con_offset + (u16::max_value() as usize) {
-            id -= self.cfg.con_offset;
+        if id >= self.con_offset && id <= self.con_offset + (u16::max_value() as usize) {
+            id -= self.con_offset;
             if let Some(call_id) = self.cons.signalled_con(id, ev.readiness()) {
                 return Some(CallRef::new(call_id));
             }

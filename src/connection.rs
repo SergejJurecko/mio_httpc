@@ -786,13 +786,19 @@ impl ConTable {
         res
     }
 
-    fn create_other(&mut self, orig: usize, poll: &Poll, cfg: &HttpcCfg) -> usize {
+    fn create_other(
+        &mut self,
+        orig: usize,
+        poll: &Poll,
+        cfg: &HttpcCfg,
+        con_offset: usize,
+    ) -> usize {
         let con1 = self
             .cons
             .get_mut(orig)
             .unwrap()
             .0
-            .clone_other(orig, cfg.con_offset);
+            .clone_other(orig, con_offset);
         let key = self.cons.insert((con1, CallVariant::Other(0)));
         let mut ok = false;
         if let Some(tuple) = self.cons.get_mut(key) {
@@ -828,6 +834,7 @@ impl ConTable {
         call: CallImpl,
         poll: &Poll,
         cfg: &HttpcCfg,
+        con_offset: usize,
     ) -> Result<Option<(usize, usize)>> {
         if self.cons.len() >= (u16::max_value() as usize) - 2 {
             return Ok(None);
@@ -842,7 +849,7 @@ impl ConTable {
         };
 
         let key1 = if do_other {
-            self.create_other(key, poll, cfg)
+            self.create_other(key, poll, cfg, con_offset)
         } else {
             usize::max_value()
         };
