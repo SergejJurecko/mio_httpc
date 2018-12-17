@@ -1,23 +1,39 @@
 #[cfg(feature = "rustls")]
 #[allow(dead_code, unused_variables)]
 pub mod rustls;
+#[cfg(feature = "rustls")]
+pub use self::rustls::hash;
 
 #[cfg(feature = "native")]
 #[allow(dead_code, unused_variables)]
 pub mod native;
+#[cfg(feature = "native")]
+pub use self::native::hash;
 
 #[cfg(feature = "openssl")]
 #[allow(dead_code, unused_variables)]
 pub mod openssl;
+#[cfg(feature = "openssl")]
+pub use self::openssl::hash;
 
 #[cfg(not(any(feature = "rustls", feature = "native", feature = "openssl")))]
 pub mod dummy;
+#[cfg(not(any(feature = "rustls", feature = "native", feature = "openssl")))]
+pub use self::dummy::hash;
 
 use std::fmt;
 use std::io;
 // use std::error;
 use std::result;
 use {Error, Result};
+
+#[allow(dead_code)]
+pub enum HashType {
+    MD5,
+    SHA1,
+    SHA256,
+    SHA512,
+}
 
 pub trait TlsStreamImpl<S>: io::Read + io::Write + fmt::Debug + Send + Sync + 'static {
     /// Get negotiated ALPN protocol.
@@ -28,6 +44,10 @@ pub trait TlsStreamImpl<S>: io::Read + io::Write + fmt::Debug + Send + Sync + 's
     fn get_mut(&mut self) -> &mut S;
 
     fn get_ref(&self) -> &S;
+
+    fn peer_pubkey(&self) -> Vec<u8>;
+
+    fn peer_certificate(&self) -> Vec<u8>;
 }
 
 /// Since Rust has no HKT, it is not possible to declare something like
@@ -62,7 +82,105 @@ impl<S: 'static> TlsStream<S> {
     pub fn get_alpn_protocol(&self) -> Option<Vec<u8>> {
         self.0.get_alpn_protocol()
     }
+
+    pub fn peer_pubkey(&self) -> Vec<u8> {
+        let v = self.0.peer_pubkey();
+        if v.len() > 0 {
+            return v;
+        }
+        // if cfg!(target_os = "macos") || cfg!(target_os = "ios") {
+        //     let v = self.0.peer_certificate();
+        //     if v.len() > 0 {
+        //         return cert_pubkey(v);
+        //     }
+        // }
+
+        Vec::new()
+    }
 }
+
+// #[cfg(not(any(target_os = "ios", target_os = "macos")))]
+// fn cert_pubkey(_v: Vec<u8>) -> Vec<u8> {
+//     Vec::new()
+// }
+
+// Meh mostly wrong
+// The correct way to impl on apple is how TrustKit does it
+// https://github.com/datatheorem/TrustKit/blob/3e26bf672c19a1a857379d1deb05caf1fafdc5e3/TrustKit/Pinning/TSKSPKIHashCache.m
+//
+// #[cfg(any(target_os = "ios", target_os = "macos"))]
+// use self::apple::cert_pubkey;
+
+// #[cfg(any(target_os = "ios", target_os = "macos"))]
+// mod apple {
+//     use core_foundation::base::{CFRelease, TCFType};
+//     use core_foundation::data::CFData;
+//     use core_foundation_sys::base::{kCFAllocatorDefault, CFAllocatorRef, CFTypeID};
+//     use core_foundation_sys::data::{CFDataGetBytePtr, CFDataGetLength, CFDataRef};
+//     use core_foundation_sys::error::CFErrorRef;
+
+//     declare_TCFType! {
+//         /// A type representing a certificate.
+//         SecCertificate, SecCertificateRef
+//     }
+//     impl_TCFType!(SecCertificate, SecCertificateRef, SecCertificateGetTypeID);
+
+//     impl SecCertificate {
+//         pub fn from_der(der_data: &[u8]) -> Option<SecCertificate> {
+//             let der_data = CFData::from_buffer(der_data);
+//             unsafe {
+//                 let certificate = SecCertificateCreateWithData(
+//                     kCFAllocatorDefault,
+//                     der_data.as_concrete_TypeRef(),
+//                 );
+//                 if certificate.is_null() {
+//                     None
+//                 } else {
+//                     Some(SecCertificate::wrap_under_create_rule(certificate))
+//                 }
+//             }
+//         }
+
+//         pub fn pubkey(&self) -> Vec<u8> {
+//             unsafe {
+//                 println!("MACOS PUBKEY");
+//                 let k = SecCertificateCopyKey(self.0);
+//                 let mut error: CFErrorRef = std::ptr::null_mut();
+//                 let data_ref = SecKeyCopyExternalRepresentation(k, &mut error);
+//                 let len = CFDataGetLength(data_ref);
+//                 let out = Vec::from(std::slice::from_raw_parts(
+//                     CFDataGetBytePtr(data_ref),
+//                     len as usize,
+//                 ));
+//                 CFRelease(data_ref as _);
+//                 out
+//             }
+//         }
+//     }
+
+//     pub fn cert_pubkey(v: Vec<u8>) -> Vec<u8> {
+//         if let Some(cert) = SecCertificate::from_der(&v) {
+//             return cert.pubkey();
+//         }
+//         Vec::new()
+//     }
+
+//     pub enum OpaqueSecCertificateRef {}
+//     pub type SecCertificateRef = *mut OpaqueSecCertificateRef;
+//     pub enum OpaqueSecKeyRef {}
+//     pub type SecKeyRef = *mut OpaqueSecKeyRef;
+//     extern "C" {
+//         fn SecCertificateCreateWithData(
+//             allocator: CFAllocatorRef,
+//             data: CFDataRef,
+//         ) -> SecCertificateRef;
+
+//         fn SecCertificateGetTypeID() -> CFTypeID;
+//         fn SecKeyCopyExternalRepresentation(key: SecKeyRef, err: *mut CFErrorRef) -> CFDataRef;
+
+//         fn SecCertificateCopyKey(certificate: SecCertificateRef) -> SecKeyRef;
+//     }
+// }
 
 impl<S> io::Read for TlsStream<S> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {

@@ -87,6 +87,11 @@ extern crate openssl;
 extern crate pest;
 #[macro_use]
 extern crate pest_derive;
+#[cfg(any(target_os = "ios", target_os = "macos"))]
+#[macro_use]
+extern crate core_foundation;
+#[cfg(any(target_os = "ios", target_os = "macos"))]
+extern crate core_foundation_sys;
 extern crate percent_encoding;
 #[cfg(feature = "rustls")]
 extern crate rustls;
@@ -138,8 +143,6 @@ pub enum Error {
     #[fail(display = "AddrParseError: {}", _0)]
     Addr(#[cause] std::net::AddrParseError),
 
-    // #[fail(display = "TlsError: {}", _0)]
-    // Tls (#[cause] tls_api::Error),
     #[fail(display = "Httparse error: {}", _0)]
     Httparse(#[cause] httparse::Error),
 
@@ -198,6 +201,10 @@ pub enum Error {
     /// Eror while parsing chunked stream
     #[fail(display = "Error parsing WWW-Authenticate header")]
     AuthenticateParse,
+
+    #[fail(display = "Pins were configured for domain and they did not match")]
+    InvalidPin,
+
     /// Chunk was larger than configured CallBuilder::chunked_max_chunk.
     #[fail(
         display = "Chunk was larger than configured CallBuilder::chunked_max_chunk. {}",

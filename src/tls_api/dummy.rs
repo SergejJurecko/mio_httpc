@@ -11,6 +11,10 @@ pub struct TlsConnector;
 pub struct TlsAcceptorBuilder;
 pub struct TlsAcceptor;
 
+pub fn hash(_algo: tls_api::HashType, _data: &[u8]) -> Vec<u8> {
+    Vec::new()
+}
+
 impl tls_api::TlsConnectorBuilder for TlsConnectorBuilder {
     type Connector = TlsConnector;
 

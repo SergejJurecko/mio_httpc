@@ -1,5 +1,6 @@
 extern crate webpki;
 extern crate webpki_roots;
+extern crate ring;
 
 use std::cell::RefCell;
 use std::fmt;
@@ -9,9 +10,30 @@ use std::str;
 use std::sync::Arc;
 
 use rustls;
-use tls_api;
-use tls_api::rustls::rustls::Session;
-use tls_api::{Error, Result};
+use tls_api::{HashType, Error, Result, self, rustls::rustls::Session};
+use self::ring::digest;
+
+pub fn hash(algo: HashType, data: &[u8]) -> Vec<u8> {
+    let mut hasher = match algo {
+        HashType::MD5 => {
+            let mut md5 = md5::Context::new();
+            md5.consume(data);
+            let d = md5.compute();
+            return Vec::from(&d.0[..]);
+        }
+        HashType::SHA256 => {
+            digest::Context::new(&digest::SHA256)
+        }
+        HashType::SHA512 => {
+            digest::Context::new(&digest::SHA512)
+        }
+        HashType::SHA1 => {
+            digest::Context::new(&digest::SHA1)
+        }
+    };
+    hasher.update(data);
+    Vec::from(hasher.finish().as_ref())
+}
 
 thread_local!(static CLIENT_CFG: RefCell<Arc<rustls::ClientConfig>> = RefCell::new(Arc::new(rustls::ClientConfig::new())));
 thread_local!(static CLIENT_CFG_SEALED: RefCell<bool> = RefCell::new(false));
@@ -239,6 +261,19 @@ where
         self.session
             .get_alpn_protocol()
             .map(|s| Vec::from(s.as_bytes()))
+    }
+
+    fn peer_certificate(&self) -> Vec<u8> {
+        if let Some(mut certs) = self.session.get_peer_certificates() {
+            if let Some(last) = certs.pop() {
+                return Vec::from(last.as_ref());
+            }
+        }
+        Vec::new()
+    }
+
+    fn peer_pubkey(&self) -> Vec<u8> {
+        Vec::new()
     }
 }
 

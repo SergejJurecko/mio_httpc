@@ -1,10 +1,27 @@
+extern crate crypto_hash as hashf;
 use std::fmt;
 use std::io;
 use std::result;
 
 use native_tls;
-use tls_api;
-use tls_api::{Error, Result};
+use tls_api::{HashType, Error, Result, self};
+
+pub fn hash(algo: HashType, data: &[u8]) -> Vec<u8> {
+    match algo {
+        HashType::MD5 => {
+            hashf::digest(hashf::Algorithm::MD5, data)
+        }
+        HashType::SHA256 => {
+            hashf::digest(hashf::Algorithm::SHA256, data)
+        }
+        HashType::SHA512 => {
+            hashf::digest(hashf::Algorithm::SHA512, data)
+        }
+        HashType::SHA1 => {
+            hashf::digest(hashf::Algorithm::SHA1, data)
+        }
+    }
+}
 
 pub struct TlsConnectorBuilder(pub native_tls::TlsConnectorBuilder);
 pub struct TlsConnector(pub native_tls::TlsConnector);
@@ -95,6 +112,19 @@ impl<S: io::Read + io::Write + fmt::Debug + Send + Sync + 'static> tls_api::TlsS
 
     fn get_alpn_protocol(&self) -> Option<Vec<u8>> {
         None
+    }
+    
+    fn peer_certificate(&self) -> Vec<u8> {
+        if let Ok(Some(cert)) = self.0.peer_certificate() {
+            if let Ok(der) = cert.to_der() {
+                return der;
+            }
+        }
+        Vec::new()
+    }
+
+    fn peer_pubkey(&self) -> Vec<u8> {
+        Vec::new()
     }
 }
 

@@ -4,15 +4,32 @@ use std::result;
 
 // use super::tls_api;
 use openssl;
-use tls_api;
-use tls_api::Error;
-use tls_api::Result;
+use tls_api::{Error, Result, self, HashType};
+use openssl::hash::{hash as hashf, MessageDigest};
 
 pub struct TlsConnectorBuilder(pub openssl::ssl::SslConnectorBuilder, bool);
 pub struct TlsConnector(pub openssl::ssl::SslConnector, bool);
 
 pub struct TlsAcceptorBuilder(pub openssl::ssl::SslAcceptorBuilder);
 pub struct TlsAcceptor(pub openssl::ssl::SslAcceptor);
+
+
+pub fn hash(algo: HashType, data: &[u8]) -> Vec<u8> {
+    match algo {
+        HashType::MD5 => {
+            hashf(MessageDigest::md5(), data).map(|db| Vec::from(db.as_ref())).unwrap_or(Vec::new())
+        }
+        HashType::SHA256 => {
+            hashf(MessageDigest::sha256(), data).map(|db| Vec::from(db.as_ref())).unwrap_or(Vec::new())
+        }
+        HashType::SHA512 => {
+            hashf(MessageDigest::sha512(), data).map(|db| Vec::from(db.as_ref())).unwrap_or(Vec::new())
+        }
+        HashType::SHA1 => {
+            hashf(MessageDigest::sha1(), data).map(|db| Vec::from(db.as_ref())).unwrap_or(Vec::new())
+        }
+    }
+}
 
 // TODO: https://github.com/sfackler/rust-openssl/pull/646
 #[cfg(has_alpn)]
@@ -150,6 +167,26 @@ impl<S: io::Read + io::Write + fmt::Debug + Send + Sync + 'static> tls_api::TlsS
     #[cfg(not(has_alpn))]
     fn get_alpn_protocol(&self) -> Option<Vec<u8>> {
         None
+    }
+
+    fn peer_certificate(&self) -> Vec<u8> {
+        if let Some(cert) = self.0.ssl().peer_certificate() {
+            if let Ok(der) = cert.to_der() {
+                return der;
+            }
+        }
+        Vec::new()
+    }
+
+    fn peer_pubkey(&self) -> Vec<u8> {
+        if let Some(cert) = self.0.ssl().peer_certificate() {
+            if let Ok(pk) = cert.public_key() {
+                if let Ok(der) = pk.public_key_to_der() {
+                    return der;
+                }
+            }
+        }
+        Vec::new()
     }
 }
 

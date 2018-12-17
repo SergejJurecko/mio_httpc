@@ -46,12 +46,13 @@ fn main() {
         args.push("https://www.reddit.com".to_string());
     }
 
-    let cfg = if let Ok(cfg) = HttpcCfg::certs_from_path(".") {
-        Some(cfg)
+    let mut cfg = if let Ok(cfg) = HttpcCfg::certs_from_path(".") {
+        cfg
     } else {
-        None
+        Default::default()
     };
-    let mut htp = Httpc::new(10, cfg);
+    cfg.pins.push((String::from("onyx.biocoded.com"),vec!["sha256/eazwKuC8hyTtT3oAltE/OTDAMo6r/Tx/4ct3oUWKVCk=".to_string()]));
+    let mut htp = Httpc::new(10, Some(cfg));
 
     for i in 1..args.len() {
         println!("Get {}", args[i].as_str());

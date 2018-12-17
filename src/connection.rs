@@ -1,4 +1,5 @@
 use call::CallImpl;
+use data_encoding::BASE64;
 use fnv::FnvHashMap as HashMap;
 use mio::event::Evented;
 use mio::net::TcpStream;
@@ -12,7 +13,8 @@ use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
 use std::time::{Duration, Instant};
 use tls_api::{
-    HandshakeError, MidHandshakeTlsStream, TlsConnector, TlsConnectorBuilder, TlsStream,
+    hash, HandshakeError, HashType, MidHandshakeTlsStream, TlsConnector, TlsConnectorBuilder,
+    TlsStream,
 };
 use types::{CallBuilderImpl, CallParam, IpList, RecvStateInt, SendStateInt};
 use {CallRef, HttpcCfg, Result};
@@ -97,7 +99,7 @@ impl Con {
         Ok(res)
     }
 
-    fn clone_other(&mut self, tk: usize) -> Con {
+    fn clone_other(&mut self, other: usize, tk: usize) -> Con {
         let mut c = Con {
             call_id: self.call_id,
             con_port: self.con_port,
@@ -117,7 +119,7 @@ impl Con {
             mid_tls: None,
             signalled_rd: true,
             signalled_wr: true,
-            other: None,
+            other: Some(other),
             ipv4: !self.ipv4,
             dns_timeout: self.dns_timeout,
             do_other: false,
@@ -319,13 +321,13 @@ impl Con {
             self.reg(cp.poll, Ready::readable())?;
             let tcp = self.sock.take().unwrap();
             let r = connector.connect(self.host.as_ref(), tcp);
-            self.handshake_resp::<C>(r)?;
+            self.handshake_resp::<C>(r, cp.cfg)?;
         }
         if self.mid_tls.is_some() {
             self.reg(cp.poll, Ready::readable())?;
             let tls = self.mid_tls.take().unwrap();
             let r = tls.handshake();
-            self.handshake_resp::<C>(r)?;
+            self.handshake_resp::<C>(r, cp.cfg)?;
         }
 
         Ok(())
@@ -334,9 +336,42 @@ impl Con {
     fn handshake_resp<C: TlsConnector>(
         &mut self,
         r: ::std::result::Result<TlsStream<TcpStream>, HandshakeError<TcpStream>>,
+        cfg: &::HttpcCfg,
     ) -> Result<()> {
         match r {
             Ok(tls) => {
+                let mut pin_match = true;
+                for pin in cfg.pins.iter() {
+                    let host = self.host.as_ref();
+                    if pin.0.eq_ignore_ascii_case(host) {
+                        // If we found host, we now must find a pin match
+                        pin_match = false;
+                        let der = tls.peer_pubkey();
+                        for pin in pin.1.iter() {
+                            let mut hash_der;
+                            let prefix = if pin.starts_with("sha256/") {
+                                hash_der = hash(HashType::SHA256, &der);
+                                "sha256/"
+                            } else if pin.starts_with("sha1/") {
+                                hash_der = hash(HashType::SHA256, &der);
+                                "sha1/"
+                            } else {
+                                continue;
+                            };
+                            let mut base_buf = [0u8; 128];
+                            let base_len = BASE64.encode_len(hash_der.len());
+                            BASE64.encode_mut(&hash_der, &mut base_buf[..base_len]);
+                            let base64_der = std::str::from_utf8(&base_buf[..base_len]).unwrap();
+                            if base64_der.eq_ignore_ascii_case(&pin[prefix.len()..]) {
+                                pin_match = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+                if !pin_match {
+                    return Err(::Error::InvalidPin);
+                }
                 self.tls = Some(tls);
             }
             Err(HandshakeError::Interrupted(mid)) => {
@@ -557,7 +592,7 @@ impl ConTable {
     }
 
     pub fn signalled_con(&mut self, id: usize, rdy: Ready) -> Option<u64> {
-        let mut rm = None;
+        let mut rm = false;
         let res = if let Some(t) = self.cons.get_mut(id) {
             if t.1.is_none() {
                 return None;
@@ -567,29 +602,47 @@ impl ConTable {
             }
             if rdy.is_writable() {
                 t.0.set_signalled_wr(true);
-
-                if let Some(other) = t.1.get_other() {
-                    // if this is other con, we remove main con
-                    rm = Some(other);
-                } else if let Some(other) = t.0.get_other() {
-                    // if this is main con and we have other, close the other one
-                    rm = Some(other);
-                    t.0.set_other(None);
-                }
+                rm = true;
             }
             Some(t.0.call_id)
         } else {
             None
         };
-        if let Some(other) = rm {
-            let (_, mut call) = self.cons.remove(other);
-            if let Some(call) = call.take() {
-                // Other con won, move call to it
-                let tuple = self.cons.get_mut(id).unwrap();
-                tuple.1 = CallVariant::Call(call);
+        if rm {
+            self.remove_other(id);
+        }
+
+        res
+    }
+
+    fn remove_other(&mut self, id: usize) {
+        let mut rm = None;
+        if let Some(t) = self.cons.get_mut(id) {
+            if let Some(other) = t.1.get_other() {
+                // if this is other con, we remove main con
+                rm = Some(other);
+            } else if let Some(other) = t.0.get_other() {
+                // if this is main con and we have other, close the other one
+                rm = Some(other);
             }
         }
-        res
+        if let Some(other) = rm {
+            self.remove_conid(other);
+        }
+    }
+
+    fn remove_conid(&mut self, id: usize) {
+        let (c, mut call) = self.cons.remove(id);
+        if let Some(other) = c.get_other() {
+            if let Some(other) = self.cons.get_mut(other) {
+                other.0.set_other(None);
+            }
+        }
+        if let Some(call) = call.take() {
+            // Other con won, move call to it
+            let tuple = self.cons.get_mut(id).unwrap();
+            tuple.1 = CallVariant::Call(call);
+        }
     }
 
     // pub fn fixed_signalled_con(&mut self, k: usize, rdy: Ready) -> bool {
@@ -661,7 +714,7 @@ impl ConTable {
     ) -> Result<SendStateInt> {
         let cons = call.cons();
         let mut con = None;
-        // let mut do_other = false;
+        let mut rm = None;
         for c in cons.iter() {
             if *c != usize::max_value() {
                 if let Some(t) = self.cons.get_mut(*c) {
@@ -669,16 +722,23 @@ impl ConTable {
                         call.remove_con(*c);
                         continue;
                     }
-                    //  else if t.0.get_other().is_none() && t.0.resolved().len() > 0 {
-                    //     do_other = true;
-                    // }
-                    if let Ok(true) = t.0.signalled_dns(cp.poll, cp.dns) {
-                        continue;
+                    let sig_resp = t.0.signalled_dns(cp.poll, cp.dns);
+                    if let Ok(false) = sig_resp {
+                        rm = t.0.get_other();
+                        con = Some(*c);
+                        break;
+                    } else if sig_resp.is_err() {
+                        rm = Some(*c);
                     }
-                    con = Some(*c);
-                    break;
+                } else {
+                    call.remove_con(*c);
                 }
             }
+        }
+        if let Some(rm) = rm {
+            // if let Some(main) =
+            call.remove_con(rm);
+            self.remove_conid(rm);
         }
         if con.is_none() {
             return Ok(SendStateInt::Wait);
@@ -732,7 +792,7 @@ impl ConTable {
             .get_mut(orig)
             .unwrap()
             .0
-            .clone_other(cfg.con_offset);
+            .clone_other(orig, cfg.con_offset);
         let key = self.cons.insert((con1, CallVariant::Other(0)));
         let mut ok = false;
         if let Some(tuple) = self.cons.get_mut(key) {

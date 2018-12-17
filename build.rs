@@ -1,6 +1,10 @@
 use std::env;
 
 fn main() {
+    let target = ::std::env::var("TARGET").unwrap();
+    if target.contains("macos") || target.contains("ios") {
+        println!("cargo:rustc-link-lib=framework=Security");
+    }
     // HAS
     match env::var("DEP_OPENSSL_VERSION") {
         Ok(ref v) if v == "101" => {}
