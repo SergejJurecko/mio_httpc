@@ -70,7 +70,8 @@ impl HttpcImpl {
     }
 
     pub fn call<C: TlsConnector>(&mut self, b: CallBuilderImpl, poll: &Poll) -> Result<Call> {
-        let con_id = if b.bytes.host.len() > 0 {
+        let is_fixed = b.is_fixed();
+        let con_id = if b.bytes.host.len() > 0 && !is_fixed {
             if let Some(con_id) = self.cons.try_keepalive(&b.bytes.host, poll) {
                 Some(con_id)
             } else {
@@ -84,7 +85,7 @@ impl HttpcImpl {
         if let Some(con_id) = con_id {
             let call = CallImpl::new(call_id, b, self.get_buf(), self.get_buf());
             self.cons.push_ka_con(con_id, call)?;
-            let id = Call::new(call_id, con_id as _, usize::max_value());
+            let id = Call::new(call_id, con_id as _, usize::max_value(), false);
             return Ok(id);
         }
         // cons.push_con will set actual mio token
@@ -100,17 +101,23 @@ impl HttpcImpl {
         )?;
 
         let call = CallImpl::new(call_id, b, self.get_buf(), self.get_buf());
-        if let Some((con_id1, con_id2)) =
-            self.cons
-                .push_con(con1, call, poll, &self.cfg, self.con_offset)?
-        {
-            let mut call = Call::new(call_id, con_id1, con_id2);
-            // if con1.resolved().len() > 0 {
-            //     // if let Some(con_id) = self.cons.push_other_con(mut c: Con, first: usize, poll: &Poll)
-            // }
-            Ok(call)
+        if !is_fixed {
+            if let Some((con_id1, con_id2)) =
+                self.cons
+                    .push_con(con1, call, poll, &self.cfg, self.con_offset)?
+            {
+                let call = Call::new(call_id, con_id1, con_id2, false);
+                // if con1.resolved().len() > 0 {
+                //     // if let Some(con_id) = self.cons.push_other_con(mut c: Con, first: usize, poll: &Poll)
+                // }
+                Ok(call)
+            } else {
+                Err(::Error::NoSpace)
+            }
         } else {
-            Err(::Error::NoSpace)
+            let (con_id1, con_id2) = self.cons.push_fixed_con(con1, call, poll, &self.cfg)?;
+            let call = Call::new(call_id, con_id1, con_id2, true);
+            Ok(call)
         }
     }
 
@@ -160,9 +167,11 @@ impl HttpcImpl {
         let mut id = ev.token().0;
         if id >= self.con_offset && id <= self.con_offset + (u16::max_value() as usize) {
             id -= self.con_offset;
-            if let Some(call_id) = self.cons.signalled_con(id, ev.readiness()) {
+            if let Some(call_id) = self.cons.signalled_con(false, id, ev.readiness()) {
                 return Some(CallRef::new(call_id));
             }
+        } else if let Some(call_id) = self.cons.signalled_con(true, id, ev.readiness()) {
+            return Some(CallRef::new(call_id));
         }
         None
     }

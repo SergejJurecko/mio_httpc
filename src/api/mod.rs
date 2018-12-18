@@ -232,6 +232,7 @@ pub struct Call {
     // ipv4 and ipv6 resolved IP. First one to establish connection wins.
     con1: usize,
     con2: usize,
+    pub(crate) fixed: bool,
 } //(u64, usize);
 
 impl Call {
@@ -265,8 +266,13 @@ impl Call {
     // pub(crate) fn set_con2(&mut self, con: usize) {
     //     self.con2 = con;
     // }
-    pub(crate) fn new(id: u64, con1: usize, con2: usize) -> Call {
-        Call { id, con1, con2 }
+    pub(crate) fn new(id: u64, con1: usize, con2: usize, fixed: bool) -> Call {
+        Call {
+            id,
+            con1,
+            con2,
+            fixed,
+        }
     }
     pub(crate) fn con(&self) -> usize {
         if self.con1 == usize::max_value() {
@@ -285,11 +291,17 @@ impl Call {
             id: self.id,
             con1: self.con1,
             con2: self.con2,
+            fixed: self.fixed,
         }
     }
 
     pub(crate) fn empty() -> Call {
-        Call::new(u64::max_value(), usize::max_value(), usize::max_value())
+        Call::new(
+            u64::max_value(),
+            usize::max_value(),
+            usize::max_value(),
+            false,
+        )
     }
 
     pub(crate) fn is_empty(&self) -> bool {

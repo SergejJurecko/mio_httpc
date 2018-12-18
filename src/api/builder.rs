@@ -119,11 +119,13 @@ impl CallBuilder {
         self
     }
 
-    // /// Specifically set token for call. Must be outside of token range specified im Httpc::new
-    // pub fn event_token(&mut self, p: usize) -> &mut Self {
-    //     self.cb.as_mut().unwrap().evid = p;
-    //     self
-    // }
+    /// Specifically set mio token IDs for call. Must be outside of token range specified im Httpc::new
+    /// Two tokens are required becase when initiating connection both ipv4 and ipv6 connections
+    /// are attempted. First one to connect wins and the other one is closed.
+    pub fn event_token(&mut self, p: [usize; 2]) -> &mut Self {
+        self.cb.as_mut().unwrap().evids = p;
+        self
+    }
 
     /// Use http authentication with username and password.
     pub fn auth(&mut self, us: &str, pw: &str) -> &mut Self {

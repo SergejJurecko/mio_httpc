@@ -92,9 +92,6 @@ impl Con {
         };
         if res.create_sock(cache)?.is_none() {
             res.create_dns(cfg)?;
-        } else {
-            res.set_signalled_rd(false);
-            res.set_signalled_wr(false);
         }
         Ok(res)
     }
@@ -117,8 +114,8 @@ impl Con {
             is_tls: self.is_tls,
             tls: None,
             mid_tls: None,
-            signalled_rd: true,
-            signalled_wr: true,
+            signalled_rd: false,
+            signalled_wr: false,
             other: Some(other),
             ipv4: !self.ipv4,
             dns_timeout: self.dns_timeout,
@@ -146,8 +143,12 @@ impl Con {
         &self.host
     }
 
-    fn update_token(&mut self, poll: &Poll, v: usize) -> Result<()> {
-        self.token = Token(self.token.0 + v);
+    fn update_token(&mut self, poll: &Poll, v: usize, fixed: bool) -> Result<()> {
+        if !fixed {
+            self.token = Token(self.token.0 + v);
+        } else {
+            self.token = Token(v);
+        }
         self.register(poll, self.token, self.reg_for, PollOpt::edge())?;
         Ok(())
     }
@@ -168,10 +169,12 @@ impl Con {
             self.sock = Some(connect(SocketAddr::new(ip, self.con_port))?);
         } else if let Some(ip) = cache.find(self.host.as_ref()) {
             self.resolved = ip;
-            self.sock = Some(connect(SocketAddr::new(
-                self.resolved.pop().unwrap(),
-                self.con_port,
-            ))?);
+            while self.resolved.len() > 0 && self.sock.is_none() {
+                if let Ok(s) = connect(SocketAddr::new(self.resolved.pop().unwrap(), self.con_port))
+                {
+                    self.sock = Some(s);
+                }
+            }
             self.do_other = self.resolved.len() > 0;
         } else if let Ok(ip) = IpAddr::from_str(self.host.as_ref()) {
             self.sock = Some(connect(SocketAddr::new(ip, self.con_port))?);
@@ -271,9 +274,9 @@ impl Con {
         Ok(())
     }
 
-    fn signalled_dns(&mut self, poll: &Poll, cache: &mut DnsCache) -> Result<bool> {
+    fn signalled_dns(&mut self, poll: &Poll, cache: &mut DnsCache) -> Result<()> {
         if self.dns.is_none() {
-            return Ok(false);
+            return Ok(());
         }
         let dns = self.dns.take().unwrap();
         let mut buf: [u8; 512] = unsafe { ::std::mem::uninitialized() };
@@ -295,11 +298,11 @@ impl Con {
                     }
                 }
 
-                return Ok(true);
+                return Ok(());
             }
         }
         self.dns = Some(dns);
-        Ok(true)
+        Ok(())
     }
 
     pub fn signalled<'a, C: TlsConnector, T>(&mut self, cp: &mut CallParam) -> Result<()> {
@@ -544,12 +547,12 @@ impl CallVariant {
             _ => false,
         }
     }
-    fn get_other(&self) -> Option<usize> {
-        match self {
-            CallVariant::Other(id) => Some(*id),
-            _ => None,
-        }
-    }
+    // fn get_other(&self) -> Option<usize> {
+    //     match self {
+    //         CallVariant::Other(id) => Some(*id),
+    //         _ => None,
+    //     }
+    // }
     fn as_ref(&self) -> Option<&CallImpl> {
         match self {
             CallVariant::Call(ref i) => Some(i),
@@ -574,6 +577,8 @@ impl CallVariant {
 
 pub struct ConTable {
     cons: Slab<(Con, CallVariant)>,
+    // connections with fixed tokens
+    cons_fixed: HashMap<usize, (Con, CallVariant)>,
     // con that can be used for new requests
     keepalive: HashMap<ConHost, u16>,
 }
@@ -583,6 +588,7 @@ impl ConTable {
         ConTable {
             keepalive: HashMap::with_capacity_and_hasher(4, Default::default()),
             cons: Slab::with_capacity(4),
+            cons_fixed: HashMap::default(),
             // cons_fixed: HashMap::with_capacity_and_hasher(4, Default::default()),
         }
     }
@@ -591,16 +597,20 @@ impl ConTable {
         self.cons.len()
     }
 
-    pub fn signalled_con(&mut self, id: usize, rdy: Ready) -> Option<u64> {
+    pub fn signalled_con(&mut self, fixed: bool, id: usize, rdy: Ready) -> Option<u64> {
         let mut rm = false;
-        let res = if let Some(t) = self.cons.get_mut(id) {
+        let res = if let Some(t) = if fixed {
+            self.cons_fixed.get_mut(&id)
+        } else {
+            self.cons.get_mut(id)
+        } {
             if t.1.is_none() {
                 return None;
             }
-            if rdy.is_readable() {
+            if rdy.is_readable() && t.0.dns.is_none() {
                 t.0.set_signalled_rd(true);
             }
-            if rdy.is_writable() {
+            if rdy.is_writable() && t.0.dns.is_none() {
                 t.0.set_signalled_wr(true);
                 rm = true;
             }
@@ -609,58 +619,61 @@ impl ConTable {
             None
         };
         if rm {
-            self.remove_other(id);
+            self.remove_other(false, id);
         }
 
         res
     }
 
-    fn remove_other(&mut self, id: usize) {
+    fn remove_other(&mut self, fixed: bool, id: usize) {
         let mut rm = None;
-        if let Some(t) = self.cons.get_mut(id) {
-            if let Some(other) = t.1.get_other() {
-                // if this is other con, we remove main con
-                rm = Some(other);
-            } else if let Some(other) = t.0.get_other() {
-                // if this is main con and we have other, close the other one
+        if let Some(t) = if fixed {
+            self.cons_fixed.get_mut(&id)
+        } else {
+            self.cons.get_mut(id)
+        } {
+            if let Some(other) = t.0.get_other() {
                 rm = Some(other);
             }
         }
         if let Some(other) = rm {
-            self.remove_conid(other);
+            self.remove_conid(fixed, other);
         }
     }
 
-    fn remove_conid(&mut self, id: usize) {
-        let (c, mut call) = self.cons.remove(id);
+    fn remove_conid(&mut self, fixed: bool, id: usize) {
+        let (c, mut call) = if fixed {
+            self.cons_fixed.remove(&id).unwrap()
+        } else {
+            self.cons.remove(id)
+        };
         if let Some(other) = c.get_other() {
-            if let Some(other) = self.cons.get_mut(other) {
+            if let Some(other) = if fixed {
+                self.cons_fixed.get_mut(&other)
+            } else {
+                self.cons.get_mut(other)
+            } {
                 other.0.set_other(None);
             }
-        }
-        if let Some(call) = call.take() {
-            // Other con won, move call to it
-            let tuple = self.cons.get_mut(id).unwrap();
-            tuple.1 = CallVariant::Call(call);
+            if let Some(call) = call.take() {
+                // Other con won, move call to it
+                let tuple = if fixed {
+                    self.cons_fixed.get_mut(&other).unwrap()
+                } else {
+                    self.cons.get_mut(other).unwrap()
+                };
+                tuple.1 = CallVariant::Call(call);
+            }
         }
     }
-
-    // pub fn fixed_signalled_con(&mut self, k: usize, rdy: Ready) -> bool {
-    //     if let Some((con, _)) = self.cons_fixed.get_mut(&k) {
-    //         if rdy.is_readable() {
-    //             con.set_signalled_rd(true);
-    //         }
-    //         if rdy.is_writable() {
-    //             con.set_signalled_wr(true);
-    //         }
-    //         return true;
-    //     }
-    //     false
-    // }
 
     pub fn timeout_extend(&mut self, now: Instant, out: &mut Vec<CallRef>) {
         let mut cons_to_close: SmallVec<[u16; 16]> = SmallVec::new();
-        for (con_id, &mut (ref mut con, ref mut calls)) in self.cons.iter_mut() {
+        for (con_id, &mut (ref mut con, ref mut calls)) in self
+            .cons
+            .iter_mut()
+            .chain(self.cons_fixed.iter_mut().map(|(c, call)| (*c, call)))
+        {
             if con.is_closed() {
                 continue;
             }
@@ -691,6 +704,13 @@ impl ConTable {
 
     pub fn peek_body(&mut self, call: &::Call, off: &mut usize) -> &[u8] {
         let con = call.con();
+        if call.fixed {
+            return self
+                .cons_fixed
+                .get_mut(&con)
+                .map(|t| t.1.as_mut().map(|c| c.peek_body(off)).unwrap_or(&[]))
+                .unwrap_or(&[]);
+        }
         // let call = call.call_id() as usize;
         self.cons[con as usize]
             .1
@@ -700,6 +720,12 @@ impl ConTable {
     }
     pub fn try_truncate(&mut self, call: &::Call, off: &mut usize) {
         let con = call.con();
+        if call.fixed {
+            self.cons_fixed
+                .get_mut(&con)
+                .map(|t| t.1.as_mut().map(|c| c.try_truncate(off)));
+            return;
+        }
         // let call = call.call_id() as usize;
         self.cons[con as usize]
             .1
@@ -717,16 +743,22 @@ impl ConTable {
         let mut rm = None;
         for c in cons.iter() {
             if *c != usize::max_value() {
-                if let Some(t) = self.cons.get_mut(*c) {
+                if let Some(t) = if call.fixed {
+                    self.cons_fixed.get_mut(c)
+                } else {
+                    self.cons.get_mut(*c)
+                } {
                     if t.0.call_id() != call.id() {
                         call.remove_con(*c);
                         continue;
                     }
                     let sig_resp = t.0.signalled_dns(cp.poll, cp.dns);
-                    if let Ok(false) = sig_resp {
-                        rm = t.0.get_other();
-                        con = Some(*c);
-                        break;
+                    if let Ok(()) = sig_resp {
+                        if t.0.dns.is_none() && t.0.is_signalled_wr() {
+                            rm = t.0.get_other();
+                            con = Some(*c);
+                            break;
+                        }
                     } else if sig_resp.is_err() {
                         rm = Some(*c);
                     }
@@ -738,26 +770,25 @@ impl ConTable {
         if let Some(rm) = rm {
             // if let Some(main) =
             call.remove_con(rm);
-            self.remove_conid(rm);
+            self.remove_conid(call.fixed, rm);
         }
         if con.is_none() {
             return Ok(SendStateInt::Wait);
         }
         let con = con.unwrap();
-        // if do_other {
-        //     self.create_other(con, cp.poll);
-        // }
         // let call = call.call_id() as usize;
-        let conp = &mut self.cons[con];
+        let conp = if call.fixed {
+            self.cons_fixed.get_mut(&con).unwrap()
+        } else {
+            &mut self.cons[con]
+        };
         // Take CallImpl out so we can call it without borrowing issues.
         let mut call_impl = conp.1.take().unwrap();
         let res = call_impl.event_send::<C>(&mut conp.0, cp, buf);
         // put it back
         conp.1 = CallVariant::Call(call_impl);
-        if res.is_err()
-            && !conp.0.is_first_use()
-            && conp.1.as_ref().map(|c| c.can_retry()).unwrap_or(false)
-        {
+        let cr = conp.1.as_ref().map(|c| c.can_retry()).unwrap_or(false);
+        if res.is_err() && !conp.0.is_first_use() && cr {
             conp.0.set_to_close(true);
             return Ok(SendStateInt::Retry(res.unwrap_err()));
         }
@@ -770,7 +801,11 @@ impl ConTable {
         buf: Option<&mut Vec<u8>>,
     ) -> Result<RecvStateInt> {
         let con = call.con();
-        let conp = &mut self.cons[con];
+        let conp = if call.fixed {
+            self.cons_fixed.get_mut(&con).unwrap()
+        } else {
+            &mut self.cons[con]
+        };
         // check-out
         let mut call_impl = conp.1.take().unwrap();
         let res = call_impl.event_recv::<C>(&mut conp.0, cp, buf);
@@ -802,16 +837,16 @@ impl ConTable {
         let key = self.cons.insert((con1, CallVariant::Other(0)));
         let mut ok = false;
         if let Some(tuple) = self.cons.get_mut(key) {
-            tuple.1 = CallVariant::Other(key);
+            tuple.1 = CallVariant::Other(orig);
             match tuple.0.create_sock(&mut DnsCache::new()) {
                 Ok(Some(())) => {
-                    if let Ok(()) = tuple.0.update_token(poll, key) {
+                    if let Ok(()) = tuple.0.update_token(poll, key, false) {
                         ok = true;
                     }
                 }
                 Ok(None) => {
                     if let Ok(_) = tuple.0.create_dns(cfg) {
-                        if let Ok(()) = tuple.0.update_token(poll, key) {
+                        if let Ok(()) = tuple.0.update_token(poll, key, false) {
                             ok = true;
                         }
                     }
@@ -843,7 +878,7 @@ impl ConTable {
         let key = {
             let entry = self.cons.vacant_entry();
             let key = entry.key();
-            c.update_token(poll, key)?;
+            c.update_token(poll, key, false)?;
             entry.insert((c, CallVariant::Call(call)));
             key
         };
@@ -856,16 +891,47 @@ impl ConTable {
         Ok(Some((key, key1)))
     }
 
-    // fn push_other_con(&mut self, mut c: Con, first: usize, poll: &Poll) -> Result<Option<usize>> {
-    //     if self.cons.len() == (u16::max_value() as usize) {
-    //         return Ok(None);
-    //     }
-    //     let entry = self.cons.vacant_entry();
-    //     let key = entry.key();
-    //     c.update_token(poll, false, key)?;
-    //     entry.insert((c, CallVariant::Other(first)));
-    //     Ok(Some(key))
-    // }
+    pub fn push_fixed_con(
+        &mut self,
+        mut c: Con,
+        call: CallImpl,
+        poll: &Poll,
+        cfg: &HttpcCfg,
+    ) -> Result<(usize, usize)> {
+        let id = call.settings().evids[0];
+        let mut id1 = call.settings().evids[1];
+        if id == usize::max_value() || id1 == usize::max_value() {
+            return Err(::Error::NoSpace);
+        }
+        c.update_token(poll, id, true)?;
+        if c.do_other {
+            let mut c1 = c.clone_other(id, id1);
+            let mut ok = false;
+            match c1.create_sock(&mut DnsCache::new()) {
+                Ok(Some(())) => {
+                    if let Ok(()) = c1.update_token(poll, id1, true) {
+                        ok = true;
+                    }
+                }
+                Ok(None) => {
+                    if let Ok(_) = c1.create_dns(cfg) {
+                        if let Ok(()) = c1.update_token(poll, id1, true) {
+                            ok = true;
+                        }
+                    }
+                }
+                _ => {}
+            }
+            if ok {
+                c.set_other(Some(id1));
+                self.cons_fixed.insert(id1, (c1, CallVariant::Other(id)));
+            } else {
+                id1 = usize::max_value();
+            }
+        }
+        self.cons_fixed.insert(id, (c, CallVariant::Call(call)));
+        Ok((id, id1))
+    }
 
     pub fn push_ka_con(&mut self, con: u16, call: CallImpl) -> Result<()> {
         let con = con as usize;
@@ -893,6 +959,15 @@ impl ConTable {
 
     pub fn close_call(&mut self, call: ::Call) -> (::types::CallBuilderImpl, Vec<u8>, Vec<u8>) {
         let cons = call.cons();
+        if call.fixed {
+            for c in cons.iter() {
+                if let Some((_con, mut call)) = self.cons_fixed.remove(c) {
+                    if let Some(call) = call.take() {
+                        return call.stop();
+                    }
+                }
+            }
+        }
         let mut con = usize::max_value();
         for conid in cons.into_iter() {
             if *conid != usize::max_value() {

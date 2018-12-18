@@ -93,53 +93,67 @@ impl<'a> AuthDigest<'a> {
             for pair in pairs {
                 for inner_pair in pair.into_inner() {
                     match inner_pair.as_rule() {
-                        Rule::auth_type => for inner_pair in inner_pair.into_inner() {
-                            let s = inner_pair.into_span().as_str();
-                            if !s.eq_ignore_ascii_case("digest") {
-                                return Err(::Error::AuthenticateParse);
-                            }
-                            break;
-                        },
-                        Rule::realm => for inner_pair in inner_pair.into_inner() {
-                            realm = inner_pair.into_span().as_str();
-                            break;
-                        },
-                        Rule::qop => for inner_pair in inner_pair.into_inner() {
-                            let s = inner_pair.into_span().as_str();
-                            if s.eq_ignore_ascii_case("auth") {
-                                qop = DigestQop::Auth;
+                        Rule::auth_type => {
+                            for inner_pair in inner_pair.into_inner() {
+                                let s = inner_pair.into_span().as_str();
+                                if !s.eq_ignore_ascii_case("digest") {
+                                    return Err(::Error::AuthenticateParse);
+                                }
                                 break;
-                            } else if s.eq_ignore_ascii_case("auth-int") {
-                                qop = DigestQop::AuthInt;
-                                continue;
                             }
-                        },
-                        Rule::nonce => for inner_pair in inner_pair.into_inner() {
-                            nonce = inner_pair.into_span().as_str();
-                            break;
-                        },
-                        Rule::opaque => for inner_pair in inner_pair.into_inner() {
-                            opaque = inner_pair.into_span().as_str();
-                            break;
-                        },
-                        Rule::stale => for inner_pair in inner_pair.into_inner() {
-                            let s = inner_pair.into_span().as_str();
-                            if s.eq_ignore_ascii_case("true") {
-                                stale = true;
-                            } else {
-                                stale = false;
+                        }
+                        Rule::realm => {
+                            for inner_pair in inner_pair.into_inner() {
+                                realm = inner_pair.into_span().as_str();
+                                break;
                             }
-                            break;
-                        },
-                        Rule::algorithm => for inner_pair in inner_pair.into_inner() {
-                            let a = inner_pair.into_span().as_str();
-                            if a.eq_ignore_ascii_case("md5") {
-                                alg = DigestAlg::MD5;
-                            } else if a.eq_ignore_ascii_case("md5-sess") {
-                                alg = DigestAlg::MD5Sess;
+                        }
+                        Rule::qop => {
+                            for inner_pair in inner_pair.into_inner() {
+                                let s = inner_pair.into_span().as_str();
+                                if s.eq_ignore_ascii_case("auth") {
+                                    qop = DigestQop::Auth;
+                                    break;
+                                } else if s.eq_ignore_ascii_case("auth-int") {
+                                    qop = DigestQop::AuthInt;
+                                    continue;
+                                }
                             }
-                            break;
-                        },
+                        }
+                        Rule::nonce => {
+                            for inner_pair in inner_pair.into_inner() {
+                                nonce = inner_pair.into_span().as_str();
+                                break;
+                            }
+                        }
+                        Rule::opaque => {
+                            for inner_pair in inner_pair.into_inner() {
+                                opaque = inner_pair.into_span().as_str();
+                                break;
+                            }
+                        }
+                        Rule::stale => {
+                            for inner_pair in inner_pair.into_inner() {
+                                let s = inner_pair.into_span().as_str();
+                                if s.eq_ignore_ascii_case("true") {
+                                    stale = true;
+                                } else {
+                                    stale = false;
+                                }
+                                break;
+                            }
+                        }
+                        Rule::algorithm => {
+                            for inner_pair in inner_pair.into_inner() {
+                                let a = inner_pair.into_span().as_str();
+                                if a.eq_ignore_ascii_case("md5") {
+                                    alg = DigestAlg::MD5;
+                                } else if a.eq_ignore_ascii_case("md5-sess") {
+                                    alg = DigestAlg::MD5Sess;
+                                }
+                                break;
+                            }
+                        }
                         _ => {}
                     }
                 }
@@ -414,7 +428,7 @@ pub struct CallBuilderImpl {
     pub content_len_set: bool,
     pub transfer_encoding: TransferEncoding,
     pub bytes: Box<CallBytes>,
-    // pub evid: usize,
+    pub evids: [usize; 2],
 }
 
 #[allow(dead_code)]
@@ -422,7 +436,6 @@ impl CallBuilderImpl {
     pub fn new() -> CallBuilderImpl {
         CallBuilderImpl {
             max_response: 1024 * 1024 * 10,
-            dur: Duration::from_millis(30000),
             max_chunk: 32 * 1024,
             chunked_parse: true,
             gzip: true,
@@ -430,7 +443,8 @@ impl CallBuilderImpl {
             max_redirects: 4,
             auth: AuthenticateInfo::empty(),
             port: 80,
-            // evid: usize::max_value(),
+            dur: Duration::from_millis(30000),
+            evids: [usize::max_value(), usize::max_value()],
             ..Default::default()
         }
     }
@@ -444,6 +458,9 @@ impl CallBuilderImpl {
     pub fn method(&mut self, m: &str) -> &mut Self {
         self.method = Method::from_str(m);
         self
+    }
+    pub fn is_fixed(&self) -> bool {
+        !(self.evids[0] == usize::max_value() && self.evids[1] == usize::max_value())
     }
     pub fn url(&mut self, url: &str) -> ::Result<&mut Self>
 // where
