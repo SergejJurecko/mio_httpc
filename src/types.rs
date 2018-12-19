@@ -244,12 +244,15 @@ impl ChunkIndex {
             }
             if hdr != off {
                 let sl = src.len();
-                unsafe {
-                    let src_p: *const u8 = src.as_ptr().offset(off as isize);
-                    let dst_p: *mut u8 = src.as_mut_ptr().offset(hdr as isize);
-                    ::std::ptr::copy(src_p, dst_p, sl - off);
+                // unsafe {
+                //     let src_p: *const u8 = src.as_ptr().offset(off as isize);
+                //     let dst_p: *mut u8 = src.as_mut_ptr().offset(hdr as isize);
+                //     ::std::ptr::copy(src_p, dst_p, sl - off);
+                // }
+                // src.truncate(hdr + sl - off);
+                {
+                    src.drain(hdr..off);
                 }
-                src.truncate(hdr + sl - off);
                 self.offset = 0;
             }
             break;

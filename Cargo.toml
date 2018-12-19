@@ -1,6 +1,6 @@
 [package]
 name = "mio_httpc"
-version = "0.8.1"
+version = "0.8.2"
 authors = ["sergej jurecko <sergej.jurecko@gmail.com>"]
 description = "mio_httpc is a fully async and sync http client running on top of mio only. "
 repository = "https://github.com/SergejJurecko/mio_httpc"
@@ -16,7 +16,7 @@ build = "build.rs"
 # Default does not work for https.
 default = []
 native = ["native-tls", "crypto-hash"]
-rtls = ["webpki-roots", "webpki", "rustls", "ring"]
+rtls = ["webpki-roots", "webpki", "ring","rustls"]
 
 
 [dependencies]
@@ -37,11 +37,6 @@ slab = "0.4"
 percent-encoding = "1"
 url = "1"
 md5 = "0.6"
-
-[target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
-core-foundation = "0.6"
-core-foundation-sys = "0.6"
-
 crypto-hash = {version = "0.3.1", optional = true}
 ring = {version = "0.13.2", optional = true}
 webpki = {version = "0.18.1", optional = true}
@@ -50,6 +45,10 @@ rustls = { version = "0.14", features = ["dangerous_configuration"], optional = 
 openssl      = { version = "0.10.*", optional = true, features = ["v102", "v110"] }
 native-tls   = { version = "0.2", optional = true}
 
+
+[target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
+core-foundation = "0.6"
+core-foundation-sys = "0.6"
 
 [dev-dependencies]
 matches = "0.1"
