@@ -25,7 +25,7 @@ fn connect(addr: SocketAddr) -> Result<TcpStream> {
     return Ok(tcp);
 }
 
-pub struct Con {
+pub(crate) struct Con {
     call_id: u64,
     token: Token,
     reg_for: Ready,
@@ -575,7 +575,7 @@ impl CallVariant {
     }
 }
 
-pub struct ConTable {
+pub(crate) struct ConTable {
     cons: Slab<(Con, CallVariant)>,
     // connections with fixed tokens
     cons_fixed: HashMap<usize, (Con, CallVariant)>,

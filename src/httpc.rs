@@ -9,7 +9,7 @@ use types::*;
 use std::time::Instant;
 use {Call, CallRef, RecvState, Response, Result, SendState};
 
-pub struct HttpcImpl {
+pub(crate) struct HttpcImpl {
     cache: DnsCache,
     // timed_out_calls: HashMap<CallRef,CallImpl>,
     // con_offset: usize,
@@ -58,9 +58,7 @@ impl HttpcImpl {
         }
         let cap = buf.capacity();
         if cap > BUF_SZ {
-            unsafe {
-                buf.set_len(BUF_SZ);
-            }
+            buf.resize(BUF_SZ, 0);
             buf.shrink_to_fit();
         } else if cap < BUF_SZ {
             buf.reserve_exact(BUF_SZ - cap);

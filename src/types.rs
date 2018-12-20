@@ -308,7 +308,7 @@ type QueryBuf = SmallVec<[u8; 256]>;
 type HeaderBuf = SmallVec<[u8; 1024 * 2]>;
 
 #[derive(Debug, Default, Clone)]
-pub struct CallBytes {
+pub(crate) struct CallBytes {
     pub us: AuthBuf,
     pub pw: AuthBuf,
     pub host: HostBuf,
@@ -317,31 +317,31 @@ pub struct CallBytes {
     pub headers: HeaderBuf,
 }
 
-impl CallBytes {
-    fn host_as_str(&self) -> &str {
-        unsafe { from_utf8_unchecked(&self.host) }
-    }
+// impl CallBytes {
+//     fn host_as_str(&self) -> &str {
+//         unsafe { from_utf8_unchecked(&self.host) }
+//     }
 
-    fn us_as_str(&self) -> &str {
-        unsafe { from_utf8_unchecked(&self.us) }
-    }
+//     fn us_as_str(&self) -> &str {
+//         unsafe { from_utf8_unchecked(&self.us) }
+//     }
 
-    fn pw_as_str(&self) -> &str {
-        unsafe { from_utf8_unchecked(&self.pw) }
-    }
+//     fn pw_as_str(&self) -> &str {
+//         unsafe { from_utf8_unchecked(&self.pw) }
+//     }
 
-    fn path_as_str(&self) -> &str {
-        unsafe { from_utf8_unchecked(&self.path) }
-    }
+//     fn path_as_str(&self) -> &str {
+//         unsafe { from_utf8_unchecked(&self.path) }
+//     }
 
-    fn query_as_str(&self) -> &str {
-        if self.query.len() > 0 {
-            unsafe { from_utf8_unchecked(&self.query[1..]) }
-        } else {
-            ""
-        }
-    }
-}
+//     fn query_as_str(&self) -> &str {
+//         if self.query.len() > 0 {
+//             unsafe { from_utf8_unchecked(&self.query[1..]) }
+//         } else {
+//             ""
+//         }
+//     }
+// }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Method {
@@ -406,7 +406,7 @@ pub struct CallParam<'a> {
 
 /// Start configure call.
 #[derive(Debug, Default, Clone)]
-pub struct CallBuilderImpl {
+pub(crate) struct CallBuilderImpl {
     // pub req: Request<Vec<u8>>,
     pub chunked_parse: bool,
     pub dur: Duration,
@@ -414,7 +414,7 @@ pub struct CallBuilderImpl {
     pub max_chunk: usize,
     pub dns_timeout: u64,
     pub ws: bool,
-    pub(crate) auth: AuthenticateInfo,
+    pub auth: AuthenticateInfo,
     pub digest: bool,
     pub max_redirects: u8,
     pub gzip: bool,

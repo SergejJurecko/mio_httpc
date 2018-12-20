@@ -22,7 +22,7 @@ enum Dir {
     Done,
 }
 
-pub struct CallImpl {
+pub(crate) struct CallImpl {
     call_id: u64,
     b: CallBuilderImpl,
     start: Instant,
@@ -86,19 +86,20 @@ impl CallImpl {
         if self.body_sz > 0 {
             if self.buf_body.len() > *off {
                 // there is some additional data after last offset
-                let diff = self.buf_body.len() - *off;
+                // let diff = self.buf_body.len() - *off;
                 // Copy down bytes so buffer does not grow unnecessarily.
                 // This can happen if lots of data is being sent in websocket
                 // over localhost as it does not give client enough time to clear data.
                 if *off > 1024 * 1024 {
-                    unsafe {
-                        ::std::ptr::copy(
-                            self.buf_body.as_ptr().offset(*off as _),
-                            self.buf_body.as_mut_ptr(),
-                            diff,
-                        );
-                    }
-                    self.buf_body.truncate(diff);
+                    // unsafe {
+                    //     ::std::ptr::copy(
+                    //         self.buf_body.as_ptr().offset(*off as _),
+                    //         self.buf_body.as_mut_ptr(),
+                    //         diff,
+                    //     );
+                    // }
+                    // self.buf_body.truncate(diff);
+                    self.buf_body.drain(..*off);
                     *off = 0;
                 }
                 return &self.buf_body[(*off)..];
