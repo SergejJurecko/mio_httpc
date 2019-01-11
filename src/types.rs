@@ -8,7 +8,7 @@ use pest::Parser;
 use resolve::DnsCache;
 use smallvec::SmallVec;
 use std::ops::Deref;
-use std::str::{from_utf8_unchecked, FromStr};
+use std::str::FromStr;
 use std::time::Duration;
 use tls_api::TlsConnector;
 use url::Url;

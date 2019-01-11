@@ -107,8 +107,7 @@ fn main() {
 
             if call.is_call(&cref) {
                 if call.perform(&mut htp, &poll).expect("Call failed") {
-                    let mut resp = call.close().expect("No response");
-                    let v = mio_httpc::extract_body(&mut resp);
+                    let (resp,body) = call.finish().expect("No response");
                     if let Ok(s) = String::from_utf8(v) {
                         println!("Body: {}",s);
                     }

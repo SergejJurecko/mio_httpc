@@ -1,4 +1,4 @@
-use fnv::FnvHashMap as HashMap;
+use fxhash::FxHashMap as HashMap;
 use std::time::{Duration, Instant};
 use types::IpList;
 

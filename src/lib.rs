@@ -73,7 +73,7 @@ extern crate rand;
 // extern crate tls_api;
 extern crate byteorder;
 extern crate data_encoding;
-extern crate fnv;
+extern crate fxhash;
 // extern crate http;
 extern crate itoa;
 extern crate libc;
@@ -127,6 +127,15 @@ pub use openssl::error::ErrorStack as OpenSSLErrorStack;
 pub use openssl::ssl::Error as TLSError;
 #[cfg(feature = "rustls")]
 pub use rustls::TLSError;
+
+#[cfg(not(any(feature = "rustls", feature = "native", feature = "openssl")))]
+pub use tls_api::{dummy::hash, HashType};
+#[cfg(feature = "native")]
+pub use tls_api::{native::hash, HashType};
+#[cfg(feature = "openssl")]
+pub use tls_api::{openssl::hash, HashType};
+#[cfg(feature = "rustls")]
+pub use tls_api::{rustls::hash, HashType};
 
 pub type Result<T> = ::std::result::Result<T, Error>;
 #[derive(Debug, Fail)]

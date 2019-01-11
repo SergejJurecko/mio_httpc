@@ -1,3 +1,4 @@
+extern crate md5;
 use std::fmt;
 use std::io;
 use std::result;
@@ -11,6 +12,8 @@ pub struct TlsConnector;
 pub struct TlsAcceptorBuilder;
 pub struct TlsAcceptor;
 
+/// Make use of the TLS implementation's crypto hashing functions.
+/// Dummy will not work and will always return an empty vec.
 pub fn hash(_algo: tls_api::HashType, _data: &[u8]) -> Vec<u8> {
     Vec::new()
 }

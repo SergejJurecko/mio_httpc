@@ -1,6 +1,6 @@
 use call::CallImpl;
 use data_encoding::BASE64;
-use fnv::FnvHashMap as HashMap;
+use fxhash::FxHashMap as HashMap;
 use mio::event::Evented;
 use mio::net::TcpStream;
 use mio::{Poll, PollOpt, Ready, Token};
@@ -83,8 +83,8 @@ impl Con {
             is_tls: cb.tls,
             tls: None,
             mid_tls: None,
-            signalled_rd: true,
-            signalled_wr: true,
+            signalled_rd: false,
+            signalled_wr: false,
             other: None,
             ipv4: true,
             dns_timeout,
@@ -174,6 +174,9 @@ impl Con {
                 {
                     self.sock = Some(s);
                 }
+            }
+            if self.sock.is_none() {
+                return Ok(None);
             }
             self.do_other = self.resolved.len() > 0;
         } else if let Ok(ip) = IpAddr::from_str(self.host.as_ref()) {
@@ -960,12 +963,16 @@ impl ConTable {
     pub fn close_call(&mut self, call: ::Call) -> (::types::CallBuilderImpl, Vec<u8>, Vec<u8>) {
         let cons = call.cons();
         if call.fixed {
+            let mut out = None;
             for c in cons.iter() {
                 if let Some((_con, mut call)) = self.cons_fixed.remove(c) {
                     if let Some(call) = call.take() {
-                        return call.stop();
+                        out = Some(call.stop());
                     }
                 }
+            }
+            if let Some(out) = out {
+                return out;
             }
         }
         let mut con = usize::max_value();
