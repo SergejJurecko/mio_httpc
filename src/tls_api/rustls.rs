@@ -1,8 +1,6 @@
-extern crate webpki;
-extern crate webpki_roots;
-extern crate ring;
-
-
+use webpki;
+use webpki_roots;
+use ring::digest;
 use std::cell::RefCell;
 use std::fmt;
 use std::io;
@@ -11,8 +9,8 @@ use std::str;
 use std::sync::Arc;
 
 use rustls;
-use tls_api::{HashType, Error, Result, self, rustls::rustls::Session};
-use self::ring::digest;
+use crate::tls_api::{HashType, Error, Result, self, rustls::rustls::Session};
+
 
 pub fn hash(algo: HashType, data: &[u8]) -> Vec<u8> {
     let mut hasher = match algo {
@@ -322,7 +320,7 @@ impl tls_api::TlsConnectorBuilder for TlsConnectorBuilder {
         if let Some(ref mut cfg) = self.0 {
             let mut certvec = Vec::with_capacity(cert.len());
             certvec.extend(cert.iter());
-            let mut cert = rustls::Certificate(certvec);
+            let cert = rustls::Certificate(certvec);
             cfg.root_store.add(&cert).unwrap();
         }
         Ok(self)

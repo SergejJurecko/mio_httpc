@@ -4,7 +4,7 @@ use std::result;
 
 // use super::tls_api;
 use openssl;
-use tls_api::{Error, Result, self, HashType};
+use crate::tls_api::{Error, Result, self, HashType};
 use openssl::hash::{hash as hashf, MessageDigest};
 
 pub struct TlsConnectorBuilder(pub openssl::ssl::SslConnectorBuilder, bool);

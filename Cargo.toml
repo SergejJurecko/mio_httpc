@@ -11,6 +11,7 @@ license = "MIT/Apache-2.0"
 documentation = "http://docs.rs/mio_httpc"
 homepage = "https://github.com/SergejJurecko/mio_httpc"
 build = "build.rs"
+edition = "2018"
 
 [features]
 # Default does not work for https.

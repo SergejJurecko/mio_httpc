@@ -1,5 +1,7 @@
+use crate::connection::Con;
+use crate::tls_api::TlsConnector;
+use crate::types::*;
 use byteorder::{ByteOrder, LittleEndian};
-use connection::Con;
 use data_encoding::{BASE64, HEXLOWER};
 use httparse::{self, Response as ParseResp};
 use libflate::gzip::Decoder;
@@ -10,8 +12,6 @@ use std::io::{Read, Write};
 use std::str::from_utf8;
 use std::str::FromStr;
 use std::time::{Duration, Instant};
-use tls_api::TlsConnector;
-use types::*;
 
 #[derive(PartialEq, Debug)]
 enum Dir {
@@ -148,10 +148,10 @@ impl CallImpl {
     //     self.start.elapsed()
     // }
 
-    fn reserve_space(&mut self, internal: bool, buf: &mut Vec<u8>) -> ::Result<usize> {
+    fn reserve_space(&mut self, internal: bool, buf: &mut Vec<u8>) -> crate::Result<usize> {
         let orig_len = buf.len();
         if internal && self.b.max_response <= orig_len {
-            return Err(::Error::ResponseTooBig);
+            return Err(crate::Error::ResponseTooBig);
         }
         // Vec will actually reserve on an exponential scale.
         buf.reserve(4096 * 2);
@@ -235,7 +235,7 @@ impl CallImpl {
         }
         if self.b.digest && self.b.bytes.us.len() > 0 {
             if self.b.auth.hdr.len() > 0 {
-                if let Ok(dig) = ::types::AuthDigest::parse(self.b.auth.hdr.as_str()) {
+                if let Ok(dig) = crate::types::AuthDigest::parse(self.b.auth.hdr.as_str()) {
                     buf.extend(b"Authorization: Digest ");
                     buf.extend(b"username=\"");
                     buf.extend(&self.b.bytes.us);
@@ -347,7 +347,7 @@ impl CallImpl {
         con: &mut Con,
         cp: &mut CallParam,
         b: Option<&[u8]>,
-    ) -> ::Result<SendStateInt> {
+    ) -> crate::Result<SendStateInt> {
         match self.dir {
             Dir::Done => {
                 return Ok(SendStateInt::Done);
@@ -390,7 +390,7 @@ impl CallImpl {
         }
     }
 
-    fn maybe_gunzip(&self, inbuf: Vec<u8>, extbuf: Option<&mut Vec<u8>>) -> ::Result<Vec<u8>> {
+    fn maybe_gunzip(&self, inbuf: Vec<u8>, extbuf: Option<&mut Vec<u8>>) -> crate::Result<Vec<u8>> {
         if self.b.gzip {
             let mut out = Vec::new();
             let mut d = Decoder::new(&inbuf[..])?;
@@ -410,7 +410,7 @@ impl CallImpl {
         con: &mut Con,
         cp: &mut CallParam,
         b: Option<&mut Vec<u8>>,
-    ) -> ::Result<RecvStateInt> {
+    ) -> crate::Result<RecvStateInt> {
         match self.dir {
             Dir::Done if self.buf_body.len() == 0 => {
                 return Ok(RecvStateInt::Done);
@@ -435,7 +435,7 @@ impl CallImpl {
                     if rec_pos > 0 && rec_pos >= self.body_sz {
                         buf.truncate(self.body_sz);
                         if b.is_some() {
-                            let mut b = b.unwrap();
+                            let b = b.unwrap();
                             let len_pre = b.len();
                             self.maybe_gunzip(buf, Some(b))?;
                             self.dir = Dir::Done;
@@ -515,7 +515,7 @@ impl CallImpl {
         cp: &mut CallParam,
         in_pos: usize,
         b: &[u8],
-    ) -> ::Result<SendStateInt> {
+    ) -> crate::Result<SendStateInt> {
         if !con.is_signalled_wr() {
             return Ok(SendStateInt::Wait);
         }
@@ -543,7 +543,7 @@ impl CallImpl {
                         con.reg(cp.poll, Ready::writable())?;
                         return Ok(SendStateInt::Wait);
                     } else {
-                        return Err(::Error::Closed);
+                        return Err(crate::Error::Closed);
                     }
                 }
                 &Ok(sz) if sz > 0 => {
@@ -576,7 +576,7 @@ impl CallImpl {
                     }
                 }
                 _ => {
-                    return Err(::Error::Closed);
+                    return Err(crate::Error::Closed);
                 }
             }
         }
@@ -588,7 +588,7 @@ impl CallImpl {
         cp: &mut CallParam,
         internal: bool,
         buf: &mut Vec<u8>,
-    ) -> ::Result<RecvStateInt> {
+    ) -> crate::Result<RecvStateInt> {
         if !con.is_signalled_rd() {
             return Ok(RecvStateInt::Wait);
         }
@@ -631,7 +631,7 @@ impl CallImpl {
         }
         match io_ret {
             Ok(0) => {
-                return Err(::Error::Closed);
+                return Err(crate::Error::Closed);
             }
             Ok(bytes_rec) => {
                 // if let Ok(sx) = String::from_utf8(Vec::from(&buf[..entire_sz])) {
@@ -640,7 +640,7 @@ impl CallImpl {
                 // println!("Got: {:?}", &buf[..bytes_rec]);
                 if self.hdr_sz == 0 {
                     let mut auth_info = None;
-                    let mut resp = ::Response::new();
+                    let mut resp = crate::Response::new();
                     // if let Ok(sx) = String::from_utf8(Vec::from(&buf[0..60])) {
                     //     println!("Got: {}", sx);
                     // }
@@ -660,16 +660,22 @@ impl CallImpl {
                                 }
                             }
                             if resp.status == 101 {
-                                return Ok(RecvStateInt::Response(resp, ::ResponseBody::Streamed));
+                                return Ok(RecvStateInt::Response(
+                                    resp,
+                                    crate::ResponseBody::Streamed,
+                                ));
                             } else if resp.status >= 300 && resp.status < 400 {
                                 return Ok(RecvStateInt::Redirect(resp));
                             }
                             if self.b.chunked_parse {
-                                return Ok(RecvStateInt::Response(resp, ::ResponseBody::Streamed));
+                                return Ok(RecvStateInt::Response(
+                                    resp,
+                                    crate::ResponseBody::Streamed,
+                                ));
                             } else {
                                 return Ok(RecvStateInt::Response(
                                     resp,
-                                    ::ResponseBody::Sized(self.body_sz),
+                                    crate::ResponseBody::Sized(self.body_sz),
                                 ));
                             }
                         }
@@ -721,9 +727,9 @@ impl CallImpl {
         &mut self,
         con: &mut Con,
         buf: &mut Vec<u8>,
-        resp: &mut ::Response,
+        resp: &mut crate::Response,
         auth_info: &mut Option<AuthenticateInfo>,
-    ) -> ::Result<()> {
+    ) -> crate::Result<()> {
         let mut headers = [httparse::EMPTY_HEADER; 32];
         let mut presp = ParseResp::new(&mut headers);
         let buflen = buf.len();
@@ -783,7 +789,7 @@ impl CallImpl {
                             let mut auth_type = val.split_whitespace();
                             if let Some(auth_type) = auth_type.next() {
                                 if auth_type.eq_ignore_ascii_case("digest") {
-                                    let de = ::types::AuthDigest::parse(val);
+                                    let de = crate::types::AuthDigest::parse(val);
                                     if de.is_ok() {
                                         self.dir = Dir::Done;
                                         *auth_info = Some(AuthenticateInfo::new(String::from(val)));

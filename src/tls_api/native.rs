@@ -1,10 +1,10 @@
-extern crate crypto_hash as hashf;
+use crypto_hash as hashf;
 use std::fmt;
 use std::io;
 use std::result;
 
 use native_tls;
-use tls_api::{HashType, Error, Result, self};
+use crate::tls_api::{HashType, Error, Result, self};
 
 pub fn hash(algo: HashType, data: &[u8]) -> Vec<u8> {
     match algo {

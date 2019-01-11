@@ -1,9 +1,9 @@
+use crate::tls_api;
+use crate::tls_api::TlsConnector;
+use crate::types::{CallBuilderImpl, Method};
+use crate::SimpleCall;
+use crate::{Call, CallRef, Result};
 use mio::{Event, Poll};
-use tls_api;
-use tls_api::TlsConnector;
-use types::{CallBuilderImpl, Method};
-use SimpleCall;
-use {Call, CallRef, Result};
 
 /// Used to start a call and get a Call for it.
 #[derive(Debug, Default)]
@@ -175,7 +175,7 @@ impl CallBuilder {
     /// Set full URL. If not valid it will return error. Be mindful of characters
     /// that need to be percent encoded. Using https, path_segm, query and auth functions
     /// to construct URL is much safer as those encode data automatically.
-    pub fn url(&mut self, url: &str) -> ::Result<&mut Self> {
+    pub fn url(&mut self, url: &str) -> crate::Result<&mut Self> {
         self.cb.as_mut().unwrap().url(url)?;
         Ok(self)
     }
@@ -193,7 +193,7 @@ impl CallBuilder {
     }
 
     /// Execute directly. This will block until completion!
-    pub fn exec(&mut self) -> ::Result<(::Response, Vec<u8>)> {
+    pub fn exec(&mut self) -> crate::Result<(crate::Response, Vec<u8>)> {
         let poll = ::mio::Poll::new()?;
         let mut htp = Httpc::new(0, None);
         let mut events = ::mio::Events::with_capacity(2);
@@ -202,7 +202,7 @@ impl CallBuilder {
             poll.poll(&mut events, Some(::std::time::Duration::from_millis(100)))?;
             for cref in htp.timeout().into_iter() {
                 if call.is_ref(cref) {
-                    return Err(::Error::TimeOut);
+                    return Err(crate::Error::TimeOut);
                 }
             }
 
@@ -211,10 +211,10 @@ impl CallBuilder {
 
                 if call.is_call(&cref) {
                     if call.perform(&mut htp, &poll)? {
-                        if let Some((mut resp, v)) = call.finish() {
+                        if let Some((resp, v)) = call.finish() {
                             return Ok((resp, v));
                         }
-                        return Ok((::Response::new(), Vec::new()));
+                        return Ok((crate::Response::new(), Vec::new()));
                     }
                 }
             }
@@ -241,12 +241,12 @@ impl CallBuilder {
 
     /// Consume and start a WebSocket
     /// CallBuilder is invalid after this call and will panic if used again.
-    pub fn websocket(&mut self, httpc: &mut Httpc, poll: &Poll) -> Result<::WebSocket> {
+    pub fn websocket(&mut self, httpc: &mut Httpc, poll: &Poll) -> Result<crate::WebSocket> {
         // self.finish()?;
         let mut cb = self.cb.take().unwrap();
         cb.websocket();
         let cid = httpc.call::<CONNECTOR>(cb, poll)?;
-        Ok(::WebSocket::new(cid, httpc.h.get_buf()))
+        Ok(crate::WebSocket::new(cid, httpc.h.get_buf()))
     }
 
     /// Default 10MB.
@@ -338,14 +338,14 @@ impl CallBuilder {
 }
 
 pub struct Httpc {
-    h: ::httpc::HttpcImpl,
+    h: crate::httpc::HttpcImpl,
 }
 
 impl Httpc {
     /// Httpc will create connections with mio token in range [con_offset..con_offset+0xFFFF]
-    pub fn new(con_offset: usize, cfg: Option<::HttpcCfg>) -> Httpc {
+    pub fn new(con_offset: usize, cfg: Option<crate::HttpcCfg>) -> Httpc {
         Httpc {
-            h: ::httpc::HttpcImpl::new(con_offset, cfg),
+            h: crate::httpc::HttpcImpl::new(con_offset, cfg),
         }
     }
     pub(crate) fn call<C: TlsConnector>(
@@ -355,14 +355,14 @@ impl Httpc {
     ) -> Result<Call> {
         self.h.call::<C>(b, poll)
     }
-    pub(crate) fn peek_body(&mut self, id: &::Call, off: &mut usize) -> &[u8] {
+    pub(crate) fn peek_body(&mut self, id: &crate::Call, off: &mut usize) -> &[u8] {
         self.h.peek_body(id, off)
     }
-    pub(crate) fn try_truncate(&mut self, id: &::Call, off: &mut usize) {
+    pub(crate) fn try_truncate(&mut self, id: &crate::Call, off: &mut usize) {
         self.h.try_truncate(id, off);
     }
     /// Reconfigure httpc.
-    pub fn cfg_mut(&mut self) -> &mut ::HttpcCfg {
+    pub fn cfg_mut(&mut self) -> &mut crate::HttpcCfg {
         self.h.cfg_mut()
     }
     /// Number of currently open connections (in active and idle keep-alive state)
@@ -408,7 +408,12 @@ impl Httpc {
     ///
     /// buf slice is assumed to have taken previous SendState::SentBody(usize) into account
     /// and starts from part of buffer that has not been sent yet.
-    pub fn call_send(&mut self, poll: &Poll, id: &mut Call, buf: Option<&[u8]>) -> ::SendState {
+    pub fn call_send(
+        &mut self,
+        poll: &Poll,
+        id: &mut Call,
+        buf: Option<&[u8]>,
+    ) -> crate::SendState {
         self.h.call_send::<CONNECTOR>(poll, id, buf)
     }
 
@@ -424,7 +429,7 @@ impl Httpc {
         poll: &Poll,
         id: &mut Call,
         buf: Option<&mut Vec<u8>>,
-    ) -> ::RecvState {
+    ) -> crate::RecvState {
         self.h.call_recv::<CONNECTOR>(poll, id, buf)
     }
 }

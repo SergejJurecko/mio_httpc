@@ -1,4 +1,4 @@
-use {Call, CallRef, Httpc, RecvState, ResponseBody, SendState};
+use crate::{Call, CallRef, Httpc, RecvState, ResponseBody, SendState};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum State {
@@ -13,7 +13,7 @@ enum State {
 pub struct SimpleCall {
     state: State,
     id: Call,
-    resp: Option<::Response>,
+    resp: Option<crate::Response>,
     resp_body: Option<Vec<u8>>,
 }
 
@@ -27,13 +27,13 @@ impl SimpleCall {
     }
 
     /// Replaces self with an empty SimpleCall and returns result if any.
-    pub fn finish_inplace(&mut self) -> Option<(::Response, Vec<u8>)> {
+    pub fn finish_inplace(&mut self) -> Option<(crate::Response, Vec<u8>)> {
         let out = ::std::mem::replace(self, SimpleCall::empty());
         out.finish()
     }
 
     /// Consume and return response with body.
-    pub fn finish(mut self) -> Option<(::Response, Vec<u8>)> {
+    pub fn finish(mut self) -> Option<(crate::Response, Vec<u8>)> {
         let r = self.resp.take();
         let b = self.resp_body.take();
         if let Some(rs) = r {
@@ -88,7 +88,7 @@ impl SimpleCall {
     }
 
     /// Perform operation. Returns true if request is finished.
-    pub fn perform(&mut self, htp: &mut Httpc, poll: &::mio::Poll) -> ::Result<bool> {
+    pub fn perform(&mut self, htp: &mut Httpc, poll: &::mio::Poll) -> crate::Result<bool> {
         if self.is_done() {
             return Ok(true);
         }
@@ -105,7 +105,7 @@ impl SimpleCall {
                 }
                 SendState::WaitReqBody => {
                     self.state = State::Done;
-                    return Err(::Error::MissingBody);
+                    return Err(crate::Error::MissingBody);
                 }
                 SendState::Done => {
                     self.state = State::Done;
@@ -159,7 +159,7 @@ impl SimpleCall {
     pub fn empty() -> SimpleCall {
         SimpleCall {
             state: State::Done,
-            id: ::Call::empty(),
+            id: crate::Call::empty(),
             resp: None,
             resp_body: None,
         }

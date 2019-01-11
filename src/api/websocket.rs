@@ -1,6 +1,6 @@
 use byteorder::{BigEndian, ByteOrder};
 use mio::Poll;
-use {Call, CallRef, Httpc, RecvState, ResponseBody, SendState};
+use crate::{Call, CallRef, Httpc, RecvState, ResponseBody, SendState};
 
 /// WebSocket packet received from server.
 pub enum WSPacket<'a> {
@@ -204,7 +204,7 @@ impl WebSocket {
         // self.do_send_buf(htp, poll)
     }
 
-    fn do_send_buf(&mut self, htp: &mut Httpc, poll: &Poll) -> ::Result<()> {
+    fn do_send_buf(&mut self, htp: &mut Httpc, poll: &Poll) -> crate::Result<()> {
         let mut send_buf = ::std::mem::replace(&mut self.send_buf, Vec::new());
         let send_buf_pos = self.send_buf_pos;
         let sent = self.call_send(htp, poll, &send_buf[send_buf_pos..])?;
@@ -284,17 +284,17 @@ impl WebSocket {
         poll: &Poll,
         fin: bool,
         pkt: &mut [u8],
-    ) -> ::Result<usize> {
+    ) -> crate::Result<usize> {
         if self.state.is_init() {
             self.perform(htp, poll)?;
             return Ok(0);
         }
         if self.state == State::Done {
-            return Err(::Error::Closed);
+            return Err(crate::Error::Closed);
         }
         if self.state == State::Finish {
             self.stop(htp);
-            return Err(::Error::Closed);
+            return Err(crate::Error::Closed);
         }
         if self.send_buf.len() > 0 && self.send_lover == 0 && self.curframe_pos == 0 {
             self.do_send_buf(htp, poll)?;
@@ -356,12 +356,12 @@ impl WebSocket {
         Ok(consumed)
     }
 
-    fn call_send(&mut self, htp: &mut Httpc, poll: &Poll, pkt: &[u8]) -> ::Result<usize> {
+    fn call_send(&mut self, htp: &mut Httpc, poll: &Poll, pkt: &[u8]) -> crate::Result<usize> {
         match htp.call_send(poll, &mut self.id, Some(pkt)) {
             SendState::Wait => Ok(0),
             SendState::Receiving => {
                 self.stop(htp);
-                Err(::Error::Closed)
+                Err(crate::Error::Closed)
             }
             SendState::SentBody(sz) => Ok(sz),
             SendState::Error(e) => {
@@ -370,11 +370,11 @@ impl WebSocket {
             }
             SendState::WaitReqBody => {
                 self.stop(htp);
-                Err(::Error::MissingBody)
+                Err(crate::Error::MissingBody)
             }
             SendState::Done => {
                 self.stop(htp);
-                Err(::Error::Closed)
+                Err(crate::Error::Closed)
             }
         }
     }
@@ -441,12 +441,12 @@ impl WebSocket {
     }
 
     /// You should call this in a loop until you get WSPacket::None.
-    pub fn recv_packet<'a>(&mut self, htp: &'a mut Httpc, poll: &Poll) -> ::Result<WSPacket<'a>> {
+    pub fn recv_packet<'a>(&mut self, htp: &'a mut Httpc, poll: &Poll) -> crate::Result<WSPacket<'a>> {
         if self.state.is_init() {
             self.perform(htp, poll)?;
             return Ok(WSPacket::None);
         } else if self.state == State::Done {
-            return Err(::Error::Closed);
+            return Err(crate::Error::Closed);
         } else {
             // htp.peek_body(&self.id, &mut self.recv_lover);
             self.perform(htp, poll)?;
@@ -454,7 +454,7 @@ impl WebSocket {
         self.read_packet(htp)
     }
 
-    fn read_packet<'a>(&mut self, htp: &'a mut Httpc) -> ::Result<WSPacket<'a>> {
+    fn read_packet<'a>(&mut self, htp: &'a mut Httpc) -> crate::Result<WSPacket<'a>> {
         // We can only return one packet at a time, but we can receive multiple packets at the same time.
         // So we use recv_lover as a receive buffer offset.
         // peek_body will fix recv_lover and set it to 0 if everything has been read from buffer.
@@ -470,7 +470,7 @@ impl WebSocket {
                         return Ok(WSPacket::Text(fin, s));
                     } else {
                         self.state = State::Finish;
-                        return Err(::Error::WebSocketParse);
+                        return Err(crate::Error::WebSocketParse);
                     }
                 }
                 _ if self.cur_op == 2 || op == 2 => {
@@ -500,7 +500,7 @@ impl WebSocket {
                 }
                 _ => {
                     self.state = State::Finish;
-                    return Err(::Error::WebSocketParse);
+                    return Err(crate::Error::WebSocketParse);
                 }
             }
         }
@@ -541,14 +541,14 @@ impl WebSocket {
         None
     }
 
-    fn switch(&mut self, htp: &mut Httpc, poll: &Poll, resp: ::Response) -> ::Result<()> {
+    fn switch(&mut self, htp: &mut Httpc, poll: &Poll, resp: crate::Response) -> crate::Result<()> {
         if resp.status != 101 {
             self.stop(htp);
-            return Err(::Error::WebSocketFail(resp));
+            return Err(crate::Error::WebSocketFail(resp));
         }
         if !resp.ws {
             self.stop(htp);
-            return Err(::Error::WebSocketFail(resp));
+            return Err(crate::Error::WebSocketFail(resp));
         }
         self.state = State::Active;
         if self.send_buf.len() > 0 {
@@ -558,7 +558,7 @@ impl WebSocket {
     }
 
     /// Perform socket operation.
-    pub fn perform(&mut self, htp: &mut Httpc, poll: &Poll) -> ::Result<()> {
+    pub fn perform(&mut self, htp: &mut Httpc, poll: &Poll) -> crate::Result<()> {
         if self.state == State::Active {
             if self.send_buf.len() > 0 {
                 self.do_send_buf(htp, poll)?;
@@ -566,11 +566,11 @@ impl WebSocket {
             htp.try_truncate(&self.id, &mut self.recv_lover);
         }
         if self.state == State::Done {
-            return Err(::Error::Closed);
+            return Err(crate::Error::Closed);
         }
         if self.state == State::Finish {
             self.stop(htp);
-            return Err(::Error::Closed);
+            return Err(crate::Error::Closed);
         }
         if self.state == State::InitSending {
             match htp.call_send(poll, &mut self.id, None) {
@@ -585,11 +585,11 @@ impl WebSocket {
                 }
                 SendState::WaitReqBody => {
                     self.stop(htp);
-                    return Err(::Error::MissingBody);
+                    return Err(crate::Error::MissingBody);
                 }
                 SendState::Done => {
                     self.stop(htp);
-                    return Err(::Error::Closed);
+                    return Err(crate::Error::Closed);
                 }
             }
         }
@@ -598,11 +598,11 @@ impl WebSocket {
                 match htp.call_recv(poll, &mut self.id, None) {
                     RecvState::DoneWithBody(_b) => {
                         self.stop(htp);
-                        return Err(::Error::Closed);
+                        return Err(crate::Error::Closed);
                     }
                     RecvState::Done => {
                         self.stop(htp);
-                        return Err(::Error::Closed);
+                        return Err(crate::Error::Closed);
                     }
                     RecvState::Error(e) => {
                         self.stop(htp);
@@ -614,7 +614,7 @@ impl WebSocket {
                         }
                         _ => {
                             self.stop(htp);
-                            return Err(::Error::Closed);
+                            return Err(crate::Error::Closed);
                         }
                     },
                     RecvState::Wait => {

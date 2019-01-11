@@ -25,7 +25,7 @@ use std::fmt;
 use std::io;
 // use std::error;
 use std::result;
-use {Error, Result};
+use crate::{Error, Result};
 
 #[allow(dead_code)]
 pub enum HashType {

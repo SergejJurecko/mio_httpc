@@ -1,13 +1,13 @@
-use call::CallImpl;
-use connection::{Con, ConTable};
+use crate::call::CallImpl;
+use crate::connection::{Con, ConTable};
 use mio::{Event, Poll, Token};
-use resolve::DnsCache;
+use crate::resolve::DnsCache;
 use std::collections::VecDeque;
-use tls_api::TlsConnector;
-use types::*;
+use crate::tls_api::TlsConnector;
+use crate::types::*;
 // use fnv::FnvHashMap as HashMap;
 use std::time::Instant;
-use {Call, CallRef, RecvState, Response, Result, SendState};
+use crate::{Call, CallRef, RecvState, Response, Result, SendState};
 
 pub(crate) struct HttpcImpl {
     cache: DnsCache,
@@ -16,7 +16,7 @@ pub(crate) struct HttpcImpl {
     free_bufs: VecDeque<Vec<u8>>,
     cons: ConTable,
     last_timeout: Instant,
-    cfg: ::HttpcCfg,
+    cfg: crate::HttpcCfg,
     con_offset: usize,
     call_idgen: u64,
 }
@@ -24,7 +24,7 @@ pub(crate) struct HttpcImpl {
 const BUF_SZ: usize = 4096 * 2;
 
 impl HttpcImpl {
-    pub fn new(con_offset: usize, cfg: Option<::HttpcCfg>) -> HttpcImpl {
+    pub fn new(con_offset: usize, cfg: Option<crate::HttpcCfg>) -> HttpcImpl {
         let cfg = cfg.unwrap_or_default();
         let mut r = HttpcImpl {
             cfg,
@@ -41,7 +41,7 @@ impl HttpcImpl {
         r
     }
 
-    pub fn cfg_mut(&mut self) -> &mut ::HttpcCfg {
+    pub fn cfg_mut(&mut self) -> &mut crate::HttpcCfg {
         &mut self.cfg
     }
 
@@ -110,7 +110,7 @@ impl HttpcImpl {
                 // }
                 Ok(call)
             } else {
-                Err(::Error::NoSpace)
+                Err(crate::Error::NoSpace)
             }
         } else {
             let (con_id1, con_id2) = self.cons.push_fixed_con(con1, call, poll, &self.cfg)?;
@@ -180,7 +180,7 @@ impl HttpcImpl {
         }
         self.cons.peek_body(call, off)
     }
-    pub fn try_truncate(&mut self, call: &::Call, off: &mut usize) {
+    pub fn try_truncate(&mut self, call: &crate::Call, off: &mut usize) {
         if call.is_empty() {
             return;
         }
@@ -197,7 +197,7 @@ impl HttpcImpl {
             return SendState::Done;
         }
         let cret = {
-            let mut cp = ::types::CallParam {
+            let mut cp = crate::types::CallParam {
                 poll,
                 dns: &mut self.cache,
                 cfg: &self.cfg,
@@ -257,7 +257,7 @@ impl HttpcImpl {
             return RecvState::Done;
         }
         let cret = {
-            let mut cp = ::types::CallParam {
+            let mut cp = crate::types::CallParam {
                 poll,
                 dns: &mut self.cache,
                 cfg: &self.cfg,
@@ -265,10 +265,10 @@ impl HttpcImpl {
             self.cons.event_recv::<C>(call, &mut cp, buf)
         };
         match cret {
-            Ok(RecvStateInt::Response(r, ::ResponseBody::Sized(0))) => {
+            Ok(RecvStateInt::Response(r, crate::ResponseBody::Sized(0))) => {
                 self.call_close(call.clone());
                 call.invalidate();
-                return RecvState::Response(r, ::ResponseBody::Sized(0));
+                return RecvState::Response(r, crate::ResponseBody::Sized(0));
             }
             Ok(RecvStateInt::Done) => {
                 self.call_close(call.clone());
@@ -312,14 +312,14 @@ impl HttpcImpl {
                         }
                     }
                 }
-                return RecvState::Response(r, ::ResponseBody::Sized(0));
+                return RecvState::Response(r, crate::ResponseBody::Sized(0));
             }
             Ok(RecvStateInt::DigestAuth(r, d)) => {
                 let mut b = self.call_close_int(call.clone());
                 call.invalidate();
                 if b.auth.hdr.len() > 0 {
                     // If an attempt was already made once, return response.
-                    return RecvState::Response(r, ::ResponseBody::Sized(0));
+                    return RecvState::Response(r, crate::ResponseBody::Sized(0));
                 }
                 b.auth_recv(d);
                 match self.call::<C>(b, poll) {

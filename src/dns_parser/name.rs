@@ -104,15 +104,15 @@ impl<'a> fmt::Display for Name<'a> {
                 let off =
                     (BigEndian::read_u16(&data[pos..pos + 2]) & !0b1100_0000_0000_0000) as usize;
                 if pos != 0 {
-                    try!(fmt.write_char('.'));
+                    r#try!(fmt.write_char('.'));
                 }
                 return fmt::Display::fmt(&Name::scan(&original[off..], original).unwrap(), fmt);
             } else if byte & 0b1100_0000 == 0 {
                 if pos != 0 {
-                    try!(fmt.write_char('.'));
+                    r#try!(fmt.write_char('.'));
                 }
                 let end = pos + byte as usize + 1;
-                try!(fmt.write_str(from_utf8(&data[pos + 1..end]).unwrap()));
+                r#try!(fmt.write_str(from_utf8(&data[pos + 1..end]).unwrap()));
                 pos = end;
                 continue;
             } else {
@@ -124,7 +124,7 @@ impl<'a> fmt::Display for Name<'a> {
 
 #[cfg(test)]
 mod test {
-    use dns_parser::{Error, Name};
+    use crate::dns_parser::{Error, Name};
 
     #[test]
     fn parse_badpointer_same_offset() {

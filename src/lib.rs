@@ -116,7 +116,7 @@ mod tls_api;
 #[allow(dead_code, unused_variables)]
 mod types;
 
-pub use api::*;
+pub use crate::api::*;
 #[cfg(feature = "native")]
 pub use native_tls::Error as TLSError;
 #[cfg(feature = "openssl")]
@@ -129,13 +129,13 @@ pub use openssl::ssl::Error as TLSError;
 pub use rustls::TLSError;
 
 #[cfg(not(any(feature = "rustls", feature = "native", feature = "openssl")))]
-pub use tls_api::{dummy::hash, HashType};
+pub use crate::tls_api::{dummy::hash, HashType};
 #[cfg(feature = "native")]
-pub use tls_api::{native::hash, HashType};
+pub use crate::tls_api::{native::hash, HashType};
 #[cfg(feature = "openssl")]
-pub use tls_api::{openssl::hash, HashType};
+pub use crate::tls_api::{openssl::hash, HashType};
 #[cfg(feature = "rustls")]
-pub use tls_api::{rustls::hash, HashType};
+pub use crate::tls_api::{rustls::hash, HashType};
 
 pub type Result<T> = ::std::result::Result<T, Error>;
 #[derive(Debug, Fail)]
@@ -266,7 +266,7 @@ mod tests {
     #[test]
     fn parse_headers() {
         let v = b"HTTP/1.1 200 OK\r\nContent-length: 100\r\nUpgrade: websocket\r\n".to_vec();
-        let mut r = ::Response::new();
+        let mut r = crate::Response::new();
         r.hdrs = v;
 
         {

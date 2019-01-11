@@ -46,7 +46,7 @@ fn main() {
         args.push("https://www.reddit.com".to_string());
     }
 
-    let mut cfg = if let Ok(cfg) = HttpcCfg::certs_from_path(".") {
+    let cfg = if let Ok(cfg) = HttpcCfg::certs_from_path(".") {
         cfg
     } else {
         Default::default()

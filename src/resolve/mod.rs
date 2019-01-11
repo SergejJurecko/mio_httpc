@@ -3,8 +3,8 @@ use mio::net::UdpSocket;
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 // use mio::Poll;
-use dns_parser;
-use dns_parser::{Packet, RRData};
+use crate::dns_parser;
+use crate::dns_parser::{Packet, RRData};
 use rand;
 use smallvec::SmallVec;
 use std::time::{Duration, Instant};
@@ -47,7 +47,7 @@ pub struct Dns {
 }
 
 impl Dns {
-    pub fn new(host: &str, retry_in: u64, servers: &[SocketAddr], ipv4: bool) -> ::Result<Dns> {
+    pub fn new(host: &str, retry_in: u64, servers: &[SocketAddr], ipv4: bool) -> crate::Result<Dns> {
         let mut srvs = SmallVec::with_capacity(2);
         for s in servers.iter() {
             srvs.push(*s);
@@ -105,7 +105,7 @@ impl Dns {
         Ok(s6)
     }
 
-    fn start_lookup(ipv4: bool, srvs: &[SocketAddr], host: &str) -> ::Result<UdpSocket> {
+    fn start_lookup(ipv4: bool, srvs: &[SocketAddr], host: &str) -> crate::Result<UdpSocket> {
         let mut pos = 0;
         if let Ok(sock) = Self::get_socket_v4() {
             if let Ok(_) = Self::lookup_on(ipv4, srvs, &sock, &mut pos, host) {
@@ -123,7 +123,7 @@ impl Dns {
         sock: &UdpSocket,
         pos: &mut usize,
         host: &str,
-    ) -> ::Result<()> {
+    ) -> crate::Result<()> {
         let len_srvs = srvs.len();
         let mut last_err = io::Error::new(io::ErrorKind::Other, "");
         // let rnd = (self.rng.next_u32() & 0x0000_FFFF) as u16;

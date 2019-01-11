@@ -1,31 +1,31 @@
-use httpc::HttpcImpl;
+use crate::httpc::HttpcImpl;
 use mio::Poll;
 use percent_encoding::{
     percent_encode, utf8_percent_encode, PATH_SEGMENT_ENCODE_SET, QUERY_ENCODE_SET,
     USERINFO_ENCODE_SET,
 };
 use pest::Parser;
-use resolve::DnsCache;
+use crate::resolve::DnsCache;
 use smallvec::SmallVec;
 use std::ops::Deref;
 use std::str::FromStr;
 use std::time::Duration;
-use tls_api::TlsConnector;
+use crate::tls_api::TlsConnector;
 use url::Url;
 
 #[derive(Debug)]
 pub(crate) enum RecvStateInt {
     // Error(::Error),
-    Response(::Response, ::ResponseBody),
-    DigestAuth(::Response, AuthenticateInfo),
+    Response(crate::Response, crate::ResponseBody),
+    DigestAuth(crate::Response, AuthenticateInfo),
     ReceivedBody(usize),
     DoneWithBody(Vec<u8>),
     Sending,
     Done,
     Wait,
     BasicAuth,
-    Redirect(::Response),
-    Retry(::Error),
+    Redirect(crate::Response),
+    Retry(crate::Error),
 }
 
 #[derive(Debug)]
@@ -35,7 +35,7 @@ pub enum SendStateInt {
     Receiving,
     Done,
     Wait,
-    Retry(::Error),
+    Retry(crate::Error),
 }
 
 #[derive(Parser)]
@@ -80,7 +80,7 @@ pub struct AuthDigest<'a> {
 }
 
 impl<'a> AuthDigest<'a> {
-    pub fn parse(s: &'a str) -> ::Result<AuthDigest<'a>> {
+    pub fn parse(s: &'a str) -> crate::Result<AuthDigest<'a>> {
         // println!("Digest in {}", s);
         let mut realm = "";
         let mut nonce = "";
@@ -97,7 +97,7 @@ impl<'a> AuthDigest<'a> {
                             for inner_pair in inner_pair.into_inner() {
                                 let s = inner_pair.into_span().as_str();
                                 if !s.eq_ignore_ascii_case("digest") {
-                                    return Err(::Error::AuthenticateParse);
+                                    return Err(crate::Error::AuthenticateParse);
                                 }
                                 break;
                             }
@@ -170,7 +170,7 @@ impl<'a> AuthDigest<'a> {
         } else if let Err(_e) = res_parse {
             // println!("Error parsing {}", e);
         }
-        Err(::Error::AuthenticateParse)
+        Err(crate::Error::AuthenticateParse)
     }
 }
 
@@ -205,13 +205,13 @@ impl ChunkIndex {
     }
 
     // Return true if 0 sized chunk found and stream finished.
-    pub fn check_done(&mut self, max: usize, b: &[u8]) -> ::Result<bool> {
+    pub fn check_done(&mut self, max: usize, b: &[u8]) -> crate::Result<bool> {
         let mut off = self.offset;
         // For every chunk, shift bytes back over the NUM\r\n parts
         while off + 4 < b.len() {
             if let Some((num, next_off)) = self.get_chunk_size(&b[off..])? {
                 if num > max {
-                    return Err(::Error::ChunkOverlimit(num));
+                    return Err(crate::Error::ChunkOverlimit(num));
                 }
                 if num == 0 {
                     return Ok(true);
@@ -228,7 +228,7 @@ impl ChunkIndex {
     }
 
     // copy full chunks to dst, move remainder (non-full chunk) back right after hdr.
-    pub fn push_to(&mut self, hdr: usize, src: &mut Vec<u8>, dst: &mut Vec<u8>) -> ::Result<usize> {
+    pub fn push_to(&mut self, hdr: usize, src: &mut Vec<u8>, dst: &mut Vec<u8>) -> crate::Result<usize> {
         let mut off = hdr;
         let mut num_copied = 0;
         loop {
@@ -260,7 +260,7 @@ impl ChunkIndex {
         Ok(num_copied)
     }
 
-    fn get_chunk_size(&mut self, b: &[u8]) -> ::Result<Option<(usize, usize)>> {
+    fn get_chunk_size(&mut self, b: &[u8]) -> crate::Result<Option<(usize, usize)>> {
         let blen = b.len();
         let mut num: usize = 0;
         let mut chunk_ext = false;
@@ -277,15 +277,15 @@ impl ChunkIndex {
                     if let Some(num2) = num.checked_add(v) {
                         num = num2;
                     } else {
-                        return Err(::Error::ChunkedParse);
+                        return Err(crate::Error::ChunkedParse);
                     }
                 } else {
-                    return Err(::Error::ChunkedParse);
+                    return Err(crate::Error::ChunkedParse);
                 }
             } else if b[i] == b';' {
                 chunk_ext = true;
             } else {
-                return Err(::Error::ChunkedParse);
+                return Err(crate::Error::ChunkedParse);
             }
         }
         Ok(None)
@@ -401,7 +401,7 @@ impl Default for TransferEncoding {
 pub struct CallParam<'a> {
     pub poll: &'a Poll,
     pub dns: &'a mut DnsCache,
-    pub cfg: &'a ::HttpcCfg,
+    pub cfg: &'a crate::HttpcCfg,
 }
 
 /// Start configure call.
@@ -451,7 +451,7 @@ impl CallBuilderImpl {
             ..Default::default()
         }
     }
-    pub fn call<C: TlsConnector>(self, httpc: &mut HttpcImpl, poll: &Poll) -> ::Result<::Call> {
+    pub fn call<C: TlsConnector>(self, httpc: &mut HttpcImpl, poll: &Poll) -> crate::Result<crate::Call> {
         httpc.call::<C>(self, poll)
     }
     pub fn websocket(&mut self) -> &mut Self {
@@ -465,13 +465,13 @@ impl CallBuilderImpl {
     pub fn is_fixed(&self) -> bool {
         !(self.evids[0] == usize::max_value() && self.evids[1] == usize::max_value())
     }
-    pub fn url(&mut self, url: &str) -> ::Result<&mut Self>
+    pub fn url(&mut self, url: &str) -> crate::Result<&mut Self>
 // where
     //     I: Deref<Target = str>,
     {
         let url = Url::parse(url.deref())?;
         if !url.has_host() {
-            return Err(::Error::NoHost);
+            return Err(crate::Error::NoHost);
         }
         let host = url.host_str().unwrap();
         self.bytes.host.truncate(0);

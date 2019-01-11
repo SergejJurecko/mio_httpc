@@ -1,10 +1,16 @@
-use call::CallImpl;
+use crate::call::CallImpl;
+use crate::resolve::{self, Dns, DnsCache};
+use crate::tls_api::{
+    hash, HandshakeError, HashType, MidHandshakeTlsStream, TlsConnector, TlsConnectorBuilder,
+    TlsStream,
+};
+use crate::types::{CallBuilderImpl, CallParam, IpList, RecvStateInt, SendStateInt};
+use crate::{CallRef, HttpcCfg, Result};
 use data_encoding::BASE64;
 use fxhash::FxHashMap as HashMap;
 use mio::event::Evented;
 use mio::net::TcpStream;
 use mio::{Poll, PollOpt, Ready, Token};
-use resolve::{self, Dns, DnsCache};
 use slab::Slab;
 use smallvec::SmallVec;
 use std::io::ErrorKind as IoErrorKind;
@@ -12,12 +18,6 @@ use std::io::{Read, Write};
 use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
 use std::time::{Duration, Instant};
-use tls_api::{
-    hash, HandshakeError, HashType, MidHandshakeTlsStream, TlsConnector, TlsConnectorBuilder,
-    TlsStream,
-};
-use types::{CallBuilderImpl, CallParam, IpList, RecvStateInt, SendStateInt};
-use {CallRef, HttpcCfg, Result};
 
 fn connect(addr: SocketAddr) -> Result<TcpStream> {
     let tcp = TcpStream::connect(&addr)?;
@@ -64,7 +64,7 @@ impl Con {
         let rdy = Ready::writable() | Ready::readable();
         let port = cb.port;
         if cb.bytes.host.len() == 0 {
-            return Err(::Error::NoHost);
+            return Err(crate::Error::NoHost);
         }
         let mut res = Con {
             call_id,
@@ -342,7 +342,7 @@ impl Con {
     fn handshake_resp<C: TlsConnector>(
         &mut self,
         r: ::std::result::Result<TlsStream<TcpStream>, HandshakeError<TcpStream>>,
-        cfg: &::HttpcCfg,
+        cfg: &crate::HttpcCfg,
     ) -> Result<()> {
         match r {
             Ok(tls) => {
@@ -354,7 +354,7 @@ impl Con {
                         pin_match = false;
                         let der = tls.peer_pubkey();
                         for pin in pin.1.iter() {
-                            let mut hash_der;
+                            let hash_der;
                             let prefix = if pin.starts_with("sha256/") {
                                 hash_der = hash(HashType::SHA256, &der);
                                 "sha256/"
@@ -376,7 +376,7 @@ impl Con {
                     }
                 }
                 if !pin_match {
-                    return Err(::Error::InvalidPin);
+                    return Err(crate::Error::InvalidPin);
                 }
                 self.tls = Some(tls);
             }
@@ -705,7 +705,7 @@ impl ConTable {
         }
     }
 
-    pub fn peek_body(&mut self, call: &::Call, off: &mut usize) -> &[u8] {
+    pub fn peek_body(&mut self, call: &crate::Call, off: &mut usize) -> &[u8] {
         let con = call.con();
         if call.fixed {
             return self
@@ -721,7 +721,7 @@ impl ConTable {
             .map(|c| c.peek_body(off))
             .unwrap_or(&[])
     }
-    pub fn try_truncate(&mut self, call: &::Call, off: &mut usize) {
+    pub fn try_truncate(&mut self, call: &crate::Call, off: &mut usize) {
         let con = call.con();
         if call.fixed {
             self.cons_fixed
@@ -737,7 +737,7 @@ impl ConTable {
     }
     pub fn event_send<C: TlsConnector>(
         &mut self,
-        call: &mut ::Call,
+        call: &mut crate::Call,
         cp: &mut CallParam,
         buf: Option<&[u8]>,
     ) -> Result<SendStateInt> {
@@ -799,7 +799,7 @@ impl ConTable {
     }
     pub(crate) fn event_recv<C: TlsConnector>(
         &mut self,
-        call: &mut ::Call,
+        call: &mut crate::Call,
         cp: &mut CallParam,
         buf: Option<&mut Vec<u8>>,
     ) -> Result<RecvStateInt> {
@@ -904,7 +904,7 @@ impl ConTable {
         let id = call.settings().evids[0];
         let mut id1 = call.settings().evids[1];
         if id == usize::max_value() || id1 == usize::max_value() {
-            return Err(::Error::NoSpace);
+            return Err(crate::Error::NoSpace);
         }
         c.update_token(poll, id, true)?;
         if c.do_other {
@@ -960,7 +960,10 @@ impl ConTable {
         None
     }
 
-    pub fn close_call(&mut self, call: ::Call) -> (::types::CallBuilderImpl, Vec<u8>, Vec<u8>) {
+    pub fn close_call(
+        &mut self,
+        call: crate::Call,
+    ) -> (crate::types::CallBuilderImpl, Vec<u8>, Vec<u8>) {
         let cons = call.cons();
         if call.fixed {
             let mut out = None;

@@ -1,10 +1,9 @@
-extern crate md5;
 use std::fmt;
 use std::io;
 use std::result;
 
-use tls_api;
-use tls_api::{Error, Result};
+use crate::tls_api;
+use crate::tls_api::{Error, Result};
 
 pub struct TlsConnectorBuilder;
 pub struct TlsConnector;
