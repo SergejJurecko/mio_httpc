@@ -12,7 +12,8 @@ pub struct TlsAcceptorBuilder;
 pub struct TlsAcceptor;
 
 /// Make use of the TLS implementation's crypto hashing functions.
-/// Dummy will not work and will always return an empty vec.
+/// Not picking any TLS implementation as a feature means hash will not work also
+/// and will always return an empty vec.
 pub fn hash(_algo: tls_api::HashType, _data: &[u8]) -> Vec<u8> {
     Vec::new()
 }
