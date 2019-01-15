@@ -36,6 +36,16 @@ of buffers that get reused on new calls.
 
 ## EXAMPLES
 
+Include mio_httpc in your project with:
+```
+# System native TLS implementation
+mio_httpc = { version = "0.8", features = ["native"] }
+# Openssl
+# mio_httpc = { version = "0.8", features = ["openssl"] }
+# Rustls
+# mio_httpc = { version = "0.8", features = ["rtls"] }
+```
+
 **Sync call**
 
 ```rust
