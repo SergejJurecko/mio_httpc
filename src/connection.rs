@@ -353,6 +353,7 @@ impl Con {
                         // If we found host, we now must find a pin match
                         pin_match = false;
                         let der = tls.peer_pubkey();
+                        println!("{:?}", der);
                         for pin in pin.1.iter() {
                             let hash_der;
                             let prefix = if pin.starts_with("sha256/") {

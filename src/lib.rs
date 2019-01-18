@@ -87,9 +87,9 @@ extern crate openssl;
 extern crate pest;
 #[macro_use]
 extern crate pest_derive;
-// #[cfg(any(target_os = "ios", target_os = "macos"))]
-// // #[macro_use]
-// extern crate core_foundation;
+#[cfg(any(target_os = "ios", target_os = "macos"))]
+#[macro_use]
+extern crate core_foundation;
 #[cfg(any(target_os = "ios", target_os = "macos"))]
 extern crate core_foundation_sys;
 extern crate percent_encoding;

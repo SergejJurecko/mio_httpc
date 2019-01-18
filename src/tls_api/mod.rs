@@ -24,8 +24,8 @@ pub use self::dummy::hash;
 use std::fmt;
 use std::io;
 // use std::error;
-use std::result;
 use crate::{Error, Result};
+use std::result;
 
 #[allow(dead_code)]
 pub enum HashType {
@@ -88,29 +88,27 @@ impl<S: 'static> TlsStream<S> {
         if v.len() > 0 {
             return v;
         }
-        // if cfg!(target_os = "macos") || cfg!(target_os = "ios") {
-        //     let v = self.0.peer_certificate();
-        //     if v.len() > 0 {
-        //         return cert_pubkey(v);
-        //     }
-        // }
+        if cfg!(target_os = "macos") || cfg!(target_os = "ios") {
+            let v = self.0.peer_certificate();
+            if v.len() > 0 {
+                return cert_pubkey(v);
+            }
+        }
 
         // cert_pubkey(self.0.peer_certificate())
         v
     }
 }
 
-// #[cfg(not(any(target_os = "ios", target_os = "macos")))]
-// fn cert_pubkey(_v: Vec<u8>) -> Vec<u8> {
-//     Vec::new()
-// }
+#[cfg(not(any(target_os = "ios", target_os = "macos")))]
+fn cert_pubkey(_v: Vec<u8>) -> Vec<u8> {
+    Vec::new()
+}
 
-// #[cfg(any(target_os = "ios", target_os = "macos"))]
-// mod apple;
-// #[cfg(any(target_os = "ios", target_os = "macos"))]
-// use self::apple::cert_pubkey;
-
-
+#[cfg(any(target_os = "ios", target_os = "macos"))]
+mod apple;
+#[cfg(any(target_os = "ios", target_os = "macos"))]
+use self::apple::cert_pubkey;
 
 impl<S> io::Read for TlsStream<S> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {

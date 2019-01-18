@@ -131,6 +131,7 @@ pub struct HttpcCfg {
     pub dns_servers: Vec<::std::net::SocketAddr>,
     /// SSL Pinning. every element is (hostname, vec![pin1,pin2,..])
     /// A pin is formatted as: sha256/base64(subjectPublicKeyInfo)
+    /// sha1 is also supported though not recommended.
     /// mio_httpc will check if public key of server matches any of the pins before
     /// sending the HTTP request.
     pub pins: Vec<(String, Vec<String>)>,

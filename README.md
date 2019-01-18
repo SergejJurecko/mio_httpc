@@ -31,7 +31,7 @@ of buffers that get reused on new calls.
 - [x] Timeouts
 - [x] Websockets
 - [x] gzip body decoding
-- [x] SSL pinning on subjectPublicKeyInfo (openssl TLS backend only)
+- [x] SSL pinning on subjectPublicKeyInfo (OpenSSL backend with any target_os and macos/ios with native backend)
 - [ ] HTTP2
 
 ## EXAMPLES
