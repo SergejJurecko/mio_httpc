@@ -88,7 +88,8 @@ impl<S: 'static> TlsStream<S> {
         if v.len() > 0 {
             return v;
         }
-        if cfg!(target_os = "macos") || cfg!(target_os = "ios") {
+        if cfg!(target_os = "macos") {
+            //|| cfg!(target_os = "ios")
             let v = self.0.peer_certificate();
             if v.len() > 0 {
                 return cert_pubkey(v);
@@ -100,14 +101,14 @@ impl<S: 'static> TlsStream<S> {
     }
 }
 
-#[cfg(not(any(target_os = "ios", target_os = "macos")))]
+#[cfg(not(any(target_os = "macos")))] //target_os = "ios",
 fn cert_pubkey(_v: Vec<u8>) -> Vec<u8> {
     Vec::new()
 }
 
-#[cfg(any(target_os = "ios", target_os = "macos"))]
+#[cfg(any(target_os = "macos"))] //target_os = "ios",
 mod apple;
-#[cfg(any(target_os = "ios", target_os = "macos"))]
+#[cfg(any(target_os = "macos"))] //target_os = "ios"
 use self::apple::cert_pubkey;
 
 impl<S> io::Read for TlsStream<S> {
