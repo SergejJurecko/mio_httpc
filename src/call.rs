@@ -453,6 +453,9 @@ impl CallImpl {
                     if self.b.chunked_parse && self.hdr_sz > 0 {
                         match ret {
                             Err(_) => {}
+                            // When RecvStateInt::DigestAuth is returned, Dir::Done is always self.dir.
+                            // So, the following arm is needed to avoid RecvStateInt::ReceivedBody.
+                            Ok(RecvStateInt::DigestAuth(_, _)) => {}
                             Ok(RecvStateInt::Response(_, _)) => {}
                             _ if b.is_some() && !self.b.gzip && Dir::Done != self.dir => {
                                 let b = b.unwrap();
