@@ -18,4 +18,4 @@ opaque = { ^"opaque"  ~ "=" ~ qword}
 algorithm = { ^"algorithm" ~ "=" ~ alg}
 stale = { ^"stale" ~ "=" ~ bool}
 
-auth = { SOI ~ auth_type ~ ((realm | qop | nonce | opaque | algorithm) ~ ","?)+ ~ EOI }
+auth = { SOI ~ auth_type ~ ((realm | qop | nonce | opaque | algorithm | stale) ~ ","?)+ ~ EOI }

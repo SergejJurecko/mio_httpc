@@ -694,4 +694,14 @@ pub fn test_auth() {
     assert_eq!(da.nonce, "7ypf/xlj9XXwfDPEoM4URrv/xwf94BcCAzFZH4GiTo0v");
     assert_eq!(da.qop, DigestQop::Auth);
     assert_eq!(da.alg, DigestAlg::MD5Sess);
+    assert_eq!(da.stale, false);
+
+    let s = "Digest realm=\"http-auth@example.org\", nonce=\"7ypf/xlj9XXwfDPEoM4URrv/xwf94BcCAzFZH4GiTo0v\", stale=FALSE, qop=\"auth\"";
+    AuthParser::parse(Rule::auth, s).unwrap();
+    let da = AuthDigest::parse(s).unwrap();
+    assert_eq!(da.realm, "http-auth@example.org");
+    assert_eq!(da.nonce, "7ypf/xlj9XXwfDPEoM4URrv/xwf94BcCAzFZH4GiTo0v");
+    assert_eq!(da.qop, DigestQop::Auth);
+    assert_eq!(da.alg, DigestAlg::MD5);
+    assert_eq!(da.stale, false);
 }
