@@ -259,7 +259,7 @@ where
     fn get_alpn_protocol(&self) -> Option<Vec<u8>> {
         self.session
             .get_alpn_protocol()
-            .map(|s| Vec::from(s.as_bytes()))
+            .map(|s| Vec::from(s))
     }
 
     fn peer_certificate(&self) -> Vec<u8> {
@@ -344,7 +344,7 @@ impl tls_api::TlsConnectorBuilder for TlsConnectorBuilder {
         if let Some(ref mut cfg) = self.0 {
             let mut v = Vec::new();
             for p in protocols {
-                v.push(String::from(*p));
+                v.push(Vec::from(p.as_bytes()));
             }
             cfg.alpn_protocols = v;
         }
@@ -455,7 +455,7 @@ impl tls_api::TlsAcceptorBuilder for TlsAcceptorBuilder {
     fn set_alpn_protocols(&mut self, protocols: &[&str]) -> Result<()> {
         let mut v = Vec::new();
         for p in protocols {
-            v.push(String::from(*p));
+            v.push(Vec::from(p.as_bytes()));
         }
         self.0.alpn_protocols = v;
         Ok(())
