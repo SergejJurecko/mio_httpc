@@ -49,6 +49,7 @@ pub(crate) struct Con {
     ipv4: bool,
     dns_timeout: u64,
     do_other: bool,
+    readable_is_error: bool,
 }
 
 impl Con {
@@ -89,6 +90,7 @@ impl Con {
             ipv4: true,
             dns_timeout,
             do_other: true,
+            readable_is_error: true,
         };
         if res.create_sock(cache)?.is_none() {
             res.create_dns(cfg)?;
@@ -120,6 +122,7 @@ impl Con {
             ipv4: !self.ipv4,
             dns_timeout: self.dns_timeout,
             do_other: false,
+            readable_is_error: true,
         };
         if self.resolved.len() > 0 {
             c.resolved.push(self.resolved.pop().unwrap());
@@ -154,7 +157,7 @@ impl Con {
     }
 
     fn create_dns(&mut self, cfg: &HttpcCfg) -> Result<()> {
-        self.reg_for = Ready::readable();
+        self.reg_for = Ready::readable() | Ready::writable();
         self.dns = Some(Dns::new(
             self.host.as_ref(),
             self.dns_timeout,
@@ -281,7 +284,8 @@ impl Con {
         if self.dns.is_none() {
             return Ok(());
         }
-        let dns = self.dns.take().unwrap();
+        let mut dns = self.dns.take().unwrap();
+        dns.try_send(self.host.as_ref());
         let mut buf: [u8; 512] = unsafe { ::std::mem::uninitialized() };
         if let Ok(sz) = dns.sock.recv(&mut buf[..]) {
             resolve::dns_parse(&buf[..sz], &mut self.resolved);
@@ -417,6 +421,7 @@ impl Read for Con {
 
 impl Write for Con {
     fn write(&mut self, buf: &[u8]) -> ::std::io::Result<usize> {
+        self.readable_is_error = false;
         let res = if let Some(ref mut tcp) = self.sock {
             tcp.write(buf)
         } else if let Some(ref mut tls) = self.tls {
@@ -601,7 +606,7 @@ impl ConTable {
     }
 
     pub fn signalled_con(&mut self, fixed: bool, id: usize, rdy: Ready) -> Option<u64> {
-        let mut rm = false;
+        let mut rm_id = None;
         let res = if let Some(t) = if fixed {
             self.cons_fixed.get_mut(&id)
         } else {
@@ -611,17 +616,24 @@ impl ConTable {
                 return None;
             }
             if rdy.is_readable() && t.0.dns.is_none() {
+                if t.0.readable_is_error {
+                    if let Some(other) = t.0.get_other() {
+                        rm_id = Some(other);
+                    }
+                }
                 t.0.set_signalled_rd(true);
             }
             if rdy.is_writable() && t.0.dns.is_none() {
                 t.0.set_signalled_wr(true);
-                rm = true;
+                if rm_id.is_none() {
+                    rm_id = Some(id);
+                }
             }
             Some(t.0.call_id)
         } else {
             None
         };
-        if rm {
+        if let Some(id) = rm_id {
             self.remove_other(false, id);
         }
 
@@ -837,7 +849,7 @@ impl ConTable {
             .unwrap()
             .0
             .clone_other(orig, con_offset);
-        let key = self.cons.insert((con1, CallVariant::Other(0)));
+        let key = self.cons.insert((con1, CallVariant::Other(orig)));
         let mut ok = false;
         if let Some(tuple) = self.cons.get_mut(key) {
             tuple.1 = CallVariant::Other(orig);

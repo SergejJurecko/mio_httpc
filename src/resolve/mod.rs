@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 use mio::net::UdpSocket;
-use std::io;
+use std::io::{self,ErrorKind as IoErrorKind};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 // use mio::Poll;
 use crate::dns_parser;
@@ -44,6 +44,7 @@ pub struct Dns {
     last_send: Instant,
     retry_in: Duration,
     ipv4: bool,
+    sent: bool,
 }
 
 impl Dns {
@@ -58,7 +59,7 @@ impl Dns {
         if srvs.len() == 0 {
             get_google(&mut srvs)
         }
-        let sock = Self::start_lookup(ipv4, &srvs[..], host)?;
+        let (sent,sock) = Self::start_lookup(ipv4, &srvs[..], host)?;
         Ok(Dns {
             ipv4,
             srvs,
@@ -66,6 +67,7 @@ impl Dns {
             pos: 0,
             last_send: Instant::now(),
             retry_in: Duration::from_millis(retry_in),
+            sent,
         })
     }
 
@@ -81,6 +83,18 @@ impl Dns {
             } else {
                 self.retry_in * 2
             };
+        }
+    }
+
+    pub fn try_send(&mut self, host: &str) {
+        if !self.sent {
+            let now = Instant::now();
+            let mut pos = self.pos as usize;
+            if let Ok(true) = Self::lookup_on(self.ipv4, &self.srvs, &self.sock, &mut pos, host) {
+                self.pos = (pos & 0xff) as u8;
+                self.last_send = now;
+                self.sent = true;
+            }
         }
     }
 
@@ -105,16 +119,16 @@ impl Dns {
         Ok(s6)
     }
 
-    fn start_lookup(ipv4: bool, srvs: &[SocketAddr], host: &str) -> crate::Result<UdpSocket> {
+    fn start_lookup(ipv4: bool, srvs: &[SocketAddr], host: &str) -> crate::Result<(bool,UdpSocket)> {
         let mut pos = 0;
         if let Ok(sock) = Self::get_socket_v4() {
-            if let Ok(_) = Self::lookup_on(ipv4, srvs, &sock, &mut pos, host) {
-                return Ok(sock);
+            if let Ok(sent) = Self::lookup_on(ipv4, srvs, &sock, &mut pos, host) {
+                return Ok((sent,sock));
             }
         }
         let s = Self::get_socket_v6()?;
-        Self::lookup_on(ipv4, srvs, &s, &mut pos, host)?;
-        Ok(s)
+        let sent = Self::lookup_on(ipv4, srvs, &s, &mut pos, host)?;
+        Ok((sent,s))
     }
 
     fn lookup_on(
@@ -123,7 +137,7 @@ impl Dns {
         sock: &UdpSocket,
         pos: &mut usize,
         host: &str,
-    ) -> crate::Result<()> {
+    ) -> crate::Result<bool> {
         let len_srvs = srvs.len();
         let mut last_err = io::Error::new(io::ErrorKind::Other, "");
         // let rnd = (self.rng.next_u32() & 0x0000_FFFF) as u16;
@@ -156,10 +170,13 @@ impl Dns {
             };
             let res = sock.send_to(&buf_send[..nsend], &sockaddr);
             if let Ok(_) = res {
-                return Ok(());
+                return Ok(true);
             } else if let Err(e) = res {
                 last_err = e;
             }
+        }
+        if last_err.kind() == IoErrorKind::WouldBlock {
+            return Ok(false);
         }
         Err(From::from(last_err))
     }
