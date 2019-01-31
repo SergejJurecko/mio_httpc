@@ -9,6 +9,7 @@ use rand;
 use smallvec::SmallVec;
 use std::time::{Duration, Instant};
 
+
 mod cache;
 pub use self::cache::DnsCache;
 #[cfg(any(target_os = "ios", target_os = "macos"))]
@@ -54,7 +55,7 @@ impl Dns {
             srvs.push(*s);
         }
         if srvs.len() == 0 {
-            get_dns_servers(&mut srvs);
+            get_dns_servers(ipv4, &mut srvs);
         }
         if srvs.len() == 0 {
             get_google(&mut srvs)
@@ -121,10 +122,10 @@ impl Dns {
 
     fn start_lookup(ipv4: bool, srvs: &[SocketAddr], host: &str) -> crate::Result<(bool,UdpSocket)> {
         let mut pos = 0;
-        if let Ok(sock) = Self::get_socket_v4() {
-            if let Ok(sent) = Self::lookup_on(ipv4, srvs, &sock, &mut pos, host) {
-                return Ok((sent,sock));
-            }
+        if ipv4 {
+            let sock = Self::get_socket_v4()?;
+            let sent = Self::lookup_on(ipv4, srvs, &sock, &mut pos, host)?;
+            return Ok((sent,sock));
         }
         let s = Self::get_socket_v6()?;
         let sent = Self::lookup_on(ipv4, srvs, &s, &mut pos, host)?;
@@ -199,7 +200,7 @@ impl Dns {
 //     }
 // }
 #[cfg(any(target_os = "ios", target_os = "macos"))]
-pub fn get_dns_servers(srvs: &mut SmallVec<[SocketAddr; 4]>) {
+pub fn get_dns_servers(ipv4: bool, srvs: &mut SmallVec<[SocketAddr; 4]>) {
     unsafe {
         let mut sockaddr = ::std::mem::zeroed::<[apple::res_9_sockaddr_union; 4]>();
         let mut state = ::std::mem::zeroed::<apple::__res_9_state>();
@@ -223,7 +224,7 @@ pub fn get_dns_servers(srvs: &mut SmallVec<[SocketAddr; 4]>) {
                         let ip6 = IpAddr::V6(Ipv6Addr::new(
                             s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7],
                         ));
-                        if ip6.is_unspecified() || ip6.is_multicast() {
+                        if ip6.is_unspecified() || ip6.is_multicast() || ipv4 {
                             continue;
                         }
                         srvs.push(SocketAddr::new(ip6, 53));
@@ -235,7 +236,7 @@ pub fn get_dns_servers(srvs: &mut SmallVec<[SocketAddr; 4]>) {
 }
 
 #[cfg(all(unix, not(target_os = "macos"), not(target_os = "ios")))]
-pub fn get_dns_servers(srvs: &mut SmallVec<[SocketAddr; 4]>) {
+pub fn get_dns_servers(_ipv4: bool, srvs: &mut SmallVec<[SocketAddr; 4]>) {
     if let Ok(mut file) = ::std::fs::File::open("/etc/resolv.conf") {
         let mut contents = String::new();
         use std::io::Read;
@@ -246,8 +247,20 @@ pub fn get_dns_servers(srvs: &mut SmallVec<[SocketAddr; 4]>) {
 }
 
 #[cfg(windows)]
-pub fn get_dns_servers(srvs: &mut SmallVec<[SocketAddr; 4]>) {
-    get_google(srvs)
+pub fn get_dns_servers(ipv4: bool, srvs: &mut SmallVec<[SocketAddr; 4]>) {
+    if let Ok(v) = ipconfig::get_adapters() {
+        for ad in v {
+            for ip in ad.dns_servers() {
+                if ipv4 && ip.is_ipv6() {
+                    continue;
+                }
+                let sad = SocketAddr::new(*ip,53);
+                if !srvs.contains(&sad) {
+                    srvs.push(sad);
+                }
+            }
+        }
+    }
 }
 
 fn get_google(srvs: &mut SmallVec<[SocketAddr; 4]>) {
