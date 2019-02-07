@@ -41,7 +41,6 @@ impl SecCertificate {
     pub fn pubkey(&self) -> Vec<u8> {
         unsafe {
             let k = self.copy_public_key_from_certificate();
-            // let k = SecCertificateCopyKey(self.0);
             let mut error: CFErrorRef = std::ptr::null_mut();
             let public_key_data = SecKeyCopyExternalRepresentation(k, &mut error);
             if public_key_data == ptr::null_mut() {
