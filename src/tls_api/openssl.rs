@@ -189,17 +189,17 @@ impl<S: io::Read + io::Write + fmt::Debug + Send + Sync + 'static> tls_api::TlsS
         Vec::new()
     }
 
-    fn pubkey_chain(&mut self) -> Result<PubkeyIterator> {
+    fn pubkey_chain(&mut self) -> Result<PubkeyIterator<S>> {
         if let Some(stack) = self.0.ssl().peer_cert_chain() {
-            return Ok(PubkeyIterator(stack.iter()));
+            return Ok(PubkeyIterator(stack.iter(), &std::marker::PhantomData));
         }
         Err(Error::InvalidPin)
     }
 }
 
-pub struct PubkeyIterator<'a>(openssl::stack::Iter<'a, openssl::x509::X509>);
+pub struct PubkeyIterator<'a, S>(openssl::stack::Iter<'a, openssl::x509::X509>, &'a std::marker::PhantomData<S>);
 
-impl<'a> Iterator for PubkeyIterator<'a> {
+impl<'a, S> Iterator for PubkeyIterator<'a, S> {
     type Item = Vec<u8>;
 
     fn next(&mut self) -> Option<Self::Item> {
