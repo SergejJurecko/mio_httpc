@@ -274,6 +274,18 @@ where
     fn peer_pubkey(&self) -> Vec<u8> {
         Vec::new()
     }
+
+    fn pubkey_chain(&mut self) -> Result<PubkeyIterator<S>> {
+        Err(Error::InvalidPin)
+    }
+}
+
+pub struct PubkeyIterator<'a, S>(&'a std::marker::PhantomData<S>);
+impl<'a, S> Iterator for PubkeyIterator<'a, S> {
+    type Item = Vec<u8>;
+    fn next(&mut self) -> Option<Self::Item> {
+        None
+    }
 }
 
 // MidHandshakeTlsStream

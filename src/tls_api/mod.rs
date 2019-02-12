@@ -3,6 +3,8 @@
 pub mod rustls;
 #[cfg(feature = "rustls")]
 pub use self::rustls::hash;
+#[cfg(feature = "rustls")]
+pub use self::rustls::PubkeyIterator;
 
 #[cfg(feature = "native")]
 #[allow(dead_code, unused_variables)]
