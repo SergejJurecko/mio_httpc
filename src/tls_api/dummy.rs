@@ -11,8 +11,8 @@ pub struct TlsConnector;
 pub struct TlsAcceptorBuilder;
 pub struct TlsAcceptor;
 
-pub struct PubkeyIterator;
-impl Iterator for PubkeyIterator {
+pub struct PubkeyIterator<'a, S>(&'a std::marker::PhantomData<S>);
+impl<'a, S> Iterator for PubkeyIterator<'a, S> {
     type Item = Vec<u8>;
     fn next(&mut self) -> Option<Self::Item> {
         None
