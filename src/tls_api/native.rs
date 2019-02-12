@@ -135,14 +135,14 @@ impl<S: io::Read + io::Write + fmt::Debug + Send + Sync + 'static> tls_api::TlsS
         }
     }
 
-    fn pubkey_chain(&mut self) -> Result<PubkeyIterator> {
+    fn pubkey_chain(&mut self) -> Result<PubkeyIterator<S>> {
         Ok(PubkeyIterator(self.0.certificate_chain()?))
     }
 }
 
-pub struct PubkeyIterator(native_tls::ChainIterator);
+pub struct PubkeyIterator<'a,S>(native_tls::ChainIterator<'a,S>);
 
-impl Iterator for PubkeyIterator {
+impl<'a,S> Iterator for PubkeyIterator<'a,S> {
     type Item = Vec<u8>;
 
     fn next(&mut self) -> Option<Self::Item> {

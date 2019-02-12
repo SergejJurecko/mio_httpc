@@ -55,7 +55,7 @@ pub trait TlsStreamImpl<S>: io::Read + io::Write + fmt::Debug + Send + Sync + 's
 
     fn peer_certificate(&self) -> Vec<u8>;
 
-    fn pubkey_chain(&mut self) -> Result<PubkeyIterator>;
+    fn pubkey_chain(&mut self) -> Result<PubkeyIterator<S>>;
 }
 
 /// Since Rust has no HKT, it is not possible to declare something like
@@ -91,7 +91,7 @@ impl<S: 'static> TlsStream<S> {
         self.0.get_alpn_protocol()
     }
 
-    pub fn pubkey_chain(&mut self) -> Result<PubkeyIterator> {
+    pub fn pubkey_chain(&mut self) -> Result<PubkeyIterator<S>> {
         self.0.pubkey_chain()
     }
 

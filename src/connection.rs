@@ -375,7 +375,6 @@ impl Con {
                                 BASE64.encode_mut(&hash_der, &mut base_buf[..base_len]);
                                 let base64_der =
                                     std::str::from_utf8(&base_buf[..base_len]).unwrap();
-                                println!("Comparing {} {}", base64_der, &pin[prefix.len()..]);
                                 if base64_der.eq_ignore_ascii_case(&pin[prefix.len()..]) {
                                     pin_match = true;
                                     break;
