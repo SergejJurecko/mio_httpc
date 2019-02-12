@@ -9,17 +9,23 @@ pub use self::rustls::hash;
 pub mod native;
 #[cfg(feature = "native")]
 pub use self::native::hash;
+#[cfg(feature = "native")]
+pub use self::native::PubkeyIterator;
 
 #[cfg(feature = "openssl")]
 #[allow(dead_code, unused_variables)]
 pub mod openssl;
 #[cfg(feature = "openssl")]
 pub use self::openssl::hash;
+#[cfg(feature = "openssl")]
+pub use self::openssl::PubkeyIterator;
 
 #[cfg(not(any(feature = "rustls", feature = "native", feature = "openssl")))]
 pub mod dummy;
 #[cfg(not(any(feature = "rustls", feature = "native", feature = "openssl")))]
 pub use self::dummy::hash;
+#[cfg(not(any(feature = "rustls", feature = "native", feature = "openssl")))]
+pub use self::dummy::PubkeyIterator;
 
 use std::fmt;
 use std::io;
@@ -48,6 +54,8 @@ pub trait TlsStreamImpl<S>: io::Read + io::Write + fmt::Debug + Send + Sync + 's
     fn peer_pubkey(&self) -> Vec<u8>;
 
     fn peer_certificate(&self) -> Vec<u8>;
+
+    fn pubkey_chain(&mut self) -> Result<PubkeyIterator>;
 }
 
 /// Since Rust has no HKT, it is not possible to declare something like
@@ -83,18 +91,22 @@ impl<S: 'static> TlsStream<S> {
         self.0.get_alpn_protocol()
     }
 
+    pub fn pubkey_chain(&mut self) -> Result<PubkeyIterator> {
+        self.0.pubkey_chain()
+    }
+
     pub fn peer_pubkey(&self) -> Vec<u8> {
         let v = self.0.peer_pubkey();
         if v.len() > 0 {
             return v;
         }
-        if cfg!(target_os = "macos") || cfg!(target_os = "ios") {
-            //|| cfg!(target_os = "ios")
-            let v = self.0.peer_certificate();
-            if v.len() > 0 {
-                return cert_pubkey(v);
-            }
-        }
+        // if cfg!(target_os = "macos") || cfg!(target_os = "ios") {
+        //     //|| cfg!(target_os = "ios")
+        //     let v = self.0.peer_certificate();
+        //     if v.len() > 0 {
+        //         return cert_pubkey(v);
+        //     }
+        // }
 
         // cert_pubkey(self.0.peer_certificate())
         v
@@ -106,10 +118,10 @@ fn cert_pubkey(_v: Vec<u8>) -> Vec<u8> {
     Vec::new()
 }
 
-#[cfg(any(target_os = "macos", target_os = "ios"))]
-mod apple;
-#[cfg(any(target_os = "macos", target_os = "ios"))]
-use self::apple::cert_pubkey;
+// #[cfg(any(target_os = "macos", target_os = "ios"))]
+// mod apple;
+// #[cfg(any(target_os = "macos", target_os = "ios"))]
+// use self::apple::cert_pubkey;
 
 impl<S> io::Read for TlsStream<S> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {

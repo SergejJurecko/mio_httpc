@@ -349,35 +349,49 @@ impl Con {
         cfg: &crate::HttpcCfg,
     ) -> Result<()> {
         match r {
-            Ok(tls) => {
-                let mut pin_match = true;
+            Ok(mut tls) => {
+                let mut pin_match = false;
+                let mut host_found = false;
                 for pin in cfg.pins.iter() {
                     let host = self.host.as_ref();
                     if pin.0.eq_ignore_ascii_case(host) {
+                        host_found = true;
                         // If we found host, we now must find a pin match
                         pin_match = false;
-                        let der = tls.peer_pubkey();
-                        for pin in pin.1.iter() {
-                            let hash_der;
-                            let prefix = if pin.starts_with("sha256/") {
-                                hash_der = hash(HashType::SHA256, &der);
-                                "sha256/"
-                            } else if pin.starts_with("sha1/") {
-                                hash_der = hash(HashType::SHA256, &der);
-                                "sha1/"
-                            } else {
-                                continue;
-                            };
-                            let mut base_buf = [0u8; 128];
-                            let base_len = BASE64.encode_len(hash_der.len());
-                            BASE64.encode_mut(&hash_der, &mut base_buf[..base_len]);
-                            let base64_der = std::str::from_utf8(&base_buf[..base_len]).unwrap();
-                            if base64_der.eq_ignore_ascii_case(&pin[prefix.len()..]) {
-                                pin_match = true;
+                        for der in tls.pubkey_chain().unwrap() {
+                            for pin in pin.1.iter() {
+                                let hash_der;
+                                let prefix = if pin.starts_with("sha256/") {
+                                    hash_der = hash(HashType::SHA256, &der);
+                                    "sha256/"
+                                } else if pin.starts_with("sha1/") {
+                                    hash_der = hash(HashType::SHA256, &der);
+                                    "sha1/"
+                                } else {
+                                    continue;
+                                };
+                                let mut base_buf = [0u8; 128];
+                                let base_len = BASE64.encode_len(hash_der.len());
+                                BASE64.encode_mut(&hash_der, &mut base_buf[..base_len]);
+                                let base64_der =
+                                    std::str::from_utf8(&base_buf[..base_len]).unwrap();
+                                println!("Comparing {} {}", base64_der, &pin[prefix.len()..]);
+                                if base64_der.eq_ignore_ascii_case(&pin[prefix.len()..]) {
+                                    pin_match = true;
+                                    break;
+                                }
+                            }
+                            if pin_match {
                                 break;
                             }
                         }
                     }
+                    if pin_match {
+                        break;
+                    }
+                }
+                if !host_found {
+                    pin_match = true;
                 }
                 if !pin_match {
                     return Err(crate::Error::InvalidPin);

@@ -11,6 +11,14 @@ pub struct TlsConnector;
 pub struct TlsAcceptorBuilder;
 pub struct TlsAcceptor;
 
+pub struct PubkeyIterator;
+impl Iterator for PubkeyIterator {
+    type Item = Vec<u8>;
+    fn next(&mut self) -> Option<Self::Item> {
+        None
+    }
+}
+
 /// Make use of the TLS implementation's crypto hashing functions.
 /// Not picking any TLS implementation as a feature means hash will not work also
 /// and will always return an empty vec.
@@ -22,10 +30,6 @@ impl tls_api::TlsConnectorBuilder for TlsConnectorBuilder {
     type Connector = TlsConnector;
 
     type Underlying = ();
-
-    // fn underlying_mut(&mut self) -> &mut native_tls::TlsConnectorBuilder {
-    //     &mut self.0
-    // }
 
     fn supports_alpn() -> bool {
         false

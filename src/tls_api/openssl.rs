@@ -188,6 +188,30 @@ impl<S: io::Read + io::Write + fmt::Debug + Send + Sync + 'static> tls_api::TlsS
         }
         Vec::new()
     }
+
+    fn pubkey_chain(&mut self) -> Result<PubkeyIterator> {
+        if let Some(stack) = self.0.ssl().peer_cert_chain() {
+            return Ok(PubkeyIterator(stack.iter()));
+        }
+        Err(Error::InvalidPin)
+    }
+}
+
+pub struct PubkeyIterator<'a>(openssl::stack::Iter<'a, openssl::x509::X509>);
+
+impl<'a> Iterator for PubkeyIterator<'a> {
+    type Item = Vec<u8>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(cert) = self.0.next() {
+            if let Ok(pk) = cert.public_key() {
+                if let Ok(der) = pk.public_key_to_der() {
+                    return Some(der);
+                }
+            }
+        }
+        None
+    }
 }
 
 struct MidHandshakeTlsStream<S: io::Read + io::Write + 'static>(

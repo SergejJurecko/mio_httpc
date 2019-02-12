@@ -134,7 +134,26 @@ impl<S: io::Read + io::Write + fmt::Debug + Send + Sync + 'static> tls_api::TlsS
             Vec::new()
         }
     }
+
+    fn pubkey_chain(&mut self) -> Result<PubkeyIterator> {
+        Ok(PubkeyIterator(self.0.certificate_chain()?))
+    }
 }
+
+pub struct PubkeyIterator(native_tls::ChainIterator);
+
+impl Iterator for PubkeyIterator {
+    type Item = Vec<u8>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(cert) = self.0.next() {
+            return Some(cert.public_key_der().unwrap_or(Vec::new()));
+        }
+        None
+    }
+}
+
+
 
 struct MidHandshakeTlsStream<S: io::Read + io::Write + 'static>(
     Option<native_tls::MidHandshakeTlsStream<S>>,
