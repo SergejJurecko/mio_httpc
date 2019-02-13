@@ -125,11 +125,12 @@ impl<S: io::Read + io::Write + fmt::Debug + Send + Sync + 'static> tls_api::TlsS
 
     fn peer_pubkey(&self) -> Vec<u8> {
         if let Ok(Some(cert)) = self.0.peer_certificate() {
-            if let Ok(v) = cert.public_key_der() {
-                v
-            } else {
-                Vec::new()
-            }
+            cert.public_key_info_der().unwrap_or(Vec::new())
+            // if let Ok(v) = cert.public_key_info_der() {
+            //     v
+            // } else {
+            //     Vec::new()
+            // }
         } else {
             Vec::new()
         }
@@ -147,7 +148,7 @@ impl<'a,S> Iterator for PubkeyIterator<'a,S> {
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(cert) = self.0.next() {
-            return Some(cert.public_key_der().unwrap_or(Vec::new()));
+            return Some(cert.public_key_info_der().unwrap_or(Vec::new()));
         }
         None
     }
