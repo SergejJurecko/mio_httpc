@@ -1,16 +1,16 @@
 use crate::httpc::HttpcImpl;
+use crate::resolve::DnsCache;
+use crate::tls_api::TlsConnector;
 use mio::Poll;
 use percent_encoding::{
     percent_encode, utf8_percent_encode, PATH_SEGMENT_ENCODE_SET, QUERY_ENCODE_SET,
     USERINFO_ENCODE_SET,
 };
 use pest::Parser;
-use crate::resolve::DnsCache;
 use smallvec::SmallVec;
 use std::ops::Deref;
 use std::str::FromStr;
 use std::time::Duration;
-use crate::tls_api::TlsConnector;
 use url::Url;
 
 #[derive(Debug)]
@@ -46,8 +46,6 @@ struct AuthParser;
 pub enum DigestAlg {
     MD5,
     MD5Sess,
-    // TODO use: https://github.com/malept/crypto-hash
-    // Once they update to openssl 0.10.
     // Sha256,
     // Sha256Ses
     // Sha512,
@@ -228,7 +226,12 @@ impl ChunkIndex {
     }
 
     // copy full chunks to dst, move remainder (non-full chunk) back right after hdr.
-    pub fn push_to(&mut self, hdr: usize, src: &mut Vec<u8>, dst: &mut Vec<u8>) -> crate::Result<usize> {
+    pub fn push_to(
+        &mut self,
+        hdr: usize,
+        src: &mut Vec<u8>,
+        dst: &mut Vec<u8>,
+    ) -> crate::Result<usize> {
         let mut off = hdr;
         let mut num_copied = 0;
         loop {
@@ -451,7 +454,11 @@ impl CallBuilderImpl {
             ..Default::default()
         }
     }
-    pub fn call<C: TlsConnector>(self, httpc: &mut HttpcImpl, poll: &Poll) -> crate::Result<crate::Call> {
+    pub fn call<C: TlsConnector>(
+        self,
+        httpc: &mut HttpcImpl,
+        poll: &Poll,
+    ) -> crate::Result<crate::Call> {
         httpc.call::<C>(self, poll)
     }
     pub fn websocket(&mut self) -> &mut Self {

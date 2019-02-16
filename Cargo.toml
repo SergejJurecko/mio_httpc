@@ -46,11 +46,6 @@ rustls = { version = "0.15.1", features = ["dangerous_configuration"], optional 
 openssl      = { version = "0.10.*", optional = true, features = ["v102", "v110"] }
 native-tls   = { git = "https://github.com/SergejJurecko/rust-native-tls", optional = true}
 
-
-[target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
-core-foundation = "0.6"
-core-foundation-sys = "0.6"
-
 [target.'cfg(target_os = "windows")'.dependencies]
 ipconfig = "0.1"
 

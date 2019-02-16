@@ -51,7 +51,6 @@ fn main() {
     } else {
         Default::default()
     };
-
     let mut htp = Httpc::new(10, Some(cfg));
 
     for i in 1..args.len() {

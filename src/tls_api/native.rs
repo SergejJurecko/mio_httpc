@@ -1,4 +1,3 @@
-use crypto_hash as hashf;
 use std::fmt;
 use std::io;
 use std::result;
@@ -6,6 +5,9 @@ use std::result;
 use native_tls;
 use crate::tls_api::{HashType, Error, Result, self};
 
+#[cfg(not(any(target_os = "macos", target_os = "ios")))]
+use crypto_hash as hashf;
+#[cfg(not(any(target_os = "macos", target_os = "ios")))]
 pub fn hash(algo: HashType, data: &[u8]) -> Vec<u8> {
     match algo {
         HashType::MD5 => {
@@ -22,6 +24,43 @@ pub fn hash(algo: HashType, data: &[u8]) -> Vec<u8> {
         }
     }
 }
+
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+mod apple_hash {
+    use super::HashType;
+    extern "C" {
+        fn CC_MD5(data: *const u8, len: usize, out: *mut u8) -> *mut u8;
+        fn CC_SHA1(data: *const u8, len: usize, out: *mut u8) -> *mut u8;
+        fn CC_SHA256(data: *const u8, len: usize, out: *mut u8) -> *mut u8;
+        fn CC_SHA512(data: *const u8, len: usize, out: *mut u8) -> *mut u8;
+    }
+    pub fn hash(algo: HashType, data: &[u8]) -> Vec<u8> {
+        match algo {
+            HashType::MD5 => {
+                let mut out = vec![0; 16];
+                unsafe { CC_MD5(data.as_ptr(), data.len(), out.as_mut_ptr()); }
+                out
+            }
+            HashType::SHA256 => {
+                let mut out = vec![0; 32];
+                unsafe { CC_SHA256(data.as_ptr(), data.len(), out.as_mut_ptr()); }
+                out
+            }
+            HashType::SHA512 => {
+                let mut out = vec![0; 64];
+                unsafe { CC_SHA512(data.as_ptr(), data.len(), out.as_mut_ptr()); }
+                out
+            }
+            HashType::SHA1 => {
+                let mut out = vec![0; 20];
+                unsafe { CC_SHA1(data.as_ptr(), data.len(), out.as_mut_ptr()); }
+                out
+            }
+        }
+    }
+}
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+pub use self::apple_hash::*;
 
 pub struct TlsConnectorBuilder(pub native_tls::TlsConnectorBuilder);
 pub struct TlsConnector(pub native_tls::TlsConnector);
