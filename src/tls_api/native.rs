@@ -165,11 +165,6 @@ impl<S: io::Read + io::Write + fmt::Debug + Send + Sync + 'static> tls_api::TlsS
     fn peer_pubkey(&self) -> Vec<u8> {
         if let Ok(Some(cert)) = self.0.peer_certificate() {
             cert.public_key_info_der().unwrap_or(Vec::new())
-            // if let Ok(v) = cert.public_key_info_der() {
-            //     v
-            // } else {
-            //     Vec::new()
-            // }
         } else {
             Vec::new()
         }

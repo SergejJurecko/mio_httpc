@@ -93,7 +93,7 @@ impl<'a> AuthDigest<'a> {
                     match inner_pair.as_rule() {
                         Rule::auth_type => {
                             for inner_pair in inner_pair.into_inner() {
-                                let s = inner_pair.into_span().as_str();
+                                let s = inner_pair.as_span().as_str();
                                 if !s.eq_ignore_ascii_case("digest") {
                                     return Err(crate::Error::AuthenticateParse);
                                 }
@@ -102,13 +102,13 @@ impl<'a> AuthDigest<'a> {
                         }
                         Rule::realm => {
                             for inner_pair in inner_pair.into_inner() {
-                                realm = inner_pair.into_span().as_str();
+                                realm = inner_pair.as_span().as_str();
                                 break;
                             }
                         }
                         Rule::qop => {
                             for inner_pair in inner_pair.into_inner() {
-                                let s = inner_pair.into_span().as_str();
+                                let s = inner_pair.as_span().as_str();
                                 if s.eq_ignore_ascii_case("auth") {
                                     qop = DigestQop::Auth;
                                     break;
@@ -120,19 +120,19 @@ impl<'a> AuthDigest<'a> {
                         }
                         Rule::nonce => {
                             for inner_pair in inner_pair.into_inner() {
-                                nonce = inner_pair.into_span().as_str();
+                                nonce = inner_pair.as_span().as_str();
                                 break;
                             }
                         }
                         Rule::opaque => {
                             for inner_pair in inner_pair.into_inner() {
-                                opaque = inner_pair.into_span().as_str();
+                                opaque = inner_pair.as_span().as_str();
                                 break;
                             }
                         }
                         Rule::stale => {
                             for inner_pair in inner_pair.into_inner() {
-                                let s = inner_pair.into_span().as_str();
+                                let s = inner_pair.as_span().as_str();
                                 if s.eq_ignore_ascii_case("true") {
                                     stale = true;
                                 } else {
@@ -143,7 +143,7 @@ impl<'a> AuthDigest<'a> {
                         }
                         Rule::algorithm => {
                             for inner_pair in inner_pair.into_inner() {
-                                let a = inner_pair.into_span().as_str();
+                                let a = inner_pair.as_span().as_str();
                                 if a.eq_ignore_ascii_case("md5") {
                                     alg = DigestAlg::MD5;
                                 } else if a.eq_ignore_ascii_case("md5-sess") {
