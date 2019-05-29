@@ -94,8 +94,8 @@ extern crate slab;
 extern crate smallvec;
 extern crate url;
 
-#[macro_use]
-extern crate failure;
+// #[macro_use]
+// extern crate failure;
 #[cfg(test)]
 #[macro_use]
 extern crate matches;
@@ -133,87 +133,45 @@ pub use crate::tls_api::{openssl::hash, HashType};
 pub use crate::tls_api::{rustls::hash, HashType};
 
 pub type Result<T> = ::std::result::Result<T, Error>;
-#[derive(Debug, Fail)]
+#[derive(Debug)]
 pub enum Error {
-    #[fail(display = "IO error: {}", _0)]
-    Io(#[cause] ::std::io::Error),
-
-    #[fail(display = "Utf8 error: {}", _0)]
-    Utf8(#[cause] std::str::Utf8Error),
-
-    #[fail(display = "FromUtf8 error: {}", _0)]
-    FromUtf8(#[cause] std::string::FromUtf8Error),
-
-    #[fail(display = "AddrParseError: {}", _0)]
-    Addr(#[cause] std::net::AddrParseError),
-
-    #[fail(display = "Httparse error: {}", _0)]
-    Httparse(#[cause] httparse::Error),
-
-    #[fail(display = "WebSocket setup failed")]
+    Io(::std::io::Error),
+    Utf8(std::str::Utf8Error),
+    FromUtf8(std::string::FromUtf8Error),
+    Addr(std::net::AddrParseError),
+    Httparse(httparse::Error),
     WebSocketFail(Response),
-
-    #[fail(display = "Sync call timed out")]
     TimeOut,
     /// Request structure did not contain body and CallSimple was used for POST/PUT.
-    #[fail(
-        display = "Request structure did not contain body and CallSimple was used for POST/PUT."
-    )]
     MissingBody,
     /// Response over max_response limit
-    #[fail(display = "Response over max_response limit")]
     ResponseTooBig,
     /// Connection closed.
-    #[fail(display = "Connection closed")]
     Closed,
     /// No host found in request
-    #[fail(display = "No host found in request")]
     NoHost,
     /// Invalid scheme
-    #[fail(display = "Invalid scheme")]
     InvalidScheme,
-
     #[cfg(any(feature = "rustls", feature = "native", feature = "openssl"))]
-    #[fail(display = "TLS error {}", _0)]
-    Tls(#[cause] TLSError),
-
+    Tls(TLSError),
     #[cfg(feature = "openssl")]
-    #[fail(display = "OpenSSL stack error {}", _0)]
-    OpenSSLErrorStack(#[cause] OpenSSLErrorStack),
-
+    OpenSSLErrorStack(OpenSSLErrorStack),
     #[cfg(feature = "openssl")]
-    #[fail(display = "OpenSSL error {}", _0)]
-    OpenSSLError(#[cause] OpenSSLError),
+    OpenSSLError(OpenSSLError),
     /// All 0xFFFF slots for connections are full.
-    #[fail(display = "Concurrent connection limit")]
     NoSpace,
-
-    #[fail(display = "URL parse error {}", _0)]
-    Url(#[cause] url::ParseError),
-
-    #[fail(display = "{}", _0)]
+    Url(url::ParseError),
     Other(&'static str),
     /// You must pick one of the features: native, rustls, openssl
-    #[fail(display = "You must pick one of the features: native, rustls, openssl")]
     NoTls,
     /// Eror while parsing chunked stream
-    #[fail(display = "Error parsing chunked transfer")]
     ChunkedParse,
     /// Eror while parsing chunked stream
-    #[fail(display = "Error parsing WebSocket transfer")]
     WebSocketParse,
     /// Eror while parsing chunked stream
-    #[fail(display = "Error parsing WWW-Authenticate header")]
     AuthenticateParse,
-
-    #[fail(display = "Pins were configured for domain and they did not match")]
     InvalidPin,
-
     /// Chunk was larger than configured CallBuilder::chunked_max_chunk.
-    #[fail(
-        display = "Chunk was larger than configured CallBuilder::chunked_max_chunk. {}",
-        _0
-    )]
     ChunkOverlimit(usize),
 }
 
