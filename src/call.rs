@@ -1,7 +1,6 @@
 use crate::connection::Con;
 use crate::tls_api::TlsConnector;
 use crate::types::*;
-use byteorder::{ByteOrder, LittleEndian};
 use data_encoding::{BASE64, HEXLOWER};
 use httparse::{self, Response as ParseResp};
 use md5;
@@ -217,8 +216,7 @@ impl CallImpl {
             buf.extend(b"Sec-Websocket-Key: ");
             let mut ar = [0u8; 16];
             let mut out = [0u8; 32];
-            LittleEndian::write_u64(&mut ar, ::rand::random::<u64>());
-            LittleEndian::write_u64(&mut ar[8..], ::rand::random::<u64>());
+            let _ = getrandom::getrandom(&mut ar);
             let enc_len = BASE64.encode_len(ar.len());
             BASE64.encode_mut(&ar, &mut out[..enc_len]);
             buf.extend(&out[..enc_len]);
@@ -258,7 +256,9 @@ impl CallImpl {
                     buf.extend(b"nonce=\"");
                     buf.extend(dig.nonce.as_bytes());
                     buf.extend(b"\", ");
-                    let cnoncebin = ::rand::random::<[u8; 32]>();
+                    // let cnoncebin = ::rand::random::<[u8; 32]>();
+                    let mut cnoncebin = [0u8; 32];
+                    let _ = getrandom::getrandom(&mut cnoncebin);
                     let mut cnonce = [0u8; 64];
                     let cnonce_len = BASE64.encode_len(cnoncebin.len());
                     BASE64.encode_mut(&cnoncebin, &mut cnonce[..cnonce_len]);
@@ -404,8 +404,12 @@ impl CallImpl {
         }
         Ok(inbuf)
     }
-    #[cfg(not(feature="gzip"))]
-    fn maybe_gunzip(&self, inbuf: Vec<u8>, _extbuf: Option<&mut Vec<u8>>) -> crate::Result<Vec<u8>> {
+    #[cfg(not(feature = "gzip"))]
+    fn maybe_gunzip(
+        &self,
+        inbuf: Vec<u8>,
+        _extbuf: Option<&mut Vec<u8>>,
+    ) -> crate::Result<Vec<u8>> {
         Ok(inbuf)
     }
 

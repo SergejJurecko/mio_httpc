@@ -1,5 +1,4 @@
 use super::{Header, Opcode, QueryClass, QueryType, ResponseCode};
-use byteorder::{BigEndian, ByteOrder};
 
 /// Allows to build a DNS packet
 ///
@@ -66,15 +65,15 @@ impl<'a> Builder<'a> {
         } else {
             return Err(());
         }
-        BigEndian::write_u16(&mut self.buf[self.off..], qtype as u16);
+        crate::write_u16_be(&mut self.buf[self.off..], qtype as u16);
         self.off += 2;
-        BigEndian::write_u16(&mut self.buf[self.off..], qclass as u16);
+        crate::write_u16_be(&mut self.buf[self.off..], qclass as u16);
         self.off += 2;
-        let oldq = BigEndian::read_u16(&self.buf[4..6]);
+        let oldq = crate::read_u16_be(&self.buf[4..6]);
         if oldq == 65535 {
             return Err(());
         }
-        BigEndian::write_u16(&mut self.buf[4..6], oldq + 1);
+        crate::write_u16_be(&mut self.buf[4..6], oldq + 1);
         Ok(())
     }
 

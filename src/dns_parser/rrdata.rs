@@ -1,5 +1,4 @@
 use super::{Error, Name, SoaRecord, Type};
-use byteorder::{BigEndian, ByteOrder};
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::str;
 
@@ -34,21 +33,21 @@ impl<'a> RRData<'a> {
                 if rdata.len() != 4 {
                     return Err(Error::WrongRdataLength);
                 }
-                Ok(RRData::A(Ipv4Addr::from(BigEndian::read_u32(rdata))))
+                Ok(RRData::A(Ipv4Addr::from(crate::read_u32_be(rdata))))
             }
             Type::AAAA => {
                 if rdata.len() != 16 {
                     return Err(Error::WrongRdataLength);
                 }
                 Ok(RRData::AAAA(Ipv6Addr::new(
-                    BigEndian::read_u16(&rdata[0..2]),
-                    BigEndian::read_u16(&rdata[2..4]),
-                    BigEndian::read_u16(&rdata[4..6]),
-                    BigEndian::read_u16(&rdata[6..8]),
-                    BigEndian::read_u16(&rdata[8..10]),
-                    BigEndian::read_u16(&rdata[10..12]),
-                    BigEndian::read_u16(&rdata[12..14]),
-                    BigEndian::read_u16(&rdata[14..16]),
+                    crate::read_u16_be(&rdata[0..2]),
+                    crate::read_u16_be(&rdata[2..4]),
+                    crate::read_u16_be(&rdata[4..6]),
+                    crate::read_u16_be(&rdata[6..8]),
+                    crate::read_u16_be(&rdata[8..10]),
+                    crate::read_u16_be(&rdata[10..12]),
+                    crate::read_u16_be(&rdata[12..14]),
+                    crate::read_u16_be(&rdata[14..16]),
                 )))
             }
             Type::CNAME => Ok(RRData::CNAME(r#try!(Name::scan(rdata, original)))),
@@ -58,7 +57,7 @@ impl<'a> RRData<'a> {
                     return Err(Error::WrongRdataLength);
                 }
                 Ok(RRData::MX {
-                    preference: BigEndian::read_u16(&rdata[..2]),
+                    preference: crate::read_u16_be(&rdata[..2]),
                     exchange: r#try!(Name::scan(&rdata[2..], original)),
                 })
             }
@@ -75,11 +74,11 @@ impl<'a> RRData<'a> {
                 Ok(RRData::SOA(SoaRecord {
                     primary_ns: primary_name_server,
                     mailbox: mailbox,
-                    serial: BigEndian::read_u32(&rdata[pos..(pos + 4)]),
-                    refresh: BigEndian::read_u32(&rdata[(pos + 4)..(pos + 8)]),
-                    retry: BigEndian::read_u32(&rdata[(pos + 8)..(pos + 12)]),
-                    expire: BigEndian::read_u32(&rdata[(pos + 12)..(pos + 16)]),
-                    minimum_ttl: BigEndian::read_u32(&rdata[(pos + 16)..(pos + 20)]),
+                    serial: crate::read_u32_be(&rdata[pos..(pos + 4)]),
+                    refresh: crate::read_u32_be(&rdata[(pos + 4)..(pos + 8)]),
+                    retry: crate::read_u32_be(&rdata[(pos + 8)..(pos + 12)]),
+                    expire: crate::read_u32_be(&rdata[(pos + 12)..(pos + 16)]),
+                    minimum_ttl: crate::read_u32_be(&rdata[(pos + 16)..(pos + 20)]),
                 }))
             }
             Type::SRV => {
@@ -87,9 +86,9 @@ impl<'a> RRData<'a> {
                     return Err(Error::WrongRdataLength);
                 }
                 Ok(RRData::SRV {
-                    priority: BigEndian::read_u16(&rdata[..2]),
-                    weight: BigEndian::read_u16(&rdata[2..4]),
-                    port: BigEndian::read_u16(&rdata[4..6]),
+                    priority: crate::read_u16_be(&rdata[..2]),
+                    weight: crate::read_u16_be(&rdata[2..4]),
+                    port: crate::read_u16_be(&rdata[4..6]),
                     target: r#try!(Name::scan(&rdata[6..], original)),
                 })
             }

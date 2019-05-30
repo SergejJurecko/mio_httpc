@@ -1,4 +1,4 @@
-use fxhash::FxHashMap as HashMap;
+use hashbrown::HashMap;
 use std::time::{Duration, Instant};
 use crate::types::IpList;
 

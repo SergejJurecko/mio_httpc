@@ -68,12 +68,11 @@
 #![doc(html_root_url = "https://docs.rs/mio_httpc")]
 #![crate_name = "mio_httpc"]
 
+
+extern crate getrandom;
 extern crate httparse;
-extern crate rand;
-// extern crate tls_api;
-extern crate byteorder;
 extern crate data_encoding;
-extern crate fxhash;
+extern crate hashbrown;
 // extern crate http;
 extern crate itoa;
 extern crate libc;
@@ -213,6 +212,24 @@ impl From<std::string::FromUtf8Error> for Error {
     fn from(e: std::string::FromUtf8Error) -> Self {
         Error::FromUtf8(e)
     }
+}
+
+fn read_u16_be(buf: &[u8]) -> u16 {
+    let buf = [buf[0],buf[1]];
+    u16::from_be_bytes(buf)
+}
+fn read_u32_be(buf: &[u8]) -> u32 {
+    let buf = [buf[0],buf[1],buf[2],buf[3]];
+    u32::from_be_bytes(buf)
+}
+fn write_u16_be(buf: &mut [u8], v: u16) {
+    buf[..2].copy_from_slice(&v.to_be_bytes());
+}
+fn write_u32_be(buf: &mut [u8], v: u32) {
+    buf[..4].copy_from_slice(&v.to_be_bytes());
+}
+fn write_u64_be(buf: &mut [u8], v: u64) {
+    buf[..8].copy_from_slice(&v.to_be_bytes());
 }
 
 #[cfg(test)]

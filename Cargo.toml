@@ -24,10 +24,9 @@ rtls = ["webpki-roots", "webpki", "ring","rustls"]
 [dependencies]
 mio = "0.6"
 httparse = "1"
-byteorder = "1"
 libc = "0.2"
-fxhash = "0.2"
-rand = "0.6"
+hashbrown = "0.3"
+getrandom = "0.1"
 itoa = "0.4"
 data-encoding = "2.1"
 # failure = "0.1"

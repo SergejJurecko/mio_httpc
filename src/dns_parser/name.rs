@@ -3,7 +3,6 @@ use std::fmt::Write;
 use std::str::from_utf8;
 // use std::ascii::AsciiExt;
 use super::Error;
-use byteorder::{BigEndian, ByteOrder};
 
 /// The DNS name as stored in the original packet
 ///
@@ -37,7 +36,7 @@ impl<'a> Name<'a> {
                 if parse_data.len() < pos + 2 {
                     return Err(Error::UnexpectedEOF);
                 }
-                let off = (BigEndian::read_u16(&parse_data[pos..pos + 2]) & !0b1100_0000_0000_0000)
+                let off = (crate::read_u16_be(&parse_data[pos..pos + 2]) & !0b1100_0000_0000_0000)
                     as usize;
                 if off >= original.len() {
                     return Err(Error::UnexpectedEOF);
@@ -102,7 +101,7 @@ impl<'a> fmt::Display for Name<'a> {
                 return Ok(());
             } else if byte & 0b1100_0000 == 0b1100_0000 {
                 let off =
-                    (BigEndian::read_u16(&data[pos..pos + 2]) & !0b1100_0000_0000_0000) as usize;
+                    (crate::read_u16_be(&data[pos..pos + 2]) & !0b1100_0000_0000_0000) as usize;
                 if pos != 0 {
                     r#try!(fmt.write_char('.'));
                 }

@@ -1,11 +1,10 @@
 #![allow(dead_code)]
 use mio::net::UdpSocket;
-use std::io::{self,ErrorKind as IoErrorKind};
+use std::io::{self, ErrorKind as IoErrorKind};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 // use mio::Poll;
 use crate::dns_parser;
 use crate::dns_parser::{Packet, RRData};
-use rand;
 use smallvec::SmallVec;
 use std::time::{Duration, Instant};
 
@@ -49,7 +48,12 @@ pub struct Dns {
 }
 
 impl Dns {
-    pub fn new(host: &str, retry_in: u64, servers: &[SocketAddr], ipv4: bool) -> crate::Result<Dns> {
+    pub fn new(
+        host: &str,
+        retry_in: u64,
+        servers: &[SocketAddr],
+        ipv4: bool,
+    ) -> crate::Result<Dns> {
         let mut srvs = SmallVec::with_capacity(2);
         for s in servers.iter() {
             srvs.push(*s);
@@ -60,7 +64,7 @@ impl Dns {
         if srvs.len() == 0 {
             get_google(&mut srvs)
         }
-        let (sent,sock) = Self::start_lookup(ipv4, &srvs[..], host)?;
+        let (sent, sock) = Self::start_lookup(ipv4, &srvs[..], host)?;
         Ok(Dns {
             ipv4,
             srvs,
@@ -120,16 +124,20 @@ impl Dns {
         Ok(s6)
     }
 
-    fn start_lookup(ipv4: bool, srvs: &[SocketAddr], host: &str) -> crate::Result<(bool,UdpSocket)> {
+    fn start_lookup(
+        ipv4: bool,
+        srvs: &[SocketAddr],
+        host: &str,
+    ) -> crate::Result<(bool, UdpSocket)> {
         let mut pos = 0;
         if ipv4 {
             let sock = Self::get_socket_v4()?;
             let sent = Self::lookup_on(ipv4, srvs, &sock, &mut pos, host)?;
-            return Ok((sent,sock));
+            return Ok((sent, sock));
         }
         let s = Self::get_socket_v6()?;
         let sent = Self::lookup_on(ipv4, srvs, &s, &mut pos, host)?;
-        Ok((sent,s))
+        Ok((sent, s))
     }
 
     fn lookup_on(
@@ -142,7 +150,10 @@ impl Dns {
         let len_srvs = srvs.len();
         let mut last_err = io::Error::new(io::ErrorKind::Other, "");
         // let rnd = (self.rng.next_u32() & 0x0000_FFFF) as u16;
-        let rnd = rand::random::<u16>();
+        // let rnd = rand::random::<u16>();
+        let mut rnd = [1, 2];
+        let _ = getrandom::getrandom(&mut rnd);
+        let rnd = u16::from_ne_bytes(rnd);
         for _ in 0..len_srvs {
             let srv = *pos % srvs.len();
             *pos += 1;
@@ -254,7 +265,7 @@ pub fn get_dns_servers(ipv4: bool, srvs: &mut SmallVec<[SocketAddr; 4]>) {
                 if ipv4 && ip.is_ipv6() {
                     continue;
                 }
-                let sad = SocketAddr::new(*ip,53);
+                let sad = SocketAddr::new(*ip, 53);
                 if !srvs.contains(&sad) {
                     srvs.push(sad);
                 }

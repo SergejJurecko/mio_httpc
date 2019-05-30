@@ -1,5 +1,4 @@
 use super::{Error, Opcode, ResponseCode};
-use byteorder::{BigEndian, ByteOrder};
 
 mod flag {
     pub const QUERY: u16 = 0b1000_0000_0000_0000;
@@ -38,12 +37,12 @@ impl Header {
         if data.len() < 12 {
             return Err(Error::HeaderTooShort);
         }
-        let flags = BigEndian::read_u16(&data[2..4]);
+        let flags = crate::read_u16_be(&data[2..4]);
         if flags & flag::RESERVED_MASK != 0 {
             return Err(Error::ReservedBitsAreNonZero);
         }
         let header = Header {
-            id: BigEndian::read_u16(&data[..2]),
+            id: crate::read_u16_be(&data[..2]),
             query: flags & flag::QUERY == 0,
             opcode: ((flags & flag::OPCODE_MASK) >> flag::OPCODE_MASK.trailing_zeros()).into(),
             authoritative: flags & flag::AUTHORITATIVE != 0,
@@ -53,10 +52,10 @@ impl Header {
             authenticated_data: flags & flag::AUTHENTICATED_DATA != 0,
             checking_disabled: flags & flag::CHECKING_DISABLED != 0,
             response_code: From::from((flags & flag::RESPONSE_CODE_MASK) as u8),
-            questions: BigEndian::read_u16(&data[4..6]),
-            answers: BigEndian::read_u16(&data[6..8]),
-            nameservers: BigEndian::read_u16(&data[8..10]),
-            additional: BigEndian::read_u16(&data[10..12]),
+            questions: crate::read_u16_be(&data[4..6]),
+            answers: crate::read_u16_be(&data[6..8]),
+            nameservers: crate::read_u16_be(&data[8..10]),
+            additional: crate::read_u16_be(&data[10..12]),
         };
         Ok(header)
     }
@@ -87,16 +86,16 @@ impl Header {
         if self.truncated {
             flags |= flag::TRUNCATED;
         }
-        BigEndian::write_u16(&mut data[..2], self.id);
-        BigEndian::write_u16(&mut data[2..4], flags);
-        BigEndian::write_u16(&mut data[4..6], self.questions);
-        BigEndian::write_u16(&mut data[6..8], self.answers);
-        BigEndian::write_u16(&mut data[8..10], self.nameservers);
-        BigEndian::write_u16(&mut data[10..12], self.additional);
+        crate::write_u16_be(&mut data[..2], self.id);
+        crate::write_u16_be(&mut data[2..4], flags);
+        crate::write_u16_be(&mut data[4..6], self.questions);
+        crate::write_u16_be(&mut data[6..8], self.answers);
+        crate::write_u16_be(&mut data[8..10], self.nameservers);
+        crate::write_u16_be(&mut data[10..12], self.additional);
     }
     pub fn set_truncated(data: &mut [u8]) {
-        let oldflags = BigEndian::read_u16(&data[2..4]);
-        BigEndian::write_u16(&mut data[2..4], oldflags & flag::TRUNCATED);
+        let oldflags = crate::read_u16_be(&data[2..4]);
+        crate::write_u16_be(&mut data[2..4], oldflags & flag::TRUNCATED);
     }
     pub fn size() -> usize {
         12

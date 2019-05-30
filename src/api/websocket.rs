@@ -1,6 +1,6 @@
-use byteorder::{BigEndian, ByteOrder};
-use mio::Poll;
 use crate::{Call, CallRef, Httpc, RecvState, ResponseBody, SendState};
+use mio::Poll;
+
 
 /// WebSocket packet received from server.
 pub enum WSPacket<'a> {
@@ -75,10 +75,13 @@ pub struct WebSocket {
     curframe: [u8; 16],
     curframe_len: u8,
     curframe_pos: u8,
+    mask: [u8; 4],
 }
 
 impl WebSocket {
     pub(crate) fn new(id: Call, send_buf: Vec<u8>) -> WebSocket {
+        let mut mask = [1, 2, 3, 4];
+        let _ = getrandom::getrandom(&mut mask);
         WebSocket {
             send_buf,
             send_buf_pos: 0,
@@ -92,6 +95,7 @@ impl WebSocket {
             curframe: [0u8; 16],
             curframe_len: 0,
             curframe_pos: 0,
+            mask,
         }
     }
 
@@ -181,7 +185,10 @@ impl WebSocket {
         let fsz = self.fill_frame(fin, op, pkt, &mut send_buf[start_pos..], &mut mask[..]);
         let mut mask_pos = 0;
         let status_sz = if let Some(status) = status {
-            BigEndian::write_u16(&mut send_buf[start_pos + fsz..], status);
+            // BigEndian::write_u16(&mut send_buf[start_pos + fsz..], status);
+            let status_be = status.to_be_bytes();
+            send_buf[start_pos + fsz] = status_be[0];
+            send_buf[start_pos + fsz + 1] = status_be[1];
             Self::mask_inplace(&mask, &mut send_buf[start_pos + fsz..start_pos + fsz + 2]);
             mask_pos = 2;
             2
@@ -425,23 +432,29 @@ impl WebSocket {
         } else if pkt.len() <= u16::max_value() as usize {
             frame[pos] = 126 | 0b1000_0000;
             pos += 1;
-            BigEndian::write_u16(&mut frame[pos..pos + 2], pkt.len() as u16);
+            crate::write_u16_be(&mut frame[pos..pos + 2], pkt.len() as u16);
             pos += 2;
         } else {
             frame[pos] = 127 | 0b1000_0000;
             pos += 1;
-            BigEndian::write_u64(&mut frame[pos..pos + 8], pkt.len() as u64);
+            crate::write_u64_be(&mut frame[pos..pos + 8], pkt.len() as u64);
             pos += 8;
         }
-        let mask = ::rand::random::<u32>();
-        BigEndian::write_u32(&mut frame[pos..pos + 4], mask);
-        BigEndian::write_u32(mask_bytes, mask);
+        let mut mask = u32::from_ne_bytes(self.mask);
+        mask += 123;
+        crate::write_u32_be(&mut frame[pos..pos + 4], mask);
+        crate::write_u32_be(mask_bytes, mask);
+        self.mask = mask.to_ne_bytes();
         // self.curframe_len = (pos+4) as u8;
         pos + 4
     }
 
     /// You should call this in a loop until you get WSPacket::None.
-    pub fn recv_packet<'a>(&mut self, htp: &'a mut Httpc, poll: &Poll) -> crate::Result<WSPacket<'a>> {
+    pub fn recv_packet<'a>(
+        &mut self,
+        htp: &'a mut Httpc,
+        poll: &Poll,
+    ) -> crate::Result<WSPacket<'a>> {
         if self.state.is_init() {
             self.perform(htp, poll)?;
             return Ok(WSPacket::None);
@@ -484,7 +497,7 @@ impl WebSocket {
                         self.closing = true;
                     }
                     if len >= 2 {
-                        let v = BigEndian::read_u16(&slice[pos..pos + 2]);
+                        let v = crate::read_u16_be(&slice[pos..pos + 2]);
                         pos += 2;
                         len -= 2;
                         return Ok(WSPacket::Close::<'a>(Some(v), &slice[pos..pos + len]));
