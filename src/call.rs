@@ -4,7 +4,6 @@ use crate::types::*;
 use byteorder::{ByteOrder, LittleEndian};
 use data_encoding::{BASE64, HEXLOWER};
 use httparse::{self, Response as ParseResp};
-use libflate::gzip::Decoder;
 use md5;
 use mio::Ready;
 use std::io::ErrorKind as IoErrorKind;
@@ -390,10 +389,11 @@ impl CallImpl {
         }
     }
 
+    #[cfg(feature = "gzip")]
     fn maybe_gunzip(&self, inbuf: Vec<u8>, extbuf: Option<&mut Vec<u8>>) -> crate::Result<Vec<u8>> {
         if self.b.gzip {
             let mut out = Vec::new();
-            let mut d = Decoder::new(&inbuf[..])?;
+            let mut d = libflate::gzip::Decoder::new(&inbuf[..])?;
             if let Some(ext) = extbuf {
                 d.read_to_end(ext)?;
                 return Ok(out);
@@ -402,6 +402,10 @@ impl CallImpl {
                 return Ok(out);
             }
         }
+        Ok(inbuf)
+    }
+    #[cfg(not(feature="gzip"))]
+    fn maybe_gunzip(&self, inbuf: Vec<u8>, _extbuf: Option<&mut Vec<u8>>) -> crate::Result<Vec<u8>> {
         Ok(inbuf)
     }
 

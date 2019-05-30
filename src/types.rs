@@ -444,7 +444,7 @@ impl CallBuilderImpl {
             max_response: 1024 * 1024 * 10,
             max_chunk: 32 * 1024,
             chunked_parse: true,
-            gzip: true,
+            gzip: cfg!(feature="gzip"),
             dns_timeout: 100,
             max_redirects: 4,
             auth: AuthenticateInfo::empty(),

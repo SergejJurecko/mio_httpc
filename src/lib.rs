@@ -77,6 +77,7 @@ extern crate fxhash;
 // extern crate http;
 extern crate itoa;
 extern crate libc;
+#[cfg(feature = "gzip")]
 extern crate libflate;
 extern crate md5;
 extern crate mio;

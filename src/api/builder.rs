@@ -310,7 +310,9 @@ impl CallBuilder {
     ///
     /// Tell server to gzip response and unzip transparently before returning body to client.
     pub fn gzip(&mut self, b: bool) -> &mut Self {
-        self.cb.as_mut().unwrap().gzip(b);
+        if cfg!(feature = "gzip") {
+            self.cb.as_mut().unwrap().gzip(b);
+        }
         self
     }
 

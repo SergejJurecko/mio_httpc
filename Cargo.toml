@@ -15,7 +15,8 @@ edition = "2018"
 
 [features]
 # Default does not work for https.
-default = []
+default = ["gzip"]
+gzip = ["libflate"]
 native = ["native-tls","crypto-hash"]
 rtls = ["webpki-roots", "webpki", "ring","rustls"]
 
@@ -33,7 +34,7 @@ data-encoding = "2.1"
 smallvec = "0.6"
 pest = "2"
 pest_derive = "2"
-libflate = "0.1"
+libflate = {version = "0.1", optional = true}
 slab = "0.4"
 percent-encoding = "1"
 url = "1"
