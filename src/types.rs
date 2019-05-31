@@ -6,11 +6,13 @@ use percent_encoding::{
     percent_encode, utf8_percent_encode, PATH_SEGMENT_ENCODE_SET, QUERY_ENCODE_SET,
     USERINFO_ENCODE_SET,
 };
-use pest::Parser;
+
 use smallvec::SmallVec;
+#[cfg(feature = "url")]
 use std::ops::Deref;
 use std::str::FromStr;
 use std::time::Duration;
+#[cfg(feature = "url")]
 use url::Url;
 
 #[derive(Debug)]
@@ -38,9 +40,6 @@ pub enum SendStateInt {
     Retry(crate::Error),
 }
 
-#[derive(Parser)]
-#[grammar = "auth.pest"] // relative to src
-struct AuthParser;
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
 pub enum DigestAlg {
@@ -77,100 +76,127 @@ pub struct AuthDigest<'a> {
     pub stale: bool,
 }
 
-impl<'a> AuthDigest<'a> {
-    pub fn parse(s: &'a str) -> crate::Result<AuthDigest<'a>> {
-        // println!("Digest in {}", s);
-        let mut realm = "";
-        let mut nonce = "";
-        let mut opaque = "";
-        let mut qop = DigestQop::None;
-        let mut stale = false;
-        let mut alg = DigestAlg::MD5;
-        let res_parse = AuthParser::parse(Rule::auth, s);
-        if let Ok(pairs) = res_parse {
-            for pair in pairs {
-                for inner_pair in pair.into_inner() {
-                    match inner_pair.as_rule() {
-                        Rule::auth_type => {
-                            for inner_pair in inner_pair.into_inner() {
-                                let s = inner_pair.as_span().as_str();
-                                if !s.eq_ignore_ascii_case("digest") {
-                                    return Err(crate::Error::AuthenticateParse);
-                                }
-                                break;
-                            }
-                        }
-                        Rule::realm => {
-                            for inner_pair in inner_pair.into_inner() {
-                                realm = inner_pair.as_span().as_str();
-                                break;
-                            }
-                        }
-                        Rule::qop => {
-                            for inner_pair in inner_pair.into_inner() {
-                                let s = inner_pair.as_span().as_str();
-                                if s.eq_ignore_ascii_case("auth") {
-                                    qop = DigestQop::Auth;
-                                    break;
-                                } else if s.eq_ignore_ascii_case("auth-int") {
-                                    qop = DigestQop::AuthInt;
-                                    continue;
-                                }
-                            }
-                        }
-                        Rule::nonce => {
-                            for inner_pair in inner_pair.into_inner() {
-                                nonce = inner_pair.as_span().as_str();
-                                break;
-                            }
-                        }
-                        Rule::opaque => {
-                            for inner_pair in inner_pair.into_inner() {
-                                opaque = inner_pair.as_span().as_str();
-                                break;
-                            }
-                        }
-                        Rule::stale => {
-                            for inner_pair in inner_pair.into_inner() {
-                                let s = inner_pair.as_span().as_str();
-                                if s.eq_ignore_ascii_case("true") {
-                                    stale = true;
-                                } else {
-                                    stale = false;
-                                }
-                                break;
-                            }
-                        }
-                        Rule::algorithm => {
-                            for inner_pair in inner_pair.into_inner() {
-                                let a = inner_pair.as_span().as_str();
-                                if a.eq_ignore_ascii_case("md5") {
-                                    alg = DigestAlg::MD5;
-                                } else if a.eq_ignore_ascii_case("md5-sess") {
-                                    alg = DigestAlg::MD5Sess;
-                                }
-                                break;
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-            }
-            // println!("Digest out {} {} {} {:?} {:?}",realm,nonce,opaque,alg,qop);
-            return Ok(AuthDigest {
-                realm,
-                nonce,
-                opaque,
-                alg,
-                stale,
-                qop,
-            });
-        } else if let Err(_e) = res_parse {
-            // println!("Error parsing {}", e);
+pub use self::digest::*;
+#[cfg(not(feature = "digest_auth"))]
+mod digest {
+    impl<'a> super::AuthDigest<'a> {
+        pub fn parse(_s: &str) -> crate::Result<super::AuthDigest> {
+            Err(crate::Error::AuthenticateParse)
         }
-        Err(crate::Error::AuthenticateParse)
     }
 }
+#[cfg(feature = "digest_auth")]
+mod digest {
+    use super::{DigestAlg, DigestQop};
+    use pest::Parser;
+
+    #[derive(Parser)]
+    #[grammar = "auth.pest"] // relative to src
+    struct AuthParser;
+
+
+    impl<'a> super::AuthDigest<'a> {
+        pub fn parse(s: &'a str) -> crate::Result<super::AuthDigest<'a>> {
+            // println!("Digest in {}", s);
+            let mut realm = "";
+            let mut nonce = "";
+            let mut opaque = "";
+            let mut qop = DigestQop::None;
+            let mut stale = false;
+            let mut alg = DigestAlg::MD5;
+            let res_parse = AuthParser::parse(Rule::auth, s);
+            if let Ok(pairs) = res_parse {
+                for pair in pairs {
+                    for inner_pair in pair.into_inner() {
+                        match inner_pair.as_rule() {
+                            Rule::auth_type => {
+                                for inner_pair in inner_pair.into_inner() {
+                                    let s = inner_pair.as_span().as_str();
+                                    if !s.eq_ignore_ascii_case("digest") {
+                                        return Err(crate::Error::AuthenticateParse);
+                                    }
+                                    break;
+                                }
+
+                            }
+                            Rule::realm => {
+                                for inner_pair in inner_pair.into_inner() {
+                                    realm = inner_pair.as_span().as_str();
+                                    break;
+
+                                }
+                            }
+                            Rule::qop => {
+                                for inner_pair in inner_pair.into_inner() {
+                                    let s = inner_pair.as_span().as_str();
+                                    if s.eq_ignore_ascii_case("auth") {
+                                        qop = DigestQop::Auth;
+                                        break;
+                                    } else if s.eq_ignore_ascii_case("auth-int") {
+                                        qop = DigestQop::AuthInt;
+                                        continue;
+                                    }
+                                }
+                            }
+                            Rule::nonce => {
+                                for inner_pair in inner_pair.into_inner() {
+                                    nonce = inner_pair.as_span().as_str();
+                                    break;
+                                }
+                            }
+                            Rule::opaque => {
+                                for inner_pair in inner_pair.into_inner() {
+                                    opaque = inner_pair.as_span().as_str();
+                                    break;
+                                }
+
+                            }
+                            Rule::stale => {
+                                for inner_pair in inner_pair.into_inner() {
+                                    let s = inner_pair.as_span().as_str();
+                                    if s.eq_ignore_ascii_case("true") {
+                                        stale = true;
+                                    } else {
+                                        stale = false;
+                                    }
+                                    break;
+                                }
+
+                            }
+                            Rule::algorithm => {
+                                for inner_pair in inner_pair.into_inner() {
+                                    let a = inner_pair.as_span().as_str();
+                                    if a.eq_ignore_ascii_case("md5") {
+                                        alg = DigestAlg::MD5;
+                                    } else if a.eq_ignore_ascii_case("md5-sess") {
+                                        alg = DigestAlg::MD5Sess;
+                                    }
+                                    break;
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+
+                // println!("Digest out {} {} {} {:?} {:?}",realm,nonce,opaque,alg,qop);
+                return Ok(super::AuthDigest {
+                    realm,
+                    nonce,
+                    opaque,
+                    alg,
+                    stale,
+                    qop,
+                });
+            } else if let Err(_e) = res_parse {
+                // println!("Error parsing {}", e);
+            }
+            Err(crate::Error::AuthenticateParse)
+        }
+    }
+
+}
+
 
 #[derive(Debug, Default, Clone)]
 pub(crate) struct AuthenticateInfo {
@@ -444,7 +470,7 @@ impl CallBuilderImpl {
             max_response: 1024 * 1024 * 10,
             max_chunk: 32 * 1024,
             chunked_parse: true,
-            gzip: cfg!(feature="gzip"),
+            gzip: cfg!(feature = "gzip"),
             dns_timeout: 100,
             max_redirects: 4,
             auth: AuthenticateInfo::empty(),
@@ -472,6 +498,11 @@ impl CallBuilderImpl {
     pub fn is_fixed(&self) -> bool {
         !(self.evids[0] == usize::max_value() && self.evids[1] == usize::max_value())
     }
+    #[cfg(not(feature = "url"))]
+    pub fn url(&mut self, url: &str) -> crate::Result<&mut Self> {
+        return Err(crate::Error::Other("no_url_feature"));
+    }
+    #[cfg(feature = "url")]
     pub fn url(&mut self, url: &str) -> crate::Result<&mut Self>
 // where
     //     I: Deref<Target = str>,

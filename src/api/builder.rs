@@ -175,6 +175,7 @@ impl CallBuilder {
     /// Set full URL. If not valid it will return error. Be mindful of characters
     /// that need to be percent encoded. Using https, path_segm, query and auth functions
     /// to construct URL is much safer as those encode data automatically.
+    #[cfg(feature = "url")]
     pub fn url(&mut self, url: &str) -> crate::Result<&mut Self> {
         self.cb.as_mut().unwrap().url(url)?;
         Ok(self)

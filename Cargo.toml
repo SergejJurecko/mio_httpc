@@ -15,11 +15,11 @@ edition = "2018"
 
 [features]
 # Default does not work for https.
-default = ["gzip"]
+default = ["gzip","digest_auth","url"]
 gzip = ["libflate"]
 native = ["native-tls","crypto-hash"]
 rtls = ["webpki-roots", "webpki", "ring","rustls"]
-
+digest_auth = ["pest", "pest_derive"]
 
 [dependencies]
 mio = "0.6"
@@ -31,12 +31,12 @@ itoa = "0.4"
 data-encoding = "2.1"
 # failure = "0.1"
 smallvec = "0.6"
-pest = "2"
-pest_derive = "2"
+pest = {version = "2", optional = true}
+pest_derive = {version = "2", optional = true}
 libflate = {version = "0.1", optional = true}
 slab = "0.4"
 percent-encoding = "1"
-url = "1"
+url = {version = "1", optional = true}
 md5 = "0.6"
 crypto-hash = {version = "0.3.1", optional = true}
 ring = {version = "^0.14", optional = true}

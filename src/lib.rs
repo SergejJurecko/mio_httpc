@@ -69,11 +69,9 @@
 #![crate_name = "mio_httpc"]
 
 
+extern crate data_encoding;
 extern crate getrandom;
 extern crate httparse;
-extern crate data_encoding;
-extern crate hashbrown;
-// extern crate http;
 extern crate itoa;
 extern crate libc;
 #[cfg(feature = "gzip")]
@@ -84,7 +82,9 @@ extern crate mio;
 extern crate native_tls;
 #[cfg(feature = "openssl")]
 extern crate openssl;
+#[cfg(feature = "digest_auth")]
 extern crate pest;
+#[cfg(feature = "digest_auth")]
 #[macro_use]
 extern crate pest_derive;
 extern crate percent_encoding;
@@ -92,6 +92,7 @@ extern crate percent_encoding;
 extern crate rustls;
 extern crate slab;
 extern crate smallvec;
+#[cfg(feature = "url")]
 extern crate url;
 
 // #[macro_use]
@@ -160,6 +161,7 @@ pub enum Error {
     OpenSSLError(OpenSSLError),
     /// All 0xFFFF slots for connections are full.
     NoSpace,
+    #[cfg(feature = "url")]
     Url(url::ParseError),
     Other(&'static str),
     /// You must pick one of the features: native, rustls, openssl
@@ -180,6 +182,7 @@ impl From<std::io::Error> for Error {
         Error::Io(e)
     }
 }
+#[cfg(feature = "url")]
 impl From<url::ParseError> for Error {
     fn from(e: url::ParseError) -> Self {
         Error::Url(e)
@@ -215,11 +218,11 @@ impl From<std::string::FromUtf8Error> for Error {
 }
 
 fn read_u16_be(buf: &[u8]) -> u16 {
-    let buf = [buf[0],buf[1]];
+    let buf = [buf[0], buf[1]];
     u16::from_be_bytes(buf)
 }
 fn read_u32_be(buf: &[u8]) -> u32 {
-    let buf = [buf[0],buf[1],buf[2],buf[3]];
+    let buf = [buf[0], buf[1], buf[2], buf[3]];
     u32::from_be_bytes(buf)
 }
 fn write_u16_be(buf: &mut [u8], v: u16) {
