@@ -1,10 +1,11 @@
+
+use crate::types::IpList;
 use hashbrown::HashMap;
 use std::time::{Duration, Instant};
-use crate::types::IpList;
-
 struct CacheEntry {
     expires: Instant,
     ip: IpList,
+    hosts: bool,
 }
 
 pub struct DnsCache {
@@ -16,12 +17,50 @@ pub struct DnsCache {
 impl DnsCache {
     pub fn new() -> DnsCache {
         let max_age = Duration::from_millis(5 * 60 * 1000);
-        DnsCache {
+        let mut out = DnsCache {
             max_age,
             next_expiration_check: Instant::now() + max_age,
             cache: HashMap::default(),
+        };
+        out.read_static();
+        out
+    }
+
+    #[cfg(unix)]
+    fn read_static(&mut self) {
+        if let Ok(mut file) = ::std::fs::File::open("/etc/hosts") {
+            let mut contents = String::new();
+            use std::io::Read;
+            if file.read_to_string(&mut contents).is_ok() {
+                for line in contents.lines() {
+                    let mut words = line.split_whitespace();
+                    if let Some(ip) = words.next() {
+                        if ip.starts_with("#") {
+                            continue;
+                        }
+                        if let Some(host) = words.next() {
+                            if let Ok(adr) = ip.parse() {
+                                // out[pos] = adr;
+                                let mut ipl = IpList::new();
+                                ipl.push(adr);
+                                self.cache.insert(
+                                    host.to_string(),
+                                    CacheEntry {
+                                        ip: ipl,
+                                        expires: Instant::now(),
+                                        hosts: true,
+                                    },
+                                );
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
+    #[cfg(not(unix))]
+    fn read_static(&mut self) {}
+
 
     pub fn find(&mut self, host: &str) -> Option<IpList> {
         let now = Instant::now();
@@ -47,18 +86,29 @@ impl DnsCache {
         }
 
         let host = String::from(host);
-        self.cache.insert(host, CacheEntry { expires, ip: ipl });
+        self.cache.insert(
+            host,
+            CacheEntry {
+                expires,
+                ip: ipl,
+                hosts: false,
+            },
+        );
         self.cleanup(now);
     }
 
     fn cleanup(&mut self, now: Instant) {
         let mut smallest_expiration = now + self.max_age;
-        self.cache.retain(|_, &mut CacheEntry { expires, .. }| {
-            if expires < smallest_expiration {
-                smallest_expiration = expires
-            }
-            expires > now
-        });
+        self.cache
+            .retain(|_, &mut CacheEntry { expires, hosts, .. }| {
+                if hosts {
+                    return true;
+                }
+                if expires < smallest_expiration {
+                    smallest_expiration = expires
+                }
+                expires > now
+            });
         self.next_expiration_check = smallest_expiration;
     }
 }
