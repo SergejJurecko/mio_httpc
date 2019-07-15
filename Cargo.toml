@@ -18,8 +18,8 @@ edition = "2018"
 default = ["gzip","digest_auth","url"]
 gzip = ["libflate"]
 native = ["native-tls","crypto-hash"]
-rtls = ["webpki-roots", "webpki", "ring","rustls"]
-digest_auth = ["pest", "pest_derive"]
+rtls = ["webpki-roots", "webpki", "ring","rustls", "md5"]
+digest_auth = ["pest", "pest_derive", "md5"]
 
 [dependencies]
 mio = "0.6"
@@ -30,7 +30,7 @@ itoa = "0.4"
 data-encoding = "2.1"
 smallvec = "0.6"
 slab = "0.4"
-md5 = "0.6"
+md5 = {version = "0.6", optional = true}
 percent-encoding = "1"
 pest = {version = "2", optional = true}
 pest_derive = {version = "2", optional = true}

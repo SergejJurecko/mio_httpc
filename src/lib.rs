@@ -68,13 +68,13 @@
 #![doc(html_root_url = "https://docs.rs/mio_httpc")]
 #![crate_name = "mio_httpc"]
 
-
 extern crate data_encoding;
 extern crate getrandom;
 extern crate httparse;
 extern crate itoa;
 #[cfg(feature = "gzip")]
 extern crate libflate;
+#[cfg(feature = "digest_auth")]
 extern crate md5;
 extern crate mio;
 #[cfg(feature = "native")]

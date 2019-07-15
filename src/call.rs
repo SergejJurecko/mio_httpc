@@ -3,7 +3,8 @@ use crate::tls_api::TlsConnector;
 use crate::types::*;
 use data_encoding::{BASE64, HEXLOWER};
 use httparse::{self, Response as ParseResp};
-use md5;
+#[cfg(feature = "digest_auth")]
+use md5::Context as MD5Context;
 use mio::Ready;
 use std::io::ErrorKind as IoErrorKind;
 use std::io::{Read, Write};
@@ -260,7 +261,7 @@ impl CallImpl {
                     buf.extend(b", ");
                     let mut ha1 = [0u8; 32];
                     let mut ha2 = [0u8; 32];
-                    let mut md5 = md5::Context::new();
+                    let mut md5 = MD5Context::new();
                     md5.consume(&self.b.bytes.us);
                     md5.consume(":");
                     md5.consume(dig.realm.as_bytes());
@@ -269,7 +270,7 @@ impl CallImpl {
                     let d = md5.compute();
                     HEXLOWER.encode_mut(&d.0, &mut ha1);
                     if dig.alg == DigestAlg::MD5Sess {
-                        let mut md5 = md5::Context::new();
+                        let mut md5 = MD5Context::new();
                         md5.consume(&ha1);
                         md5.consume(":");
                         md5.consume(dig.nonce.as_bytes());
@@ -279,7 +280,7 @@ impl CallImpl {
                         HEXLOWER.encode_mut(&d.0, &mut ha1);
                     }
                     if dig.qop == DigestQop::Auth || dig.qop == DigestQop::None {
-                        let mut md5 = md5::Context::new();
+                        let mut md5 = MD5Context::new();
                         md5.consume(self.b.method.as_str().as_bytes());
                         md5.consume(":");
                         md5.consume(&self.b.bytes.path);
@@ -291,7 +292,7 @@ impl CallImpl {
                         let d = md5.compute();
                         HEXLOWER.encode_mut(&d.0, &mut ha2);
                     }
-                    let mut md5 = md5::Context::new();
+                    let mut md5 = MD5Context::new();
                     md5.consume(&ha1);
                     md5.consume(":");
                     md5.consume(dig.nonce.as_bytes());

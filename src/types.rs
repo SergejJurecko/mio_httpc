@@ -78,6 +78,16 @@ pub struct AuthDigest<'a> {
 pub use self::digest::*;
 #[cfg(not(feature = "digest_auth"))]
 mod digest {
+    pub struct MD5Context;
+    impl MD5Context {
+        pub fn new() -> Self {
+            MD5Context {}
+        }
+        pub fn consume<T: AsRef<[u8]>>(&mut self, _data: T) {}
+        pub fn compute(self) -> (Vec<u8>, u8) {
+            (Vec::new(), 0)
+        }
+    }
     impl<'a> super::AuthDigest<'a> {
         pub fn parse(_s: &str) -> crate::Result<super::AuthDigest> {
             Err(crate::Error::AuthenticateParse)
