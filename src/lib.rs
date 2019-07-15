@@ -73,7 +73,6 @@ extern crate data_encoding;
 extern crate getrandom;
 extern crate httparse;
 extern crate itoa;
-extern crate libc;
 #[cfg(feature = "gzip")]
 extern crate libflate;
 extern crate md5;

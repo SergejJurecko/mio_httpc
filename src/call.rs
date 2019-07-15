@@ -89,14 +89,6 @@ impl CallImpl {
                 // This can happen if lots of data is being sent in websocket
                 // over localhost as it does not give client enough time to clear data.
                 if *off > 1024 * 1024 {
-                    // unsafe {
-                    //     ::std::ptr::copy(
-                    //         self.buf_body.as_ptr().offset(*off as _),
-                    //         self.buf_body.as_mut_ptr(),
-                    //         diff,
-                    //     );
-                    // }
-                    // self.buf_body.truncate(diff);
                     self.buf_body.drain(..*off);
                     *off = 0;
                 }
@@ -151,12 +143,9 @@ impl CallImpl {
         if internal && self.b.max_response <= orig_len {
             return Err(crate::Error::ResponseTooBig);
         }
-        // Vec will actually reserve on an exponential scale.
-        buf.reserve(4096 * 2);
-        unsafe {
-            let cap = buf.capacity();
-            buf.set_len(cap);
-        }
+        buf.reserve(4096);
+        let cap = buf.capacity();
+        buf.resize(cap, 0);
         Ok(orig_len)
     }
 

@@ -24,25 +24,23 @@ digest_auth = ["pest", "pest_derive"]
 [dependencies]
 mio = "0.6"
 httparse = "1"
-libc = "0.2"
 hashbrown = "0.5"
 getrandom = "0.1"
 itoa = "0.4"
 data-encoding = "2.1"
-# failure = "0.1"
 smallvec = "0.6"
+slab = "0.4"
+md5 = "0.6"
+percent-encoding = "1"
 pest = {version = "2", optional = true}
 pest_derive = {version = "2", optional = true}
 libflate = {version = "0.1", optional = true}
-slab = "0.4"
-percent-encoding = "1"
 url = {version = "1", optional = true}
-md5 = "0.6"
 crypto-hash = {version = "0.3.1", optional = true}
 ring = {version = "^0.14", optional = true}
 webpki = {version = "0.19", optional = true}
 webpki-roots = {version = "0.16", optional = true}
-rustls = { version = "0.15.1", features = ["dangerous_configuration"], optional = true}
+rustls = { version = "0.15.2", features = ["dangerous_configuration"], optional = true}
 openssl      = { version = "0.10.*", optional = true, features = ["v102", "v110"] }
 native-tls   = { git = "https://github.com/SergejJurecko/rust-native-tls", optional = true}
 

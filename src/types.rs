@@ -40,7 +40,6 @@ pub enum SendStateInt {
     Retry(crate::Error),
 }
 
-
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
 pub enum DigestAlg {
     MD5,
@@ -94,7 +93,6 @@ mod digest {
     #[grammar = "auth.pest"] // relative to src
     struct AuthParser;
 
-
     impl<'a> super::AuthDigest<'a> {
         pub fn parse(s: &'a str) -> crate::Result<super::AuthDigest<'a>> {
             // println!("Digest in {}", s);
@@ -117,13 +115,11 @@ mod digest {
                                     }
                                     break;
                                 }
-
                             }
                             Rule::realm => {
                                 for inner_pair in inner_pair.into_inner() {
                                     realm = inner_pair.as_span().as_str();
                                     break;
-
                                 }
                             }
                             Rule::qop => {
@@ -149,7 +145,6 @@ mod digest {
                                     opaque = inner_pair.as_span().as_str();
                                     break;
                                 }
-
                             }
                             Rule::stale => {
                                 for inner_pair in inner_pair.into_inner() {
@@ -161,7 +156,6 @@ mod digest {
                                     }
                                     break;
                                 }
-
                             }
                             Rule::algorithm => {
                                 for inner_pair in inner_pair.into_inner() {
@@ -196,7 +190,6 @@ mod digest {
     }
 
 }
-
 
 #[derive(Debug, Default, Clone)]
 pub(crate) struct AuthenticateInfo {
@@ -273,12 +266,6 @@ impl ChunkIndex {
             }
             if hdr != off {
                 let sl = src.len();
-                // unsafe {
-                //     let src_p: *const u8 = src.as_ptr().offset(off as isize);
-                //     let dst_p: *mut u8 = src.as_mut_ptr().offset(hdr as isize);
-                //     ::std::ptr::copy(src_p, dst_p, sl - off);
-                // }
-                // src.truncate(hdr + sl - off);
                 {
                     src.drain(hdr..off);
                 }
@@ -345,32 +332,6 @@ pub(crate) struct CallBytes {
     pub query: QueryBuf,
     pub headers: HeaderBuf,
 }
-
-// impl CallBytes {
-//     fn host_as_str(&self) -> &str {
-//         unsafe { from_utf8_unchecked(&self.host) }
-//     }
-
-//     fn us_as_str(&self) -> &str {
-//         unsafe { from_utf8_unchecked(&self.us) }
-//     }
-
-//     fn pw_as_str(&self) -> &str {
-//         unsafe { from_utf8_unchecked(&self.pw) }
-//     }
-
-//     fn path_as_str(&self) -> &str {
-//         unsafe { from_utf8_unchecked(&self.path) }
-//     }
-
-//     fn query_as_str(&self) -> &str {
-//         if self.query.len() > 0 {
-//             unsafe { from_utf8_unchecked(&self.query[1..]) }
-//         } else {
-//             ""
-//         }
-//     }
-// }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Method {

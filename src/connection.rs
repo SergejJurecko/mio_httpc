@@ -286,7 +286,7 @@ impl Con {
         }
         let mut dns = self.dns.take().unwrap();
         dns.try_send(self.host.as_ref());
-        let mut buf: [u8; 512] = unsafe { ::std::mem::uninitialized() };
+        let mut buf = [0u8; 512];
         if let Ok(sz) = dns.sock.recv(&mut buf[..]) {
             resolve::dns_parse(&buf[..sz], &mut self.resolved);
             if self.resolved.len() > 0 {
@@ -540,6 +540,7 @@ impl Hash for ConHost {
         state.write(&self.host);
     }
 }
+// Host was originally a string so it is safe to convert to utf8 without checking.
 impl ::std::convert::AsRef<str> for ConHost {
     #[inline]
     fn as_ref(&self) -> &str {

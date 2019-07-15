@@ -1,7 +1,6 @@
 use crate::{Call, CallRef, Httpc, RecvState, ResponseBody, SendState};
 use mio::Poll;
 
-
 /// WebSocket packet received from server.
 pub enum WSPacket<'a> {
     /// Nothing to return yet.
@@ -221,17 +220,8 @@ impl WebSocket {
         } else {
             self.send_buf_pos += sent;
             if self.send_buf_pos > 1024 * 1024 {
-                // let diff = send_buf.len() - self.send_buf_pos;
-                // unsafe {
-                //     ::std::ptr::copy(
-                //         send_buf.as_ptr().offset(self.send_buf_pos as _),
-                //         send_buf.as_mut_ptr(),
-                //         diff,
-                //     );
-                // }
                 self.send_buf.drain(..self.send_buf_pos);
                 self.send_buf_pos = 0;
-                // send_buf.truncate(diff);
             }
         }
         self.send_buf = send_buf;
