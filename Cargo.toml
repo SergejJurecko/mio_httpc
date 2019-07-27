@@ -37,11 +37,11 @@ slab = "0.4"
 percent-encoding = "1"
 url = "1"
 md5 = "0.6"
-crypto-hash = {git = "https://github.com/SergejJurecko/crypto-hash", optional = true}
+crypto-hash = {version = "0.3.3", optional = true}
 ring = {version = "^0.14", optional = true}
 webpki = {version = "0.19", optional = true}
 webpki-roots = {version = "0.16", optional = true}
-rustls = { version = "0.15.1", features = ["dangerous_configuration"], optional = true}
+rustls = { version = "0.15.2", features = ["dangerous_configuration"], optional = true}
 openssl      = { version = "0.10.*", optional = true, features = ["v102", "v110"] }
 # native-tls   = { version = "0.2", optional = true}
 native-tls   = { version = "0.2", optional = true}
