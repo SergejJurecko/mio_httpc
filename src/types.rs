@@ -1,16 +1,16 @@
 use crate::httpc::HttpcImpl;
+use crate::resolve::DnsCache;
+use crate::tls_api::TlsConnector;
 use mio::Poll;
 use percent_encoding::{
     percent_encode, utf8_percent_encode, PATH_SEGMENT_ENCODE_SET, QUERY_ENCODE_SET,
     USERINFO_ENCODE_SET,
 };
 use pest::Parser;
-use crate::resolve::DnsCache;
 use smallvec::SmallVec;
 use std::ops::Deref;
 use std::str::FromStr;
 use std::time::Duration;
-use crate::tls_api::TlsConnector;
 use url::Url;
 
 #[derive(Debug)]
@@ -95,7 +95,7 @@ impl<'a> AuthDigest<'a> {
                     match inner_pair.as_rule() {
                         Rule::auth_type => {
                             for inner_pair in inner_pair.into_inner() {
-                                let s = inner_pair.into_span().as_str();
+                                let s = inner_pair.as_span().as_str();
                                 if !s.eq_ignore_ascii_case("digest") {
                                     return Err(crate::Error::AuthenticateParse);
                                 }
@@ -104,13 +104,13 @@ impl<'a> AuthDigest<'a> {
                         }
                         Rule::realm => {
                             for inner_pair in inner_pair.into_inner() {
-                                realm = inner_pair.into_span().as_str();
+                                realm = inner_pair.as_span().as_str();
                                 break;
                             }
                         }
                         Rule::qop => {
                             for inner_pair in inner_pair.into_inner() {
-                                let s = inner_pair.into_span().as_str();
+                                let s = inner_pair.as_span().as_str();
                                 if s.eq_ignore_ascii_case("auth") {
                                     qop = DigestQop::Auth;
                                     break;
@@ -122,19 +122,19 @@ impl<'a> AuthDigest<'a> {
                         }
                         Rule::nonce => {
                             for inner_pair in inner_pair.into_inner() {
-                                nonce = inner_pair.into_span().as_str();
+                                nonce = inner_pair.as_span().as_str();
                                 break;
                             }
                         }
                         Rule::opaque => {
                             for inner_pair in inner_pair.into_inner() {
-                                opaque = inner_pair.into_span().as_str();
+                                opaque = inner_pair.as_span().as_str();
                                 break;
                             }
                         }
                         Rule::stale => {
                             for inner_pair in inner_pair.into_inner() {
-                                let s = inner_pair.into_span().as_str();
+                                let s = inner_pair.as_span().as_str();
                                 if s.eq_ignore_ascii_case("true") {
                                     stale = true;
                                 } else {
@@ -145,7 +145,7 @@ impl<'a> AuthDigest<'a> {
                         }
                         Rule::algorithm => {
                             for inner_pair in inner_pair.into_inner() {
-                                let a = inner_pair.into_span().as_str();
+                                let a = inner_pair.as_span().as_str();
                                 if a.eq_ignore_ascii_case("md5") {
                                     alg = DigestAlg::MD5;
                                 } else if a.eq_ignore_ascii_case("md5-sess") {
@@ -228,7 +228,12 @@ impl ChunkIndex {
     }
 
     // copy full chunks to dst, move remainder (non-full chunk) back right after hdr.
-    pub fn push_to(&mut self, hdr: usize, src: &mut Vec<u8>, dst: &mut Vec<u8>) -> crate::Result<usize> {
+    pub fn push_to(
+        &mut self,
+        hdr: usize,
+        src: &mut Vec<u8>,
+        dst: &mut Vec<u8>,
+    ) -> crate::Result<usize> {
         let mut off = hdr;
         let mut num_copied = 0;
         loop {
@@ -451,7 +456,11 @@ impl CallBuilderImpl {
             ..Default::default()
         }
     }
-    pub fn call<C: TlsConnector>(self, httpc: &mut HttpcImpl, poll: &Poll) -> crate::Result<crate::Call> {
+    pub fn call<C: TlsConnector>(
+        self,
+        httpc: &mut HttpcImpl,
+        poll: &Poll,
+    ) -> crate::Result<crate::Call> {
         httpc.call::<C>(self, poll)
     }
     pub fn websocket(&mut self) -> &mut Self {

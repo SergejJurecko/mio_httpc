@@ -70,13 +70,10 @@
 
 extern crate httparse;
 extern crate rand;
-// extern crate tls_api;
 extern crate byteorder;
 extern crate data_encoding;
 extern crate fxhash;
-// extern crate http;
 extern crate itoa;
-extern crate libc;
 extern crate libflate;
 extern crate md5;
 extern crate mio;
