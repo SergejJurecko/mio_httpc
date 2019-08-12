@@ -27,7 +27,7 @@ pub fn hash(algo: HashType, data: &[u8]) -> Vec<u8> {
             digest::Context::new(&digest::SHA512)
         }
         HashType::SHA1 => {
-            digest::Context::new(&digest::SHA1)
+            digest::Context::new(&digest::SHA1_FOR_LEGACY_USE_ONLY)
         }
     };
     hasher.update(data);
