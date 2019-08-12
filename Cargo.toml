@@ -1,6 +1,6 @@
 [package]
 name = "mio_httpc"
-version = "0.8.7"
+version = "0.8.8"
 authors = ["sergej jurecko <sergej.jurecko@gmail.com>"]
 description = "mio_httpc is a fully async and sync http client running on top of mio only. "
 repository = "https://github.com/SergejJurecko/mio_httpc"
@@ -38,10 +38,10 @@ percent-encoding = "1"
 url = "1"
 md5 = "0.6"
 crypto-hash = {version = "0.3.3", optional = true}
-ring = {version = "^0.14", optional = true}
-webpki = {version = "0.19", optional = true}
-webpki-roots = {version = "0.16", optional = true}
-rustls = { version = "0.15.2", features = ["dangerous_configuration"], optional = true}
+ring = {version = "^0.16.5", optional = true}
+webpki = {version = "0.21", optional = true}
+webpki-roots = {version = "0.17", optional = true}
+rustls = { version = "0.16.0", features = ["dangerous_configuration"], optional = true}
 openssl      = { version = "0.10.*", optional = true, features = ["v102", "v110"] }
 # native-tls   = { version = "0.2", optional = true}
 native-tls   = { version = "0.2", optional = true}
