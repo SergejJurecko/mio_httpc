@@ -68,34 +68,11 @@
 #![doc(html_root_url = "https://docs.rs/mio_httpc")]
 #![crate_name = "mio_httpc"]
 
-extern crate data_encoding;
-extern crate getrandom;
-extern crate httparse;
-extern crate itoa;
-#[cfg(feature = "gzip")]
-extern crate libflate;
-#[cfg(feature = "digest_auth")]
-extern crate md5;
-extern crate mio;
-#[cfg(feature = "native")]
-extern crate native_tls;
-#[cfg(feature = "openssl")]
-extern crate openssl;
-#[cfg(feature = "digest_auth")]
-extern crate pest;
 #[cfg(feature = "digest_auth")]
 #[macro_use]
 extern crate pest_derive;
-extern crate percent_encoding;
-#[cfg(feature = "rustls")]
-extern crate rustls;
-extern crate slab;
-extern crate smallvec;
-#[cfg(feature = "url")]
-extern crate url;
 
-// #[macro_use]
-// extern crate failure;
+
 #[cfg(test)]
 #[macro_use]
 extern crate matches;
