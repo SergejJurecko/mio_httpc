@@ -2,10 +2,21 @@ use crate::httpc::HttpcImpl;
 use crate::resolve::DnsCache;
 use crate::tls_api::TlsConnector;
 use mio::Poll;
-use percent_encoding::{
-    percent_encode, utf8_percent_encode, PATH_SEGMENT_ENCODE_SET, QUERY_ENCODE_SET,
-    USERINFO_ENCODE_SET,
-};
+use percent_encoding::{percent_encode, utf8_percent_encode, AsciiSet, CONTROLS};
+const FRAGMENT: &AsciiSet = &CONTROLS.add(b' ').add(b'"').add(b'<').add(b'>').add(b'`');
+const PATH_SEGMENT_ENCODE_SET: &AsciiSet = &FRAGMENT.add(b'#').add(b'?').add(b'{').add(b'}');
+const QUERY_ENCODE_SET: &AsciiSet = &CONTROLS.add(b' ').add(b'"').add(b'#').add(b'<').add(b'>');
+const USERINFO_ENCODE_SET: &AsciiSet = &PATH_SEGMENT_ENCODE_SET
+    .add(b'/')
+    .add(b':')
+    .add(b';')
+    .add(b'=')
+    .add(b'@')
+    .add(b'[')
+    .add(b'\\')
+    .add(b']')
+    .add(b'^')
+    .add(b'|');
 
 use smallvec::SmallVec;
 #[cfg(feature = "url")]
@@ -320,9 +331,9 @@ impl ChunkIndex {
 
 fn ascii_hex_to_num(ch: u8) -> Option<usize> {
     match ch {
-        b'0'...b'9' => Some((ch - b'0') as usize),
-        b'a'...b'f' => Some((ch - b'a' + 10) as usize),
-        b'A'...b'F' => Some((ch - b'A' + 10) as usize),
+        b'0'..=b'9' => Some((ch - b'0') as usize),
+        b'a'..=b'f' => Some((ch - b'a' + 10) as usize),
+        b'A'..=b'F' => Some((ch - b'A' + 10) as usize),
         _ => None,
     }
 }

@@ -465,7 +465,7 @@ impl WebSocket {
         if let Some((fin, op, mut pos, mut len)) = self.parse_packet(slice) {
             self.recv_lover += pos + len;
             match op {
-                _ if self.cur_op == 1 || op == 1 => {
+                _ if (self.cur_op == 1 && op == 0) || op == 1 => {
                     if op != 0 && !fin {
                         self.cur_op = 1;
                     }
@@ -476,7 +476,7 @@ impl WebSocket {
                         return Err(crate::Error::WebSocketParse);
                     }
                 }
-                _ if self.cur_op == 2 || op == 2 => {
+                _ if (self.cur_op == 2 && op == 0) || op == 2 => {
                     if op != 0 && !fin {
                         self.cur_op = 2;
                     }

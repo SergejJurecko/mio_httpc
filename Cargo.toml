@@ -24,18 +24,18 @@ digest_auth = ["pest", "pest_derive", "md5"]
 [dependencies]
 mio = "0.6"
 httparse = "1"
-hashbrown = "0.5"
+hashbrown = "0.6"
 getrandom = "0.1"
 itoa = "0.4"
 data-encoding = "2.1"
 smallvec = "0.6"
 slab = "0.4"
 md5 = {version = "0.6", optional = true}
-percent-encoding = "1"
+percent-encoding = "2"
 pest = {version = "2", optional = true}
 pest_derive = {version = "2", optional = true}
 libflate = {version = "0.1", optional = true}
-url = {version = "1", optional = true}
+url = {version = "2", optional = true}
 crypto-hash = {version = "0.3.1", optional = true}
 ring = {version = "^0.16.5", optional = true}
 webpki = {version = "0.21", optional = true}
