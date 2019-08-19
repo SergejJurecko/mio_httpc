@@ -8,7 +8,6 @@ use crate::dns_parser::{Packet, RRData};
 use smallvec::SmallVec;
 use std::time::{Duration, Instant};
 
-
 mod cache;
 pub use self::cache::DnsCache;
 #[cfg(any(target_os = "ios", target_os = "macos"))]
@@ -280,15 +279,13 @@ fn get_google(srvs: &mut SmallVec<[SocketAddr; 4]>) {
 }
 
 fn resolv_parse(srvs: &mut SmallVec<[SocketAddr; 4]>, s: String) {
-    // let mut out = Vec::with_capacity(2);
     for line in s.lines() {
         let mut words = line.split_whitespace();
         if let Some(s) = words.next() {
             if s.starts_with("nameserver") {
                 if let Some(s) = words.next() {
                     if let Ok(adr) = s.parse() {
-                        // out[pos] = adr;
-                        srvs.push(adr);
+                        srvs.push(SocketAddr::new(adr, 53));
                     }
                 }
             }
