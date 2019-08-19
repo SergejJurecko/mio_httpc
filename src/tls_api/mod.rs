@@ -60,7 +60,7 @@ pub trait TlsStreamImpl<S>: io::Read + io::Write + fmt::Debug + Send + Sync + 's
 /// So `TlsStream` is actually a box to concrete TLS implementation.
 /// ```
 #[derive(Debug)]
-pub struct TlsStream<S>(Box<TlsStreamImpl<S> + 'static>);
+pub struct TlsStream<S>(Box<dyn TlsStreamImpl<S> + 'static>);
 
 impl<S: 'static> TlsStream<S> {
     pub fn new<I: TlsStreamImpl<S> + 'static>(imp: I) -> TlsStream<S> {
@@ -132,7 +132,7 @@ pub trait MidHandshakeTlsStreamImpl<S>: fmt::Debug + Sync + Send + 'static {
 }
 
 #[derive(Debug)]
-pub struct MidHandshakeTlsStream<S>(Box<MidHandshakeTlsStreamImpl<S> + 'static>);
+pub struct MidHandshakeTlsStream<S>(Box<dyn MidHandshakeTlsStreamImpl<S> + 'static>);
 
 impl<S: 'static> MidHandshakeTlsStream<S> {
     pub fn new<I: MidHandshakeTlsStreamImpl<S> + 'static>(stream: I) -> MidHandshakeTlsStream<S> {

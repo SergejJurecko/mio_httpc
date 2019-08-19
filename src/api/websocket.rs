@@ -1,6 +1,6 @@
+use crate::{Call, CallRef, Httpc, RecvState, ResponseBody, SendState};
 use byteorder::{BigEndian, ByteOrder};
 use mio::Poll;
-use crate::{Call, CallRef, Httpc, RecvState, ResponseBody, SendState};
 
 /// WebSocket packet received from server.
 pub enum WSPacket<'a> {
@@ -441,7 +441,11 @@ impl WebSocket {
     }
 
     /// You should call this in a loop until you get WSPacket::None.
-    pub fn recv_packet<'a>(&mut self, htp: &'a mut Httpc, poll: &Poll) -> crate::Result<WSPacket<'a>> {
+    pub fn recv_packet<'a>(
+        &mut self,
+        htp: &'a mut Httpc,
+        poll: &Poll,
+    ) -> crate::Result<WSPacket<'a>> {
         if self.state.is_init() {
             self.perform(htp, poll)?;
             return Ok(WSPacket::None);
@@ -462,7 +466,7 @@ impl WebSocket {
         if let Some((fin, op, mut pos, mut len)) = self.parse_packet(slice) {
             self.recv_lover += pos + len;
             match op {
-                _ if self.cur_op == 1 || op == 1 => {
+                _ if (self.cur_op == 1 && op == 0) || op == 1 => {
                     if op != 0 && !fin {
                         self.cur_op = 1;
                     }
@@ -473,7 +477,7 @@ impl WebSocket {
                         return Err(crate::Error::WebSocketParse);
                     }
                 }
-                _ if self.cur_op == 2 || op == 2 => {
+                _ if (self.cur_op == 2 && op == 0) || op == 2 => {
                     if op != 0 && !fin {
                         self.cur_op = 2;
                     }
