@@ -24,7 +24,7 @@ digest_auth = ["pest", "pest_derive", "md5"]
 [dependencies]
 mio = "0.6"
 httparse = "1"
-hashbrown = "0.6"
+fxhash = "0.2"
 getrandom = "0.1"
 itoa = "0.4"
 data-encoding = "2.1"

@@ -7,7 +7,7 @@ use crate::tls_api::{
 use crate::types::{CallBuilderImpl, CallParam, IpList, RecvStateInt, SendStateInt};
 use crate::{CallRef, HttpcCfg, Result};
 use data_encoding::BASE64;
-use hashbrown::HashMap;
+use fxhash::FxHashMap as HashMap;
 use mio::event::Evented;
 use mio::net::TcpStream;
 use mio::{Poll, PollOpt, Ready, Token};
