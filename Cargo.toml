@@ -20,7 +20,7 @@ gzip = ["libflate"]
 native = ["crypto-hash", "native-tls"]
 rtls = ["webpki-roots", "webpki", "ring","rustls", "md5"]
 digest_auth = ["pest", "pest_derive", "md5"]
-native_vendor = ["native-fork"]
+native_vendor = ["crypto-hash", "native-fork"]
 
 [dependencies]
 mio = "0.6"
