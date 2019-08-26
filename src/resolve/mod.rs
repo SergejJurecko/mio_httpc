@@ -1,11 +1,10 @@
 #![allow(dead_code)]
-use mio::net::UdpSocket;
-use std::io::{self, ErrorKind as IoErrorKind};
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
-// use mio::Poll;
 use crate::dns_parser;
 use crate::dns_parser::{Packet, RRData};
+use mio::net::UdpSocket;
 use smallvec::SmallVec;
+use std::io::{self, ErrorKind as IoErrorKind};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 use std::time::{Duration, Instant};
 
 mod cache;

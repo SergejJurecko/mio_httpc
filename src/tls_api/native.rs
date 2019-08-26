@@ -2,7 +2,7 @@ use std::fmt;
 use std::io;
 use std::result;
 
-use native_tls;
+use super::native_tls;
 use crate::tls_api::{HashType, Error, Result, self};
 
 #[cfg(not(any(target_os = "macos", target_os = "ios")))]
@@ -162,6 +162,7 @@ impl<S: io::Read + io::Write + fmt::Debug + Send + Sync + 'static> tls_api::TlsS
         Vec::new()
     }
 
+    #[cfg(feature = "native_vendor")]
     fn peer_pubkey(&self) -> Vec<u8> {
         if let Ok(Some(cert)) = self.0.peer_certificate() {
             cert.public_key_info_der().unwrap_or(Vec::new())
@@ -169,14 +170,24 @@ impl<S: io::Read + io::Write + fmt::Debug + Send + Sync + 'static> tls_api::TlsS
             Vec::new()
         }
     }
+    #[cfg(feature = "native")]
+    fn peer_pubkey(&self) -> Vec<u8> {
+        Vec::new()
+    }
 
+    #[cfg(feature = "native_vendor")]
     fn pubkey_chain(&mut self) -> Result<PubkeyIterator<S>> {
         Ok(PubkeyIterator(self.0.certificate_chain()?))
     }
+    #[cfg(feature = "native")]
+    fn pubkey_chain(&mut self) -> Result<PubkeyIterator<S>> {
+        Err(Error::InvalidPin)
+    }
 }
 
+#[cfg(feature = "native_vendor")]
 pub struct PubkeyIterator<'a,S>(native_tls::ChainIterator<'a,S>);
-
+#[cfg(feature = "native_vendor")]
 impl<'a,S> Iterator for PubkeyIterator<'a,S> {
     type Item = Vec<u8>;
 
@@ -184,6 +195,15 @@ impl<'a,S> Iterator for PubkeyIterator<'a,S> {
         if let Some(cert) = self.0.next() {
             return Some(cert.public_key_info_der().unwrap_or(Vec::new()));
         }
+        None
+    }
+}
+#[cfg(feature = "native")]
+pub struct PubkeyIterator<'a, S>(&'a std::marker::PhantomData<S>);
+#[cfg(feature = "native")]
+impl<'a, S> Iterator for PubkeyIterator<'a, S> {
+    type Item = Vec<u8>;
+    fn next(&mut self) -> Option<Self::Item> {
         None
     }
 }

@@ -1,6 +1,6 @@
 [package]
 name = "mio_httpc"
-version = "0.8.6"
+version = "0.9.0"
 authors = ["sergej jurecko <sergej.jurecko@gmail.com>"]
 description = "mio_httpc is a fully async and sync http client running on top of mio only. "
 repository = "https://github.com/SergejJurecko/mio_httpc"
@@ -17,9 +17,10 @@ edition = "2018"
 # Default does not work for https.
 default = ["gzip","digest_auth","url"]
 gzip = ["libflate"]
-native = ["native-tls","crypto-hash"]
+native = ["crypto-hash", "native-tls"]
 rtls = ["webpki-roots", "webpki", "ring","rustls", "md5"]
 digest_auth = ["pest", "pest_derive", "md5"]
+native_vendor = ["native-fork"]
 
 [dependencies]
 mio = "0.6"
@@ -30,8 +31,8 @@ itoa = "0.4"
 data-encoding = "2.1"
 smallvec = "0.6"
 slab = "0.4"
-md5 = {version = "0.6", optional = true}
 percent-encoding = "2"
+md5 = {version = "0.6", optional = true}
 pest = {version = "2", optional = true}
 pest_derive = {version = "2", optional = true}
 libflate = {version = "0.1", optional = true}
@@ -42,10 +43,12 @@ webpki = {version = "0.21", optional = true}
 webpki-roots = {version = "0.17", optional = true}
 rustls = { version = "0.16.0", features = ["dangerous_configuration"], optional = true}
 openssl      = { version = "0.10.*", optional = true, features = ["v102", "v110"] }
-native-tls   = { git = "https://github.com/SergejJurecko/rust-native-tls", optional = true}
+native-tls   = { version = "0.2.3", optional = true}
+native-fork   = { path = "vendor/native_tls", optional = true}
 
 [target.'cfg(target_os = "windows")'.dependencies]
 ipconfig = "0.2"
+# schannel = {version = "0.1", optional = true}
 
 [dev-dependencies]
 matches = "0.1"

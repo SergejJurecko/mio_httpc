@@ -6,13 +6,17 @@ pub use self::rustls::hash;
 #[cfg(feature = "rustls")]
 pub use self::rustls::PubkeyIterator;
 
-#[cfg(feature = "native")]
+#[cfg(any(feature = "native", feature = "native_vendor"))]
 #[allow(dead_code, unused_variables)]
 pub mod native;
-#[cfg(feature = "native")]
+#[cfg(any(feature = "native", feature = "native_vendor"))]
 pub use self::native::hash;
-#[cfg(feature = "native")]
+#[cfg(any(feature = "native", feature = "native_vendor"))]
 pub use self::native::PubkeyIterator;
+#[cfg(feature = "native_vendor")]
+pub use native_fork as native_tls;
+#[cfg(feature = "native")]
+use native_tls;
 
 #[cfg(feature = "openssl")]
 #[allow(dead_code, unused_variables)]
@@ -22,11 +26,26 @@ pub use self::openssl::hash;
 #[cfg(feature = "openssl")]
 pub use self::openssl::PubkeyIterator;
 
-#[cfg(not(any(feature = "rustls", feature = "native", feature = "openssl")))]
+#[cfg(not(any(
+    feature = "rustls",
+    feature = "native",
+    feature = "openssl",
+    feature = "native_vendor"
+)))]
 pub mod dummy;
-#[cfg(not(any(feature = "rustls", feature = "native", feature = "openssl")))]
+#[cfg(not(any(
+    feature = "rustls",
+    feature = "native",
+    feature = "openssl",
+    feature = "native_vendor"
+)))]
 pub use self::dummy::hash;
-#[cfg(not(any(feature = "rustls", feature = "native", feature = "openssl")))]
+#[cfg(not(any(
+    feature = "rustls",
+    feature = "native",
+    feature = "openssl",
+    feature = "native_vendor"
+)))]
 pub use self::dummy::PubkeyIterator;
 
 use std::fmt;

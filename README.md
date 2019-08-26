@@ -5,8 +5,10 @@ For convenience it also provides CallBuilder::exec for a simple one-line blockin
 
 Except CallBuilder::exec no call will block, not even for DNS resolution as it is implemented internally to avoid blocking.
 
-For https to work mio_httpc requires you specify one of the TLS implementations using features: native, openssl or rtls (rustls).
+For https to work mio_httpc requires you specify one of the TLS implementations using features: native, openssl, native_vendor or rtls (rustls).
 Default build will fail on any https URI.
+
+native_vendor is rust-native-tls vendored into mio_httpc. The reason for vendoring is the pinning implementation that has not been as of yet merged into the published rust-native-tls crate.
 
 CallBuilder also has URL construction functions (host/path_segm/query/set_https/auth/https) which will take care of url-safe encoding.
 
@@ -31,7 +33,7 @@ of buffers that get reused on new calls.
 - [x] Timeouts
 - [x] Websockets
 - [x] gzip body decoding
-- [x] SSL pinning on subjectPublicKeyInfo (OpenSSL backend with any target_os and macos with native backend)
+- [x] SSL pinning on subjectPublicKeyInfo (OpenSSL and native_vendor backend)
 - [ ] HTTP2
 
 ## EXAMPLES
@@ -39,11 +41,13 @@ of buffers that get reused on new calls.
 Include mio_httpc in your project with:
 ```
 # System native TLS implementation
-mio_httpc = { version = "0.8", features = ["native"] }
+mio_httpc = { version = "0.9", features = ["native"] }
 # Openssl
-# mio_httpc = { version = "0.8", features = ["openssl"] }
+# mio_httpc = { version = "0.9", features = ["openssl"] }
 # Rustls
-# mio_httpc = { version = "0.8", features = ["rtls"] }
+# mio_httpc = { version = "0.9", features = ["rtls"] }
+# Vendored system native TLS implementation
+mio_httpc = { version = "0.9", features = ["native_vendor"] }
 ```
 
 **Sync call**
@@ -81,6 +85,9 @@ cargo run --example get --features "openssl" -- "https://edition.cnn.com"
 
 // or
 cargo run --example get --features "rtls" -- "https://edition.cnn.com"
+
+// or
+cargo run --example get --features "native_vendor" -- "https://edition.cnn.com"
 ```
 
 ```rust

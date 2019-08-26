@@ -13,11 +13,16 @@ pub struct CallBuilder {
 
 #[cfg(feature = "rustls")]
 type CONNECTOR = tls_api::rustls::TlsConnector;
-#[cfg(feature = "native")]
+#[cfg(any(feature = "native", feature = "native_vendor"))]
 type CONNECTOR = tls_api::native::TlsConnector;
 #[cfg(feature = "openssl")]
 type CONNECTOR = tls_api::openssl::TlsConnector;
-#[cfg(not(any(feature = "rustls", feature = "native", feature = "openssl")))]
+#[cfg(not(any(
+    feature = "rustls",
+    feature = "native",
+    feature = "openssl",
+    feature = "native_vendor"
+)))]
 type CONNECTOR = tls_api::dummy::TlsConnector;
 
 /// CallBuilder constructs a call. It is finished after calling: exec, simple_call, call or websocket.

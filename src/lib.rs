@@ -72,7 +72,6 @@
 #[macro_use]
 extern crate pest_derive;
 
-
 #[cfg(test)]
 #[macro_use]
 extern crate matches;
@@ -88,6 +87,9 @@ mod tls_api;
 #[allow(dead_code, unused_variables)]
 mod types;
 
+#[cfg(feature = "native_vendor")]
+pub use crate::tls_api::native_tls;
+
 pub use crate::api::*;
 #[cfg(feature = "native")]
 pub use native_tls::Error as TLSError;
@@ -99,10 +101,17 @@ pub use openssl::error::ErrorStack as OpenSSLErrorStack;
 pub use openssl::ssl::Error as TLSError;
 #[cfg(feature = "rustls")]
 pub use rustls::TLSError;
+#[cfg(feature = "native_vendor")]
+pub use tls_api::native_tls::Error as TLSError;
 
-#[cfg(not(any(feature = "rustls", feature = "native", feature = "openssl")))]
+#[cfg(not(any(
+    feature = "rustls",
+    feature = "native",
+    feature = "openssl",
+    feature = "native_vendor"
+)))]
 pub use crate::tls_api::{dummy::hash, HashType};
-#[cfg(feature = "native")]
+#[cfg(any(feature = "native", feature = "native_vendor"))]
 pub use crate::tls_api::{native::hash, HashType};
 #[cfg(feature = "openssl")]
 pub use crate::tls_api::{openssl::hash, HashType};
@@ -129,7 +138,12 @@ pub enum Error {
     NoHost,
     /// Invalid scheme
     InvalidScheme,
-    #[cfg(any(feature = "rustls", feature = "native", feature = "openssl"))]
+    #[cfg(any(
+        feature = "rustls",
+        feature = "native",
+        feature = "openssl",
+        feature = "native_vendor"
+    ))]
     Tls(TLSError),
     #[cfg(feature = "openssl")]
     OpenSSLErrorStack(OpenSSLErrorStack),
@@ -164,7 +178,12 @@ impl From<url::ParseError> for Error {
         Error::Url(e)
     }
 }
-#[cfg(any(feature = "rustls", feature = "native", feature = "openssl"))]
+#[cfg(any(
+    feature = "rustls",
+    feature = "native",
+    feature = "openssl",
+    feature = "native_vendor"
+))]
 impl From<TLSError> for Error {
     fn from(e: TLSError) -> Self {
         Error::Tls(e)
