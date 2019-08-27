@@ -6,10 +6,8 @@ use httparse::{self, Response as ParseResp};
 #[cfg(feature = "digest_auth")]
 use md5::Context as MD5Context;
 use mio::Ready;
-use std::io::ErrorKind as IoErrorKind;
-use std::io::{Read, Write};
-use std::str::from_utf8;
-use std::str::FromStr;
+use std::io::{ErrorKind as IoErrorKind, Read, Write};
+use std::str::{from_utf8, FromStr};
 use std::time::{Duration, Instant};
 
 #[derive(PartialEq, Debug)]
@@ -382,13 +380,24 @@ impl CallImpl {
     #[cfg(feature = "gzip")]
     fn maybe_gunzip(&self, inbuf: Vec<u8>, extbuf: Option<&mut Vec<u8>>) -> crate::Result<Vec<u8>> {
         if self.b.gzip {
+            // if let Some(extbuf) = extbuf {
+            //     decompress_to_vec(&inbuf, self.b.max_response, extbuf)?;
+            //     return Ok(Vec::new());
+            // } else {
+            //     let mut extbuf = Vec::new();
+            //     decompress_to_vec(&inbuf, self.b.max_response, &mut extbuf)?;
+            //     return Ok(extbuf);
+            // }
             let mut out = Vec::new();
             let mut d = libflate::gzip::Decoder::new(&inbuf[..])?;
             if let Some(ext) = extbuf {
-                d.read_to_end(ext)?;
+                // d.read_to_end(ext)?;
+                limited_read(&mut d, ext, self.b.max_response)?;
                 return Ok(out);
             } else {
-                d.read_to_end(&mut out)?;
+                // out.reserve(inbuf.len() * 2);
+                // d.read_to_end(&mut out)?;
+                limited_read(&mut d, &mut out, self.b.max_response)?;
                 return Ok(out);
             }
         }

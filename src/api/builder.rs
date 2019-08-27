@@ -262,6 +262,8 @@ impl CallBuilder {
     /// HTTP response body is stored in internal buffer if no external
     /// buffer is provided.
     ///
+    /// If gzip'ed response, this limits the size of decompressed data as well.
+    ///
     /// For WebSockets this will also be a received fragment size limit!
     pub fn max_response(&mut self, m: usize) -> &mut Self {
         self.cb.as_mut().unwrap().max_response(m);
@@ -287,7 +289,7 @@ impl CallBuilder {
         self
     }
 
-    /// Default 32K
+    /// Default 64K
     ///
     /// Max size of chunk in a chunked transfer.
     pub fn chunked_max_chunk(&mut self, v: usize) -> &mut Self {

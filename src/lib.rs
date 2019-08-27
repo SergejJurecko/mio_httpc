@@ -163,6 +163,8 @@ pub enum Error {
     /// Eror while parsing chunked stream
     AuthenticateParse,
     InvalidPin,
+    /// Error while decompressing gzipped response
+    Decompression,
     /// Chunk was larger than configured CallBuilder::chunked_max_chunk.
     ChunkOverlimit(usize),
 }

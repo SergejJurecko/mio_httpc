@@ -19,12 +19,108 @@ const USERINFO_ENCODE_SET: &AsciiSet = &PATH_SEGMENT_ENCODE_SET
     .add(b'|');
 
 use smallvec::SmallVec;
+use std::io::Read;
 #[cfg(feature = "url")]
 use std::ops::Deref;
 use std::str::FromStr;
 use std::time::Duration;
 #[cfg(feature = "url")]
 use url::Url;
+
+pub fn limited_read(r: &mut dyn Read, out: &mut Vec<u8>, mut max_size: usize) -> crate::Result<()> {
+    let mut wpos = out.len();
+    if out.capacity() > max_size {
+        max_size = out.capacity();
+    }
+    if out.len() == out.capacity() {
+        if out.capacity() == 0 {
+            out.resize(1024 * 8, 0);
+        } else {
+            out.resize(std::cmp::min(out.capacity() * 2, max_size), 0);
+        }
+    } else {
+        out.resize(out.capacity(), 0);
+    }
+    loop {
+        if let Ok(n) = r.read(&mut out[wpos..]) {
+            if n == 0 {
+                out.truncate(wpos);
+                return Ok(());
+            }
+            wpos += n;
+            if wpos == out.len() {
+                if wpos == max_size {
+                    return Err(crate::Error::ResponseTooBig);
+                }
+                out.resize(std::cmp::min(out.capacity() * 2, max_size), 0);
+            }
+        }
+    }
+}
+
+// #[cfg(feature = "gzip")]
+// use miniz_oxide::inflate::{
+//     core::{self as decompr, inflate_flags, DecompressorOxide},
+//     TINFLStatus,
+// };
+// #[cfg(feature = "gzip")]
+// use std::io::Cursor;
+
+// // taken from miniz_oxide and added max_size
+// #[cfg(feature = "gzip")]
+// pub fn decompress_to_vec(input: &[u8], max_size: usize, extbuf: &mut Vec<u8>) -> crate::Result<()> {
+//     decompress_to_vec_inner(input, 0, max_size, extbuf)
+// }
+// #[cfg(feature = "gzip")]
+// fn decompress_to_vec_inner(
+//     input: &[u8],
+//     flags: u32,
+//     max_size: usize,
+//     ret: &mut Vec<u8>,
+// ) -> crate::Result<()> {
+//     let flags = flags | inflate_flags::TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF;
+//     if input.len() > max_size {
+//         return Err(crate::Error::ResponseTooBig);
+//     }
+//     let mut out_pos = ret.len();
+//     ret.resize(input.len() * 2, 0);
+
+//     let mut decomp = Box::<DecompressorOxide>::default();
+
+//     let mut in_pos = 0;
+//     loop {
+//         let (status, in_consumed, out_consumed) = {
+//             // Wrap the whole output slice so we know we have enough of the
+//             // decompressed data for matches.
+//             let mut c = Cursor::new(ret.as_mut_slice());
+//             c.set_position(out_pos as u64);
+//             decompr::decompress(&mut decomp, &input[in_pos..], &mut c, flags)
+//         };
+//         in_pos += in_consumed;
+//         out_pos += out_consumed;
+
+//         match status {
+//             TINFLStatus::Done => {
+//                 ret.truncate(out_pos);
+//                 // return Ok(ret);
+//                 return Ok(());
+//             }
+
+//             TINFLStatus::HasMoreOutput => {
+//                 if ret.len() + out_pos > max_size {
+//                     return Err(crate::Error::ResponseTooBig);
+//                 }
+//                 // We need more space so resize the buffer.
+//                 ret.resize(ret.len() + out_pos, 0);
+//             }
+
+//             _e => {
+//                 println!("{:?} {}", _e, input.len());
+//                 return Err(crate::Error::Decompression);
+//             }
+//         }
+//     }
+// }
 
 #[derive(Debug)]
 pub(crate) enum RecvStateInt {
@@ -450,7 +546,7 @@ impl CallBuilderImpl {
     pub fn new() -> CallBuilderImpl {
         CallBuilderImpl {
             max_response: 1024 * 1024 * 10,
-            max_chunk: 32 * 1024,
+            max_chunk: 64 * 1024,
             chunked_parse: true,
             gzip: cfg!(feature = "gzip"),
             dns_timeout: 100,
