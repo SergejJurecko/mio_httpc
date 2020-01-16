@@ -573,7 +573,24 @@ impl CallImpl {
                             return Ok(SendStateInt::Receiving);
                         }
                         self.dir = Dir::SendingBody(pos + sz);
-                        return Ok(SendStateInt::SentBody(sz));
+
+                        match self.event_send_do::<C>(con, cp, pos + sz, b) {
+                            Ok(SendStateInt::SentBody(out)) => {
+                                return Ok(SendStateInt::SentBody(out));
+                            }
+                            Ok(SendStateInt::Wait) => {
+                                return Ok(SendStateInt::SentBody(sz));
+                            }
+                            Ok(SendStateInt::Receiving) => {
+                                return Ok(SendStateInt::Receiving);
+                            }
+                            Ok(r) => {
+                                return Ok(r);
+                            }
+                            Err(e) => {
+                                return Err(e);
+                            }
+                        }
                     } else {
                         return Ok(SendStateInt::SentBody(sz));
                     }
