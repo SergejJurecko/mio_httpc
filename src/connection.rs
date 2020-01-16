@@ -992,7 +992,7 @@ impl ConTable {
             }
         }
         let mut con = usize::max_value();
-        for conid in cons.into_iter() {
+        for conid in cons.iter() {
             if *conid != usize::max_value() {
                 if self.cons[*conid].1.as_ref().is_some() {
                     con = *conid;
