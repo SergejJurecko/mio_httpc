@@ -154,7 +154,7 @@ impl HttpcImpl {
 
     pub fn timeout_extend(&mut self, out: &mut Vec<CallRef>) {
         let now = Instant::now();
-        if now.duration_since(self.last_timeout).subsec_nanos() < 50_000_000 {
+        if now.saturating_duration_since(self.last_timeout).as_millis() < 50 {
             return;
         }
         self.last_timeout = now;

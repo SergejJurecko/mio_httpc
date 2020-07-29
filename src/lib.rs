@@ -20,6 +20,7 @@
 //!
 //! use mio_httpc::{CallBuilder,Httpc};
 //! use mio::{Poll,Events};
+//! # fn main() -> Result<(), mio_httpc::Error> {
 //!
 //! let poll = Poll::new().unwrap();
 //! let mut htp = Httpc::new(10,None);
@@ -45,7 +46,7 @@
 //!
 //!        if call.is_call(&cref) {
 //!            if call.perform(&mut htp, &poll)? {
-//!                let (resp,body) = call.finish()?;
+//!                let (resp,body) = call.finish().ok_or(mio_httpc::Error::Other("unexpected state"))?;
 //!                if let Ok(s) = String::from_utf8(body) {
 //!                    println!("Body: {}",s);
 //!                }
@@ -54,16 +55,22 @@
 //!        }
 //!    }
 //! }
+//!
+//! # Ok(())
+//! # }
 //! ```
 //!
 //! ```no_run
 //! extern crate mio_httpc;
 //! use mio_httpc::CallBuilder;
+//! # fn main() -> Result<(), mio_httpc::Error> {
 //!
 //! // One line blocking call.
 //!
 //! let (response_meta, body) = CallBuilder::get().timeout_ms(5000).url("http://www.example.com")?.exec()?;
 //!
+//! # Ok(())
+//! # }
 //! ```
 #![doc(html_root_url = "https://docs.rs/mio_httpc")]
 #![crate_name = "mio_httpc"]
