@@ -5,7 +5,7 @@ use mio::{Events, Poll};
 use mio_httpc::{CallBuilder, Httpc, RecvState, SendState};
 
 fn main() {
-    let poll = Poll::new().unwrap();
+    let mut poll = Poll::new().unwrap();
     let mut htp = Httpc::new(10, None);
     let mut args: Vec<String> = ::std::env::args().collect();
     if args.len() == 1 {
@@ -14,7 +14,7 @@ fn main() {
     let mut call = CallBuilder::get()
         .url(args[1].as_str())
         .expect("Invalid url")
-        .call(&mut htp, &poll)
+        .call(&mut htp, poll.registry())
         .expect("Call start failed");
 
     let mut sending = true;
@@ -28,10 +28,9 @@ fn main() {
             // println!("ev {}",ev.token().0);
             let cid = htp.event(&ev).expect("Event not from http request");
             assert!(call.is_ref(cid));
-
             if sending {
                 // None because we are not sending any body
-                match htp.call_send(&poll, &mut call, None) {
+                match htp.call_send(poll.registry(), &mut call, None) {
                     SendState::Done => {
                         panic!("Done while sending");
                     }
@@ -52,7 +51,7 @@ fn main() {
                 // This is so socket is always drained entirely. Otherwise poll will not return
                 // anything. Httpc uses edge triggered sockets.
                 loop {
-                    match htp.call_recv(&poll, &mut call, Some(&mut recv_vec)) {
+                    match htp.call_recv(poll.registry(), &mut call, Some(&mut recv_vec)) {
                         RecvState::Done => {
                             println!("Done");
                             done = true;

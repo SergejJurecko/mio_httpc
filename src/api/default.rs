@@ -1,11 +1,11 @@
-use http::{Method, Uri};
 use http::header::{HeaderName, HeaderValue};
-use types::CallBuilderImpl;
-use mio::{Event, Poll};
-use tls_api::TlsConnector;
-use {Call, CallRef, RecvState, Result, SendState, WebSocket};
 use http::HttpTryFrom;
+use http::{Method, Uri};
+use mio::{Event, Registry};
+use tls_api::TlsConnector;
+use types::CallBuilderImpl;
 use SimpleCall;
+use {Call, CallRef, RecvState, Result, SendState, WebSocket};
 
 /// Used to start a call and get a Call for it.
 #[derive(Debug, Default)]
@@ -76,19 +76,19 @@ impl CallBuilder {
 
     /// Consume and execute HTTP call. Returns SimpleCall interface.
     /// CallBuilder is invalid after this call and will panic if used again.
-    pub fn simple_call(&mut self, httpc: &mut Httpc, poll: &Poll) -> ::Result<SimpleCall> {
+    pub fn simple_call(&mut self, httpc: &mut Httpc, poll: &Registry) -> ::Result<SimpleCall> {
         Err(::Error::NoTls)
     }
 
     /// Consume and execute HTTP call. Return low level streaming call interface.
     /// CallBuilder is invalid after this call and will panic if used again.
-    pub fn call(&mut self, httpc: &mut Httpc, poll: &Poll) -> ::Result<Call> {
+    pub fn call(&mut self, httpc: &mut Httpc, poll: &Registry) -> ::Result<Call> {
         Err(::Error::NoTls)
     }
 
     /// Consume and start a WebSocket
     /// CallBuilder is invalid after this call and will panic if used again.
-    pub fn websocket(&mut self, httpc: &mut Httpc, poll: &Poll) -> ::Result<WebSocket> {
+    pub fn websocket(&mut self, httpc: &mut Httpc, poll: &Registry) -> ::Result<WebSocket> {
         Err(::Error::NoTls)
     }
 
@@ -180,7 +180,7 @@ impl Httpc {
     pub(crate) fn call<C: TlsConnector>(
         &mut self,
         b: CallBuilderImpl,
-        poll: &Poll,
+        poll: &Registry,
     ) -> Result<Call> {
         Err(::Error::NoTls)
     }
@@ -230,7 +230,7 @@ impl Httpc {
     ///
     /// buf slice is assumed to have taken previous SendState::SentBody(usize) into account
     /// and starts from part of buffer that has not been sent yet.
-    pub fn call_send(&mut self, poll: &Poll, id: &mut Call, buf: Option<&[u8]>) -> SendState {
+    pub fn call_send(&mut self, poll: &Registry, id: &mut Call, buf: Option<&[u8]>) -> SendState {
         ::SendState::Error(::Error::NoTls)
     }
 
@@ -243,7 +243,7 @@ impl Httpc {
     /// If body is only stored in internal buffer it will be limited to CallBuilder::max_response.
     pub fn call_recv(
         &mut self,
-        poll: &Poll,
+        poll: &Registry,
         id: &mut Call,
         buf: Option<&mut Vec<u8>>,
     ) -> RecvState {

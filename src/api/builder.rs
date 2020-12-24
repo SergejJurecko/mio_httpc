@@ -3,7 +3,7 @@ use crate::tls_api::TlsConnector;
 use crate::types::{CallBuilderImpl, Method};
 use crate::SimpleCall;
 use crate::{Call, CallRef, Result};
-use mio::{Event, Poll};
+use mio::{event::Event, Registry};
 
 /// Used to start a call and get a Call for it.
 #[derive(Debug, Default)]
@@ -194,12 +194,12 @@ impl CallBuilder {
 
     /// Execute directly. This will block until completion!
     pub fn exec(&mut self) -> crate::Result<(crate::Response, Vec<u8>)> {
-        let poll = ::mio::Poll::new()?;
+        let mut poll = mio::Poll::new()?;
         let mut htp = Httpc::new(0, None);
-        let mut events = ::mio::Events::with_capacity(2);
-        let mut call = self.simple_call(&mut htp, &poll)?;
+        let mut events = mio::Events::with_capacity(2);
+        let mut call = self.simple_call(&mut htp, poll.registry())?;
         loop {
-            poll.poll(&mut events, Some(::std::time::Duration::from_millis(100)))?;
+            poll.poll(&mut events, Some(std::time::Duration::from_millis(100)))?;
             for cref in htp.timeout().into_iter() {
                 if call.is_ref(cref) {
                     return Err(crate::Error::TimeOut);
@@ -210,7 +210,7 @@ impl CallBuilder {
                 let cref = htp.event(&ev);
 
                 if call.is_call(&cref) {
-                    if call.perform(&mut htp, &poll)? {
+                    if call.perform(&mut htp, poll.registry())? {
                         if let Some((resp, v)) = call.finish() {
                             return Ok((resp, v));
                         }
@@ -223,7 +223,7 @@ impl CallBuilder {
 
     /// Consume and execute HTTP call. Returns SimpleCall interface.
     /// CallBuilder is invalid after this call and will panic if used again.
-    pub fn simple_call(&mut self, httpc: &mut Httpc, poll: &Poll) -> Result<SimpleCall> {
+    pub fn simple_call(&mut self, httpc: &mut Httpc, poll: &Registry) -> Result<SimpleCall> {
         // self.finish()?;
         let cb = self.cb.take().unwrap();
         Ok(httpc.call::<CONNECTOR>(cb, poll)?.simple())
@@ -231,7 +231,7 @@ impl CallBuilder {
 
     /// Consume and execute HTTP call. Return low level streaming call interface.
     /// CallBuilder is invalid after this call and will panic if used again.
-    pub fn call(&mut self, httpc: &mut Httpc, poll: &Poll) -> Result<Call> {
+    pub fn call(&mut self, httpc: &mut Httpc, poll: &Registry) -> Result<Call> {
         // self.finish()?;
         let mut cb = self.cb.take().unwrap();
         // cant stream response with gzip on
@@ -241,7 +241,7 @@ impl CallBuilder {
 
     /// Consume and start a WebSocket
     /// CallBuilder is invalid after this call and will panic if used again.
-    pub fn websocket(&mut self, httpc: &mut Httpc, poll: &Poll) -> Result<crate::WebSocket> {
+    pub fn websocket(&mut self, httpc: &mut Httpc, poll: &Registry) -> Result<crate::WebSocket> {
         // self.finish()?;
         let mut cb = self.cb.take().unwrap();
         cb.websocket();
@@ -351,7 +351,7 @@ impl Httpc {
     pub(crate) fn call<C: TlsConnector>(
         &mut self,
         b: CallBuilderImpl,
-        poll: &Poll,
+        poll: &Registry,
     ) -> Result<Call> {
         self.h.call::<C>(b, poll)
     }
@@ -410,7 +410,7 @@ impl Httpc {
     /// and starts from part of buffer that has not been sent yet.
     pub fn call_send(
         &mut self,
-        poll: &Poll,
+        poll: &Registry,
         id: &mut Call,
         buf: Option<&[u8]>,
     ) -> crate::SendState {
@@ -426,7 +426,7 @@ impl Httpc {
     /// If body is only stored in internal buffer it will be limited to CallBuilder::max_response.
     pub fn call_recv(
         &mut self,
-        poll: &Poll,
+        poll: &Registry,
         id: &mut Call,
         buf: Option<&mut Vec<u8>>,
     ) -> crate::RecvState {

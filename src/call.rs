@@ -6,7 +6,7 @@ use data_encoding::{BASE64, HEXLOWER};
 use httparse::{self, Response as ParseResp};
 use libflate::gzip::Decoder;
 use md5;
-use mio::Ready;
+use mio::Interest;
 use std::io::ErrorKind as IoErrorKind;
 use std::io::{Read, Write};
 use std::str::from_utf8;
@@ -543,7 +543,7 @@ impl CallImpl {
                     } else if ie.kind() == IoErrorKind::NotConnected {
                         return Ok(SendStateInt::Wait);
                     } else if ie.kind() == IoErrorKind::WouldBlock {
-                        con.reg(cp.poll, Ready::writable())?;
+                        con.reg(cp.poll, Interest::WRITABLE)?;
                         return Ok(SendStateInt::Wait);
                     } else {
                         return Err(crate::Error::Closed);
@@ -627,7 +627,7 @@ impl CallImpl {
                         continue;
                     } else if ie.kind() == IoErrorKind::WouldBlock {
                         buf.truncate(orig_len);
-                        con.reg(cp.poll, Ready::readable())?;
+                        con.reg(cp.poll, Interest::READABLE)?;
                         if entire_sz == 0 {
                             return Ok(RecvStateInt::Wait);
                         }

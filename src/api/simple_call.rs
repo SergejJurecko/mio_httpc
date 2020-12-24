@@ -88,7 +88,7 @@ impl SimpleCall {
     }
 
     /// Perform operation. Returns true if request is finished.
-    pub fn perform(&mut self, htp: &mut Httpc, poll: &::mio::Poll) -> crate::Result<bool> {
+    pub fn perform(&mut self, htp: &mut Httpc, poll: &::mio::Registry) -> crate::Result<bool> {
         if self.is_done() {
             return Ok(true);
         }

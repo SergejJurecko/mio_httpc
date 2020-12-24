@@ -21,7 +21,7 @@ rtls = ["webpki-roots", "webpki", "ring","rustls"]
 
 
 [dependencies]
-mio = "0.6"
+mio = {version = "0.7", features = ["os-poll","net"]}
 httparse = "1"
 byteorder = "1"
 fxhash = "0.2"

@@ -1,10 +1,10 @@
 extern crate mio;
 extern crate mio_httpc;
 
-use mio::{Events, Poll};
+use mio::{Events, Poll, Registry};
 use mio_httpc::{CallBuilder, Httpc, HttpcCfg, SimpleCall};
 
-fn do_call(htp: &mut Httpc, poll: &Poll, mut call: SimpleCall) {
+fn do_call(htp: &mut Httpc, poll: &mut Poll, mut call: SimpleCall) {
     let to = ::std::time::Duration::from_millis(100);
     let mut events = Events::with_capacity(8);
     'outer: loop {
@@ -20,7 +20,7 @@ fn do_call(htp: &mut Httpc, poll: &Poll, mut call: SimpleCall) {
             let cref = htp.event(&ev);
 
             if call.is_call(&cref) {
-                if call.perform(htp, &poll).expect("Call failed") {
+                if call.perform(htp, poll.registry()).expect("Call failed") {
                     let (resp, body) = call.finish().expect("No response");
                     println!("done req = {}", resp.status);
                     for h in resp.headers() {
@@ -39,7 +39,7 @@ fn do_call(htp: &mut Httpc, poll: &Poll, mut call: SimpleCall) {
 }
 
 fn main() {
-    let poll = Poll::new().unwrap();
+    let mut poll = Poll::new().unwrap();
     let mut args: Vec<String> = ::std::env::args().collect();
 
     if args.len() == 1 {
@@ -53,7 +53,6 @@ fn main() {
     };
 
     let mut htp = Httpc::new(10, Some(cfg));
-    
 
     for i in 1..args.len() {
         println!("Get {}", args[i].as_str());
@@ -63,9 +62,9 @@ fn main() {
             .timeout_ms(10000)
             .digest_auth(true)
             // .insecure_do_not_verify_domain()
-            .simple_call(&mut htp, &poll)
+            .simple_call(&mut htp, poll.registry())
             .expect("Call start failed");
-        do_call(&mut htp, &poll, call);
+        do_call(&mut htp, &mut poll, call);
 
         println!("Open connections={}", htp.open_connections());
     }

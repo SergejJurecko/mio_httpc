@@ -1,13 +1,13 @@
 use crate::call::CallImpl;
 use crate::connection::{Con, ConTable};
-use mio::{Event, Poll, Token};
 use crate::resolve::DnsCache;
-use std::collections::VecDeque;
 use crate::tls_api::TlsConnector;
 use crate::types::*;
+use mio::{event::Event, Interest, Registry, Token};
+use std::collections::VecDeque;
 // use fnv::FnvHashMap as HashMap;
-use std::time::Instant;
 use crate::{Call, CallRef, RecvState, Response, Result, SendState};
+use std::time::Instant;
 
 pub(crate) struct HttpcImpl {
     cache: DnsCache,
@@ -67,7 +67,7 @@ impl HttpcImpl {
         self.free_bufs.push_front(buf);
     }
 
-    pub fn call<C: TlsConnector>(&mut self, b: CallBuilderImpl, poll: &Poll) -> Result<Call> {
+    pub fn call<C: TlsConnector>(&mut self, b: CallBuilderImpl, poll: &Registry) -> Result<Call> {
         let is_fixed = b.is_fixed();
         let con_id = if b.bytes.host.len() > 0 && !is_fixed {
             if let Some(con_id) = self.cons.try_keepalive(&b.bytes.host, poll) {
@@ -89,7 +89,7 @@ impl HttpcImpl {
         // cons.push_con will set actual mio token
         let con1 = Con::new::<C, Vec<u8>>(
             call_id,
-            Token::from(self.con_offset),
+            Token(self.con_offset),
             &b,
             &mut self.cache,
             // poll,
@@ -165,13 +165,31 @@ impl HttpcImpl {
         let mut id = ev.token().0;
         if id >= self.con_offset && id <= self.con_offset + (u16::max_value() as usize) {
             id -= self.con_offset;
-            if let Some(call_id) = self.cons.signalled_con(false, id, ev.readiness()) {
+            if let Some(call_id) = self
+                .cons
+                .signalled_con(false, id, Self::event_to_interest(ev))
+            {
                 return Some(CallRef::new(call_id));
             }
-        } else if let Some(call_id) = self.cons.signalled_con(true, id, ev.readiness()) {
+        } else if let Some(call_id) = self
+            .cons
+            .signalled_con(true, id, Self::event_to_interest(ev))
+        {
             return Some(CallRef::new(call_id));
         }
         None
+    }
+
+    fn event_to_interest(ev: &Event) -> Interest {
+        if ev.is_readable() {
+            if ev.is_writable() {
+                Interest::READABLE | Interest::WRITABLE
+            } else {
+                Interest::READABLE
+            }
+        } else {
+            Interest::WRITABLE
+        }
     }
 
     pub fn peek_body(&mut self, call: &Call, off: &mut usize) -> &[u8] {
@@ -189,7 +207,7 @@ impl HttpcImpl {
 
     pub fn call_send<C: TlsConnector>(
         &mut self,
-        poll: &Poll,
+        poll: &Registry,
         call: &mut Call,
         buf: Option<&[u8]>,
     ) -> SendState {
@@ -249,7 +267,7 @@ impl HttpcImpl {
 
     pub fn call_recv<C: TlsConnector>(
         &mut self,
-        poll: &Poll,
+        poll: &Registry,
         call: &mut Call,
         buf: Option<&mut Vec<u8>>,
     ) -> RecvState {

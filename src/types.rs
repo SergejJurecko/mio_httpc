@@ -1,7 +1,7 @@
 use crate::httpc::HttpcImpl;
 use crate::resolve::DnsCache;
 use crate::tls_api::TlsConnector;
-use mio::Poll;
+use mio::Registry;
 use percent_encoding::{percent_encode, utf8_percent_encode, AsciiSet, CONTROLS};
 use pest::Parser;
 use smallvec::SmallVec;
@@ -416,7 +416,7 @@ impl Default for TransferEncoding {
 }
 
 pub struct CallParam<'a> {
-    pub poll: &'a Poll,
+    pub poll: &'a Registry,
     pub dns: &'a mut DnsCache,
     pub cfg: &'a crate::HttpcCfg,
 }
@@ -471,7 +471,7 @@ impl CallBuilderImpl {
     pub fn call<C: TlsConnector>(
         self,
         httpc: &mut HttpcImpl,
-        poll: &Poll,
+        poll: &Registry,
     ) -> crate::Result<crate::Call> {
         httpc.call::<C>(self, poll)
     }

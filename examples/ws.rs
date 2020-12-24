@@ -6,7 +6,7 @@ use mio_httpc::{CallBuilder, Httpc, WSPacket};
 // ws://demos.kaazing.com/echo
 
 fn main() {
-    let poll = Poll::new().unwrap();
+    let mut poll = Poll::new().unwrap();
     let mut htp = Httpc::new(10, None);
     let mut args: Vec<String> = ::std::env::args().collect();
 
@@ -17,7 +17,7 @@ fn main() {
     let mut ws = CallBuilder::get()
         .url(args[1].as_str())
         .expect("Invalid url")
-        .websocket(&mut htp, &poll)
+        .websocket(&mut htp, poll.registry())
         .expect("Call start failed");
 
     let to = ::std::time::Duration::from_millis(800);
@@ -44,7 +44,10 @@ fn main() {
             if ws.is_call(&cref) {
                 if ws.is_active() {
                     loop {
-                        match ws.recv_packet(&mut htp, &poll).expect("Failed recv") {
+                        match ws
+                            .recv_packet(&mut htp, poll.registry())
+                            .expect("Failed recv")
+                        {
                             WSPacket::Pong(_) => {
                                 println!("Got pong!");
                             }
@@ -77,8 +80,9 @@ fn main() {
         }
         // Any ping/pong/close/send_text/send_bin has just been buffered.
         // perform and recv_packet actually send over socket.
-        ws.perform(&mut htp, &poll).expect("Call failed");
+        ws.perform(&mut htp, poll.registry()).expect("Call failed");
     }
-    ws.perform(&mut htp, &poll).expect("can not perform");
+    ws.perform(&mut htp, poll.registry())
+        .expect("can not perform");
     ws.finish(&mut htp);
 }

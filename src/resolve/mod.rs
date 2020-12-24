@@ -109,7 +109,7 @@ impl Dns {
 
     fn get_socket_v4() -> io::Result<UdpSocket> {
         let s4a = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), 0));
-        let s4 = UdpSocket::bind(&s4a)?;
+        let s4 = UdpSocket::bind(s4a)?;
         Ok(s4)
     }
 
@@ -120,7 +120,7 @@ impl Dns {
             0,
             0,
         ));
-        let s6 = UdpSocket::bind(&s6a)?;
+        let s6 = UdpSocket::bind(s6a)?;
         Ok(s6)
     }
 
@@ -177,7 +177,7 @@ impl Dns {
 
                 builder.finish()
             };
-            let res = sock.send_to(&buf_send[..nsend], &sockaddr);
+            let res = sock.send_to(&buf_send[..nsend], sockaddr);
             if let Ok(_) = res {
                 return Ok(true);
             } else if let Err(e) = res {

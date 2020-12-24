@@ -1,6 +1,6 @@
 use crate::{Call, CallRef, Httpc, RecvState, ResponseBody, SendState};
 use byteorder::{BigEndian, ByteOrder};
-use mio::Poll;
+use mio::Registry;
 
 /// WebSocket packet received from server.
 pub enum WSPacket<'a> {
@@ -204,7 +204,7 @@ impl WebSocket {
         // self.do_send_buf(htp, poll)
     }
 
-    fn do_send_buf(&mut self, htp: &mut Httpc, poll: &Poll) -> crate::Result<()> {
+    fn do_send_buf(&mut self, htp: &mut Httpc, poll: &Registry) -> crate::Result<()> {
         let mut send_buf = ::std::mem::replace(&mut self.send_buf, Vec::new());
         let send_buf_pos = self.send_buf_pos;
         let sent = self.call_send(htp, poll, &send_buf[send_buf_pos..])?;
@@ -281,7 +281,7 @@ impl WebSocket {
     pub fn send_bin_inplace(
         &mut self,
         htp: &mut Httpc,
-        poll: &Poll,
+        poll: &Registry,
         fin: bool,
         pkt: &mut [u8],
     ) -> crate::Result<usize> {
@@ -356,7 +356,7 @@ impl WebSocket {
         Ok(consumed)
     }
 
-    fn call_send(&mut self, htp: &mut Httpc, poll: &Poll, pkt: &[u8]) -> crate::Result<usize> {
+    fn call_send(&mut self, htp: &mut Httpc, poll: &Registry, pkt: &[u8]) -> crate::Result<usize> {
         match htp.call_send(poll, &mut self.id, Some(pkt)) {
             SendState::Wait => Ok(0),
             SendState::Receiving => {
@@ -444,7 +444,7 @@ impl WebSocket {
     pub fn recv_packet<'a>(
         &mut self,
         htp: &'a mut Httpc,
-        poll: &Poll,
+        poll: &Registry,
     ) -> crate::Result<WSPacket<'a>> {
         if self.state.is_init() {
             self.perform(htp, poll)?;
@@ -545,7 +545,12 @@ impl WebSocket {
         None
     }
 
-    fn switch(&mut self, htp: &mut Httpc, poll: &Poll, resp: crate::Response) -> crate::Result<()> {
+    fn switch(
+        &mut self,
+        htp: &mut Httpc,
+        poll: &Registry,
+        resp: crate::Response,
+    ) -> crate::Result<()> {
         if resp.status != 101 {
             self.stop(htp);
             return Err(crate::Error::WebSocketFail(resp));
@@ -562,7 +567,7 @@ impl WebSocket {
     }
 
     /// Perform socket operation.
-    pub fn perform(&mut self, htp: &mut Httpc, poll: &Poll) -> crate::Result<()> {
+    pub fn perform(&mut self, htp: &mut Httpc, poll: &Registry) -> crate::Result<()> {
         if self.state == State::Active {
             if self.send_buf.len() > 0 {
                 self.do_send_buf(htp, poll)?;

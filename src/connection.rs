@@ -8,9 +8,8 @@ use crate::types::{CallBuilderImpl, CallParam, IpList, RecvStateInt, SendStateIn
 use crate::{CallRef, HttpcCfg, Result};
 use data_encoding::BASE64;
 use fxhash::FxHashMap as HashMap;
-use mio::event::Evented;
 use mio::net::TcpStream;
-use mio::{Poll, PollOpt, Ready, Token};
+use mio::{event::Source, Interest, Poll, Registry, Token};
 use slab::Slab;
 use smallvec::SmallVec;
 use std::io::ErrorKind as IoErrorKind;
@@ -20,7 +19,7 @@ use std::str::FromStr;
 use std::time::{Duration, Instant};
 
 fn connect(addr: SocketAddr) -> Result<TcpStream> {
-    let tcp = TcpStream::connect(&addr)?;
+    let tcp = TcpStream::connect(addr)?;
     tcp.set_nodelay(true)?;
     return Ok(tcp);
 }
@@ -28,7 +27,7 @@ fn connect(addr: SocketAddr) -> Result<TcpStream> {
 pub(crate) struct Con {
     call_id: u64,
     token: Token,
-    reg_for: Ready,
+    reg_for: Interest,
     sock: Option<TcpStream>,
     tls: Option<TlsStream<TcpStream>>,
     mid_tls: Option<MidHandshakeTlsStream<TcpStream>>,
@@ -62,7 +61,7 @@ impl Con {
         insecure: bool,
         cfg: &HttpcCfg,
     ) -> Result<Con> {
-        let rdy = Ready::writable() | Ready::readable();
+        let rdy = Interest::WRITABLE | Interest::READABLE;
         let port = cb.port;
         if cb.bytes.host.len() == 0 {
             return Err(crate::Error::NoHost);
@@ -146,18 +145,18 @@ impl Con {
         &self.host
     }
 
-    fn update_token(&mut self, poll: &Poll, v: usize, fixed: bool) -> Result<()> {
+    fn update_token(&mut self, poll: &Registry, v: usize, fixed: bool) -> Result<()> {
         if !fixed {
             self.token = Token(self.token.0 + v);
         } else {
             self.token = Token(v);
         }
-        self.register(poll, self.token, self.reg_for, PollOpt::edge())?;
+        self.register(poll, self.token, self.reg_for)?;
         Ok(())
     }
 
     fn create_dns(&mut self, cfg: &HttpcCfg) -> Result<()> {
-        self.reg_for = Ready::readable() | Ready::writable();
+        self.reg_for = Interest::READABLE | Interest::WRITABLE;
         self.dns = Some(Dns::new(
             self.host.as_ref(),
             self.dns_timeout,
@@ -191,9 +190,9 @@ impl Con {
         Ok(Some(()))
     }
 
-    pub fn reuse(&mut self, poll: &Poll) -> Result<()> {
-        self.reg_for = Ready::writable() | Ready::readable();
-        self.reregister(poll, self.token, self.reg_for, PollOpt::edge())?;
+    pub fn reuse(&mut self, poll: &Registry) -> Result<()> {
+        self.reg_for = Interest::WRITABLE | Interest::READABLE;
+        self.reregister(poll, self.token, self.reg_for)?;
         Ok(())
     }
 
@@ -234,20 +233,20 @@ impl Con {
         self.to_close = b;
     }
 
-    pub fn reg(&mut self, poll: &Poll, rdy: Ready) -> ::std::io::Result<()> {
-        if self.reg_for.contains(rdy) {
+    pub fn reg(&mut self, poll: &Registry, rdy: Interest) -> ::std::io::Result<()> {
+        if self.reg_for.clone().remove(rdy).is_none() {
             return Ok(());
         }
-        if self.reg_for.is_empty() {
-            self.reg_for = rdy;
-            self.register(poll, self.token, self.reg_for, PollOpt::edge())
-        } else {
-            if !self.reg_for.contains(rdy) {
-                self.reg_for |= rdy;
-                return self.reregister(poll, self.token, self.reg_for, PollOpt::edge());
-            }
-            Ok(())
+        // if self.reg_for.is_empty() {
+        //     self.reg_for = rdy;
+        //     self.register(poll, self.token, self.reg_for)
+        // } else {
+        if (self.reg_for.clone() | rdy) != self.reg_for {
+            self.reg_for |= rdy;
+            return self.reregister(poll, self.token, self.reg_for);
         }
+        Ok(())
+        // }
     }
 
     #[inline]
@@ -270,17 +269,17 @@ impl Con {
         self.signalled_wr = v;
     }
 
-    fn connect_resolved(&mut self, poll: &Poll) -> Result<()> {
+    fn connect_resolved(&mut self, poll: &Registry) -> Result<()> {
         let ip = self.resolved.pop().unwrap();
         self.sock = Some(connect(SocketAddr::new(ip, self.con_port))?);
-        self.reg_for = Ready::writable() | Ready::readable();
+        self.reg_for = Interest::WRITABLE | Interest::READABLE;
         self.set_signalled_rd(false);
         self.set_signalled_wr(false);
-        self.register(poll, self.token, self.reg_for, PollOpt::edge())?;
+        self.register(poll, self.token, self.reg_for)?;
         Ok(())
     }
 
-    fn signalled_dns(&mut self, poll: &Poll, cache: &mut DnsCache) -> Result<()> {
+    fn signalled_dns(&mut self, poll: &Registry, cache: &mut DnsCache) -> Result<()> {
         if self.dns.is_none() {
             return Ok(());
         }
@@ -328,13 +327,13 @@ impl Con {
                 let _ = connector.danger_accept_invalid_certs().unwrap();
             }
             let connector = connector.build()?;
-            self.reg(cp.poll, Ready::readable())?;
+            self.reg(cp.poll, Interest::READABLE)?;
             let tcp = self.sock.take().unwrap();
             let r = connector.connect(self.host.as_ref(), tcp);
             self.handshake_resp::<C>(r, cp.cfg)?;
         }
         if self.mid_tls.is_some() {
-            self.reg(cp.poll, Ready::readable())?;
+            self.reg(cp.poll, Interest::READABLE)?;
             let tls = self.mid_tls.take().unwrap();
             let r = tls.handshake();
             self.handshake_resp::<C>(r, cp.cfg)?;
@@ -458,50 +457,48 @@ impl Write for Con {
     }
 }
 
-impl Evented for Con {
+impl Source for Con {
     fn register(
-        &self,
-        poll: &Poll,
+        &mut self,
+        poll: &Registry,
         token: Token,
-        interest: Ready,
-        opts: PollOpt,
+        interest: Interest,
     ) -> ::std::io::Result<()> {
-        if let Some(ref tcp) = self.sock {
-            poll.register(tcp, token, interest, opts)
-        } else if let Some(ref tls) = self.tls {
-            poll.register(tls.get_ref(), token, interest, opts)
-        } else if let Some(ref dns) = self.dns {
-            poll.register(&dns.sock, token, interest, opts)
+        if let Some(ref mut tcp) = self.sock {
+            poll.register(tcp, token, interest)
+        } else if let Some(ref mut tls) = self.tls {
+            poll.register(tls.get_mut(), token, interest)
+        } else if let Some(ref mut dns) = self.dns {
+            poll.register(&mut dns.sock, token, interest)
         } else {
             Ok(())
         }
     }
 
     fn reregister(
-        &self,
-        poll: &Poll,
+        &mut self,
+        poll: &Registry,
         token: Token,
-        interest: Ready,
-        opts: PollOpt,
+        interest: Interest,
     ) -> ::std::io::Result<()> {
-        if let Some(ref tcp) = self.sock {
-            poll.reregister(tcp, token, interest, opts)
-        } else if let Some(ref tls) = self.tls {
-            poll.reregister(tls.get_ref(), token, interest, opts)
-        } else if let Some(ref dns) = self.dns {
-            poll.reregister(&dns.sock, token, interest, opts)
+        if let Some(ref mut tcp) = self.sock {
+            poll.reregister(tcp, token, interest)
+        } else if let Some(ref mut tls) = self.tls {
+            poll.reregister(tls.get_mut(), token, interest)
+        } else if let Some(ref mut dns) = self.dns {
+            poll.reregister(&mut dns.sock, token, interest)
         } else {
             Ok(())
         }
     }
 
-    fn deregister(&self, poll: &Poll) -> ::std::io::Result<()> {
-        if let Some(ref tcp) = self.sock {
+    fn deregister(&mut self, poll: &Registry) -> ::std::io::Result<()> {
+        if let Some(ref mut tcp) = self.sock {
             poll.deregister(tcp)
-        } else if let Some(ref tls) = self.tls {
-            poll.deregister(tls.get_ref())
-        } else if let Some(ref dns) = self.dns {
-            poll.deregister(&dns.sock)
+        } else if let Some(ref mut tls) = self.tls {
+            poll.deregister(tls.get_mut())
+        } else if let Some(ref mut dns) = self.dns {
+            poll.deregister(&mut dns.sock)
         } else {
             Ok(())
         }
@@ -606,7 +603,7 @@ impl ConTable {
         self.cons.len()
     }
 
-    pub fn signalled_con(&mut self, fixed: bool, id: usize, rdy: Ready) -> Option<u64> {
+    pub fn signalled_con(&mut self, fixed: bool, id: usize, rdy: Interest) -> Option<u64> {
         let mut rm_id = None;
         let res = if let Some(t) = if fixed {
             self.cons_fixed.get_mut(&id)
@@ -840,7 +837,7 @@ impl ConTable {
     fn create_other(
         &mut self,
         orig: usize,
-        poll: &Poll,
+        poll: &Registry,
         cfg: &HttpcCfg,
         con_offset: usize,
     ) -> usize {
@@ -883,7 +880,7 @@ impl ConTable {
         &mut self,
         mut c: Con,
         call: CallImpl,
-        poll: &Poll,
+        poll: &Registry,
         cfg: &HttpcCfg,
         con_offset: usize,
     ) -> Result<Option<(usize, usize)>> {
@@ -911,7 +908,7 @@ impl ConTable {
         &mut self,
         mut c: Con,
         call: CallImpl,
-        poll: &Poll,
+        poll: &Registry,
         cfg: &HttpcCfg,
     ) -> Result<(usize, usize)> {
         let id = call.settings().evids[0];
@@ -956,7 +953,7 @@ impl ConTable {
         Ok(())
     }
 
-    pub fn try_keepalive(&mut self, host: &[u8], poll: &Poll) -> Option<u16> {
+    pub fn try_keepalive(&mut self, host: &[u8], poll: &Registry) -> Option<u16> {
         let con_to_close;
         let nh = ConHost::new(host);
         if let Some(con) = self.keepalive.remove(&nh) {
