@@ -375,7 +375,7 @@ impl Httpc {
     }
     /// Prematurely finish call.
     pub fn call_close(&mut self, id: Call) {
-        self.h.call_close(id);
+        self.h.call_close(id, false);
     }
     /// Call periodically to check for call timeouts and DNS retries.
     /// Returns list of calls that have timed out.

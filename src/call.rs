@@ -155,10 +155,8 @@ impl CallImpl {
         }
         // Vec will actually reserve on an exponential scale.
         buf.reserve(4096 * 2);
-        unsafe {
-            let cap = buf.capacity();
-            buf.set_len(cap);
-        }
+        let cap = buf.capacity();
+        buf.resize(cap, 0);
         Ok(orig_len)
     }
 

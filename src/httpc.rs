@@ -119,15 +119,15 @@ impl HttpcImpl {
         }
     }
 
-    pub fn call_close(&mut self, id: Call) {
+    pub fn call_close(&mut self, id: Call, keepalive: bool) {
         if id.is_empty() {
             return;
         }
-        self.call_close_int(id);
+        self.call_close_int(id, keepalive);
     }
 
-    fn call_close_int(&mut self, id: Call) -> CallBuilderImpl {
-        let (builder, b1, b2) = self.cons.close_call(id);
+    fn call_close_int(&mut self, id: Call, keepalive: bool) -> CallBuilderImpl {
+        let (builder, b1, b2) = self.cons.close_call(id, keepalive);
         if b1.capacity() > 0 || b1.len() > 0 {
             self.reuse(b1);
         }
@@ -224,7 +224,7 @@ impl HttpcImpl {
         };
         match cret {
             Ok(SendStateInt::Done) => {
-                self.call_close(call.clone());
+                self.call_close(call.clone(), true);
                 call.invalidate();
                 return SendState::Done;
             }
@@ -244,7 +244,7 @@ impl HttpcImpl {
                 return SendState::WaitReqBody;
             }
             Ok(SendStateInt::Retry(_err)) => {
-                let mut b = self.call_close_int(call.clone());
+                let mut b = self.call_close_int(call.clone(), true);
                 call.invalidate();
                 b.reused = true;
                 match self.call::<C>(b, poll) {
@@ -258,7 +258,7 @@ impl HttpcImpl {
                 }
             }
             Err(e) => {
-                self.call_close(call.clone());
+                self.call_close(call.clone(), false);
                 call.invalidate();
                 return SendState::Error(e);
             }
@@ -284,22 +284,22 @@ impl HttpcImpl {
         };
         match cret {
             Ok(RecvStateInt::Response(r, crate::ResponseBody::Sized(0))) => {
-                self.call_close(call.clone());
+                self.call_close(call.clone(), true);
                 call.invalidate();
                 return RecvState::Response(r, crate::ResponseBody::Sized(0));
             }
             Ok(RecvStateInt::Done) => {
-                self.call_close(call.clone());
+                self.call_close(call.clone(), true);
                 call.invalidate();
                 return RecvState::Done;
             }
             Ok(RecvStateInt::DoneWithBody(body)) => {
-                self.call_close(call.clone());
+                self.call_close(call.clone(), true);
                 call.invalidate();
                 return RecvState::DoneWithBody(body);
             }
             Ok(RecvStateInt::Retry(_err)) => {
-                let mut b = self.call_close_int(call.clone());
+                let mut b = self.call_close_int(call.clone(), true);
                 call.invalidate();
                 b.reused = true;
                 match self.call::<C>(b, poll) {
@@ -313,7 +313,7 @@ impl HttpcImpl {
                 }
             }
             Ok(RecvStateInt::Redirect(r)) => {
-                let mut b = self.call_close_int(call.clone());
+                let mut b = self.call_close_int(call.clone(), true);
                 call.invalidate();
                 if b.max_redirects > 0 {
                     b.max_redirects -= 1;
@@ -333,7 +333,7 @@ impl HttpcImpl {
                 return RecvState::Response(r, crate::ResponseBody::Sized(0));
             }
             Ok(RecvStateInt::DigestAuth(r, d)) => {
-                let mut b = self.call_close_int(call.clone());
+                let mut b = self.call_close_int(call.clone(), true);
                 call.invalidate();
                 if b.auth.hdr.len() > 0 {
                     // If an attempt was already made once, return response.
@@ -351,7 +351,7 @@ impl HttpcImpl {
                 }
             }
             Ok(RecvStateInt::BasicAuth) => {
-                let mut b = self.call_close_int(call.clone());
+                let mut b = self.call_close_int(call.clone(), true);
                 call.invalidate();
                 b.digest_auth(false);
                 match self.call::<C>(b, poll) {
@@ -380,7 +380,7 @@ impl HttpcImpl {
             //     return RecvState::Error(e);
             // }
             Err(e) => {
-                self.call_close(call.clone());
+                self.call_close(call.clone(), false);
                 call.invalidate();
                 return RecvState::Error(e);
             }

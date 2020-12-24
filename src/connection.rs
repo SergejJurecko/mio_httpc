@@ -9,7 +9,7 @@ use crate::{CallRef, HttpcCfg, Result};
 use data_encoding::BASE64;
 use fxhash::FxHashMap as HashMap;
 use mio::net::TcpStream;
-use mio::{event::Source, Interest, Poll, Registry, Token};
+use mio::{event::Source, Interest, Registry, Token};
 use slab::Slab;
 use smallvec::SmallVec;
 use std::io::ErrorKind as IoErrorKind;
@@ -285,7 +285,7 @@ impl Con {
         }
         let mut dns = self.dns.take().unwrap();
         dns.try_send(self.host.as_ref());
-        let mut buf: [u8; 512] = unsafe { ::std::mem::uninitialized() };
+        let mut buf = [0u8; 512];
         if let Ok(sz) = dns.sock.recv(&mut buf[..]) {
             resolve::dns_parse(&buf[..sz], &mut self.resolved);
             if self.resolved.len() > 0 {
@@ -973,6 +973,7 @@ impl ConTable {
     pub fn close_call(
         &mut self,
         call: crate::Call,
+        keepalive: bool,
     ) -> (crate::types::CallBuilderImpl, Vec<u8>, Vec<u8>) {
         let cons = call.cons();
         if call.fixed {
@@ -1002,7 +1003,7 @@ impl ConTable {
         // println!("close_call {} toclose={} {}",con, self.cons[con].0.to_close, self.cons.len());
         {
             let host = &builder.bytes.host;
-            if !self.cons[con].0.to_close {
+            if !self.cons[con].0.to_close && keepalive {
                 if self.cons[con].1.is_none() {
                     self.cons[con].0.set_idle(true);
                 } else {

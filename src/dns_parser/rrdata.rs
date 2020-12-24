@@ -51,23 +51,23 @@ impl<'a> RRData<'a> {
                     BigEndian::read_u16(&rdata[14..16]),
                 )))
             }
-            Type::CNAME => Ok(RRData::CNAME(r#try!(Name::scan(rdata, original)))),
-            Type::NS => Ok(RRData::NS(r#try!(Name::scan(rdata, original)))),
+            Type::CNAME => Ok(RRData::CNAME(Name::scan(rdata, original)?)),
+            Type::NS => Ok(RRData::NS(Name::scan(rdata, original)?)),
             Type::MX => {
                 if rdata.len() < 3 {
                     return Err(Error::WrongRdataLength);
                 }
                 Ok(RRData::MX {
                     preference: BigEndian::read_u16(&rdata[..2]),
-                    exchange: r#try!(Name::scan(&rdata[2..], original)),
+                    exchange: Name::scan(&rdata[2..], original)?,
                 })
             }
-            Type::PTR => Ok(RRData::PTR(r#try!(Name::scan(rdata, original)))),
+            Type::PTR => Ok(RRData::PTR(Name::scan(rdata, original)?)),
             Type::SOA => {
                 let mut pos = 0;
-                let primary_name_server = r#try!(Name::scan(rdata, original));
+                let primary_name_server = Name::scan(rdata, original)?;
                 pos += primary_name_server.byte_len();
-                let mailbox = r#try!(Name::scan(&rdata[pos..], original));
+                let mailbox = Name::scan(&rdata[pos..], original)?;
                 pos += mailbox.byte_len();
                 if rdata[pos..].len() < 20 {
                     return Err(Error::WrongRdataLength);
@@ -90,7 +90,7 @@ impl<'a> RRData<'a> {
                     priority: BigEndian::read_u16(&rdata[..2]),
                     weight: BigEndian::read_u16(&rdata[2..4]),
                     port: BigEndian::read_u16(&rdata[4..6]),
-                    target: r#try!(Name::scan(&rdata[6..], original)),
+                    target: Name::scan(&rdata[6..], original)?,
                 })
             }
             Type::TXT => {

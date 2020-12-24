@@ -32,23 +32,23 @@ impl<'a> Packet<'a> {
         }
         let mut answers = Vec::with_capacity(header.answers as usize);
         for _ in 0..header.answers {
-            answers.push(r#try!(parse_record(data, &mut offset)));
+            answers.push(parse_record(data, &mut offset)?);
         }
         let mut nameservers = Vec::with_capacity(header.nameservers as usize);
         for _ in 0..header.nameservers {
-            nameservers.push(r#try!(parse_record(data, &mut offset)));
+            nameservers.push(parse_record(data, &mut offset)?);
         }
         let mut additional = Vec::with_capacity(header.additional as usize);
         let mut opt = None;
         for _ in 0..header.additional {
             if offset + 3 <= data.len() && data[offset..offset + 3] == OPT_RR_START {
                 if opt.is_none() {
-                    opt = Some(r#try!(parse_opt_record(data, &mut offset)));
+                    opt = Some(parse_opt_record(data, &mut offset)?);
                 } else {
                     return Err(Error::AdditionalOPT);
                 }
             } else {
-                additional.push(r#try!(parse_record(data, &mut offset)));
+                additional.push(parse_record(data, &mut offset)?);
             }
         }
         Ok(Packet {
@@ -66,7 +66,7 @@ fn parse_qclass_code(value: u16) -> Result<(bool, QueryClass), Error> {
     let prefer_unicast = value & 0x8000 == 0x8000;
     let qclass_code = value & 0x7FFF;
 
-    let qclass = r#try!(QueryClass::parse(qclass_code));
+    let qclass = QueryClass::parse(qclass_code)?;
     Ok((prefer_unicast, qclass))
 }
 
@@ -74,24 +74,22 @@ fn parse_class_code(value: u16) -> Result<(bool, Class), Error> {
     let is_unique = value & 0x8000 == 0x8000;
     let class_code = value & 0x7FFF;
 
-    let cls = r#try!(Class::parse(class_code));
+    let cls = Class::parse(class_code)?;
     Ok((is_unique, cls))
 }
 
 // Generic function to parse answer, nameservers, and additional records.
 fn parse_record<'a>(data: &'a [u8], offset: &mut usize) -> Result<ResourceRecord<'a>, Error> {
-    let name = r#try!(Name::scan(&data[*offset..], data));
+    let name = Name::scan(&data[*offset..], data)?;
     *offset += name.byte_len();
     if *offset + 10 > data.len() {
         return Err(Error::UnexpectedEOF);
     }
-    let typ = r#try!(Type::parse(BigEndian::read_u16(
-        &data[*offset..*offset + 2]
-    )));
+    let typ = Type::parse(BigEndian::read_u16(&data[*offset..*offset + 2]))?;
     *offset += 2;
 
     let class_code = BigEndian::read_u16(&data[*offset..*offset + 2]);
-    let (multicast_unique, cls) = r#try!(parse_class_code(class_code));
+    let (multicast_unique, cls) = parse_class_code(class_code)?;
     *offset += 2;
 
     let mut ttl = BigEndian::read_u32(&data[*offset..*offset + 4]);
@@ -104,7 +102,7 @@ fn parse_record<'a>(data: &'a [u8], offset: &mut usize) -> Result<ResourceRecord
     if *offset + rdlen > data.len() {
         return Err(Error::UnexpectedEOF);
     }
-    let data = r#try!(RRData::parse(typ, &data[*offset..*offset + rdlen], data));
+    let data = RRData::parse(typ, &data[*offset..*offset + rdlen], data)?;
     *offset += rdlen;
     Ok(ResourceRecord {
         name: name,
@@ -121,9 +119,7 @@ fn parse_opt_record<'a>(data: &'a [u8], offset: &mut usize) -> Result<OptRecord<
         return Err(Error::UnexpectedEOF);
     }
     *offset += 1;
-    let typ = r#try!(Type::parse(BigEndian::read_u16(
-        &data[*offset..*offset + 2]
-    )));
+    let typ = Type::parse(BigEndian::read_u16(&data[*offset..*offset + 2]))?;
     if typ != Type::OPT {
         return Err(Error::InvalidType { code: typ as u16 });
     }
@@ -141,7 +137,7 @@ fn parse_opt_record<'a>(data: &'a [u8], offset: &mut usize) -> Result<OptRecord<
     if *offset + rdlen > data.len() {
         return Err(Error::UnexpectedEOF);
     }
-    let data = r#try!(RRData::parse(typ, &data[*offset..*offset + rdlen], data));
+    let data = RRData::parse(typ, &data[*offset..*offset + rdlen], data)?;
     *offset += rdlen;
 
     Ok(OptRecord {
