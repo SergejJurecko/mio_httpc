@@ -1,7 +1,7 @@
 extern crate mio;
 extern crate mio_httpc;
 
-use mio::{Events, Poll, Registry};
+use mio::{Events, Poll};
 use mio_httpc::{CallBuilder, Httpc, HttpcCfg, SimpleCall};
 
 fn do_call(htp: &mut Httpc, poll: &mut Poll, mut call: SimpleCall) {

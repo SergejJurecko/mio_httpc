@@ -1,6 +1,6 @@
 [package]
 name = "mio_httpc"
-version = "0.9.0"
+version = "0.9.1"
 authors = ["sergej jurecko <sergej.jurecko@gmail.com>"]
 description = "mio_httpc is a fully async and sync http client running on top of mio only. "
 repository = "https://github.com/SergejJurecko/mio_httpc"
@@ -25,31 +25,31 @@ mio = {version = "0.7", features = ["os-poll","net"]}
 httparse = "1"
 byteorder = "1"
 fxhash = "0.2"
-rand = "0.7"
+rand = "0.8"
 itoa = "0.4"
-data-encoding = "2.1"
+data-encoding = "2"
 failure = "0.1"
-smallvec = "0.6"
+smallvec = "1"
 pest = "2"
 pest_derive = "2"
-libflate = "0.1"
+libflate = "1"
 slab = "0.4"
 percent-encoding = "2"
 url = "2"
 md5 = "0.6"
-crypto-hash = {version = "0.3.3", optional = true}
-ring = {version = "^0.16.5", optional = true}
+crypto-hash = {version = "0.3.4", optional = true}
+ring = {version = "0.16", optional = true}
 webpki = {version = "0.21", optional = true}
-webpki-roots = {version = "0.17", optional = true}
-rustls = { version = "0.16.0", features = ["dangerous_configuration"], optional = true}
+webpki-roots = {version = "0.21", optional = true}
+rustls = { version = "0.19.0", features = ["dangerous_configuration"], optional = true}
 openssl      = { version = "0.10.*", optional = true, features = ["v102", "v110"] }
 # native-tls   = { version = "0.2", optional = true}
 native-tls   = { version = "0.2", optional = true}
 
 
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
-core-foundation = "0.6"
-core-foundation-sys = "0.6"
+core-foundation = "0.9"
+core-foundation-sys = "0.8"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 ipconfig = "0.1"

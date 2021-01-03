@@ -22,12 +22,12 @@
 //! use mio::{Poll,Events};
 //! # fn main() -> Result<(), mio_httpc::Error> {
 //!
-//! let poll = Poll::new().unwrap();
+//! let mut poll = Poll::new().unwrap();
 //! let mut htp = Httpc::new(10,None);
 //! let mut call = CallBuilder::get()
 //!     .url("https://www.reddit.com").expect("Invalid url")
 //!     .timeout_ms(500)
-//!     .simple_call(&mut htp, &poll)?;
+//!     .simple_call(&mut htp, poll.registry())?;
 //!
 //! let to = ::std::time::Duration::from_millis(100);
 //! let mut events = Events::with_capacity(8);
@@ -45,7 +45,7 @@
 //!        let cref = htp.event(&ev);
 //!
 //!        if call.is_call(&cref) {
-//!            if call.perform(&mut htp, &poll)? {
+//!            if call.perform(&mut htp, poll.registry())? {
 //!                let (resp,body) = call.finish().ok_or(mio_httpc::Error::Other("unexpected state"))?;
 //!                if let Ok(s) = String::from_utf8(body) {
 //!                    println!("Body: {}",s);
@@ -75,11 +75,10 @@
 #![doc(html_root_url = "https://docs.rs/mio_httpc")]
 #![crate_name = "mio_httpc"]
 
-extern crate httparse;
-extern crate rand;
 extern crate byteorder;
 extern crate data_encoding;
 extern crate fxhash;
+extern crate httparse;
 extern crate itoa;
 extern crate libflate;
 extern crate md5;
@@ -89,6 +88,7 @@ extern crate native_tls;
 #[cfg(feature = "openssl")]
 extern crate openssl;
 extern crate pest;
+extern crate rand;
 #[macro_use]
 extern crate pest_derive;
 #[cfg(any(target_os = "ios", target_os = "macos"))]
