@@ -92,13 +92,13 @@ use mio_httpc::{CallBuilder,Httpc};
 use mio::{Poll,Events};
 
 fn main() {
-    let poll = Poll::new().unwrap();
+    let mut poll = Poll::new().unwrap();
     let mut htp = Httpc::new(10,None);
     let args: Vec<String> = ::std::env::args().collect();
     let mut call = CallBuilder::get()
         .url(args[1].as_str()).expect("Can not parse url")
         .timeout_ms(500)
-        .call_simple(&mut htp, &poll)
+        .call_simple(&mut htp, poll.registry())
         .expect("Call start failed");
 
     let to = ::std::time::Duration::from_millis(100);
@@ -117,7 +117,7 @@ fn main() {
             let cref = htp.event(&ev);
 
             if call.is_call(&cref) {
-                if call.perform(&mut htp, &poll).expect("Call failed") {
+                if call.perform(&mut htp, poll.registry()).expect("Call failed") {
                     let (resp,body) = call.finish().expect("No response");
                     if let Ok(s) = String::from_utf8(v) {
                         println!("Body: {}",s);
@@ -145,13 +145,13 @@ use mio::{Poll,Events};
 // ws://demos.kaazing.com/echo
 
 fn main() {
-    let poll = Poll::new().unwrap();
+    let mut poll = Poll::new().unwrap();
     let mut htp = Httpc::new(10,None);
     let args: Vec<String> = ::std::env::args().collect();
 
     let mut ws = CallBuilder::get()
         .url(args[1].as_str()).expect("Can not parse url")
-        .websocket(&mut htp, &poll)
+        .websocket(&mut htp, poll.registry())
         .expect("Call start failed");
 
     let to = ::std::time::Duration::from_millis(800);
@@ -177,7 +177,7 @@ fn main() {
             if ws.is_call(&cref) {
                 if ws.is_active() {
                     loop {
-                        match ws.recv_packet(&mut htp, &poll).expect("Failed recv") {
+                        match ws.recv_packet(&mut htp, poll.registry()).expect("Failed recv") {
                             WSPacket::Pong(_) => {
                                 println!("Got pong!");
                             }
@@ -210,9 +210,9 @@ fn main() {
         }
         // Any ping/pong/close/send_text/send_bin has just been buffered.
         // perform and recv_packet actually send over socket.
-        ws.perform(&mut htp, &poll).expect("Call failed");
+        ws.perform(&mut htp, poll.registry()).expect("Call failed");
     }
-    ws.perform(&mut htp, &poll);
+    ws.perform(&mut htp, poll.registry());
     ws.finish(&mut htp);
 }
 ```
