@@ -20,7 +20,8 @@ use std::time::{Duration, Instant};
 
 fn connect(addr: SocketAddr) -> Result<TcpStream> {
     let tcp = TcpStream::connect(addr)?;
-    tcp.set_nodelay(true)?;
+    // not a fatal error
+    let _ = tcp.set_nodelay(true);
     return Ok(tcp);
 }
 
@@ -191,6 +192,29 @@ impl Con {
     }
 
     pub fn reuse(&mut self, poll: &Registry) -> Result<()> {
+        let mut buf = [0u8; 512];
+        // drain connection
+        loop {
+            match self.read(&mut buf) {
+                Ok(n) => {
+                    if n == 0 {
+                        break;
+                    }
+                }
+                Err(e) => {
+                    if e.kind() == std::io::ErrorKind::Interrupted {
+                        continue;
+                    }
+                    if e.kind() == std::io::ErrorKind::WouldBlock {
+                        break;
+                    }
+                    return Err(crate::Error::Io(std::io::Error::new(
+                        std::io::ErrorKind::ConnectionAborted,
+                        "",
+                    )));
+                }
+            }
+        }
         self.reg_for = Interest::WRITABLE | Interest::READABLE;
         self.reregister(poll, self.token, self.reg_for)?;
         Ok(())
@@ -234,19 +258,12 @@ impl Con {
     }
 
     pub fn reg(&mut self, poll: &Registry, rdy: Interest) -> ::std::io::Result<()> {
-        if self.reg_for.clone().remove(rdy).is_none() {
+        if self.reg_for.eq(&rdy) {
             return Ok(());
         }
-        // if self.reg_for.is_empty() {
-        //     self.reg_for = rdy;
-        //     self.register(poll, self.token, self.reg_for)
-        // } else {
-        if (self.reg_for.clone() | rdy) != self.reg_for {
-            self.reg_for |= rdy;
-            return self.reregister(poll, self.token, self.reg_for);
-        }
-        Ok(())
-        // }
+
+        self.reg_for = rdy;
+        self.reregister(poll, self.token, self.reg_for)
     }
 
     #[inline]
