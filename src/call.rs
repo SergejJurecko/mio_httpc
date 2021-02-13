@@ -421,7 +421,7 @@ impl CallImpl {
                 } else {
                     self.buf_body.len()
                 };
-                if self.hdr_sz == 0 || b.is_none() || self.b.chunked_parse || self.b.gzip {
+                if self.hdr_sz == 0 || b.is_none() || self.b.need_chunk_parse || self.b.gzip {
                     let (mut buf, is_hdr) = if self.hdr_sz == 0 {
                         (::std::mem::replace(&mut self.buf_hdr, Vec::new()), true)
                     } else {
@@ -448,7 +448,7 @@ impl CallImpl {
                         // if we are done and here, this is really only for chunked parse
                         Ok(RecvStateInt::Done)
                     };
-                    if self.b.chunked_parse && self.hdr_sz > 0 {
+                    if self.b.need_chunk_parse && self.hdr_sz > 0 {
                         match ret {
                             Err(_) => {}
                             // When RecvStateInt::DigestAuth is returned, Dir::Done is always self.dir.
@@ -685,7 +685,7 @@ impl CallImpl {
                             } else if resp.status >= 300 && resp.status < 400 {
                                 return Ok(RecvStateInt::Redirect(resp));
                             }
-                            if self.b.chunked_parse {
+                            if self.b.need_chunk_parse {
                                 return Ok(RecvStateInt::Response(
                                     resp,
                                     crate::ResponseBody::Streamed,
@@ -714,7 +714,7 @@ impl CallImpl {
                         self.dir = Dir::Done;
                     } else {
                         let mut chunked_done = false;
-                        if self.b.chunked_parse {
+                        if self.b.need_chunk_parse {
                             if self.chunked.check_done(self.b.max_chunk, &buf)? {
                                 chunked_done = true;
                                 self.dir = Dir::Done;
@@ -730,7 +730,7 @@ impl CallImpl {
             Err(e) => {
                 if let Dir::Receiving(_pos, false) = self.dir {
                     // If we do not know content-length and it is not chunked, return normal done response.
-                    if self.body_sz == usize::max_value() && !self.b.chunked_parse {
+                    if self.body_sz == usize::max_value() && !self.b.need_chunk_parse {
                         self.dir = Dir::Done;
                         con.set_to_close(true);
                         return Ok(RecvStateInt::Done);
@@ -821,9 +821,12 @@ impl CallImpl {
                         }
                     }
                 }
-                if !chunked_parse {
-                    self.b.chunked_parse = false;
+                if chunked_parse && self.b.chunked_parse {
+                    self.b.need_chunk_parse = true;
+                } else {
+                    self.b.need_chunk_parse = false;
                 }
+
                 if !gzip {
                     self.b.gzip = false;
                 }
@@ -844,7 +847,7 @@ impl CallImpl {
                 } else {
                     self.dir = Dir::Receiving(buflen - self.hdr_sz, false);
                 }
-                if self.b.chunked_parse {
+                if self.b.need_chunk_parse {
                     if self
                         .chunked
                         .check_done(self.b.max_chunk, &buf[self.hdr_sz..])?

@@ -426,6 +426,7 @@ pub struct CallParam<'a> {
 pub(crate) struct CallBuilderImpl {
     // pub req: Request<Vec<u8>>,
     pub chunked_parse: bool,
+    pub need_chunk_parse: bool,
     pub dur: Duration,
     pub max_response: usize,
     pub max_chunk: usize,
@@ -458,6 +459,7 @@ impl CallBuilderImpl {
             max_response: 1024 * 1024 * 10,
             max_chunk: 32 * 1024,
             chunked_parse: true,
+            need_chunk_parse: false,
             gzip: true,
             dns_timeout: 100,
             max_redirects: 4,
