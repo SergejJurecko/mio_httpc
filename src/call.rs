@@ -748,7 +748,7 @@ impl CallImpl {
         resp: &mut crate::Response,
         auth_info: &mut Option<AuthenticateInfo>,
     ) -> crate::Result<()> {
-        let mut headers = [httparse::EMPTY_HEADER; 32];
+        let mut headers = [httparse::EMPTY_HEADER; 64];
         let mut presp = ParseResp::new(&mut headers);
         let buflen = buf.len();
         match presp.parse(buf) {
