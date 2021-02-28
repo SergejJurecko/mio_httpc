@@ -78,7 +78,7 @@ impl Con {
             sock: None,
             dns: None,
             insecure,
-            host: ConHost::new(&cb.bytes.host),
+            host: ConHost::new(&cb.bytes.host, port),
             idle_since: Instant::now(),
             resolved: SmallVec::default(),
             is_tls: cb.tls,
@@ -438,6 +438,7 @@ impl Read for Con {
 
 impl Write for Con {
     fn write(&mut self, buf: &[u8]) -> ::std::io::Result<usize> {
+        // println!("write {}", std::str::from_utf8(buf).unwrap_or_default());
         self.readable_is_error = false;
         let res = if let Some(ref mut tcp) = self.sock {
             tcp.write(buf)
@@ -524,13 +525,14 @@ impl Source for Con {
 #[derive(Clone)]
 struct ConHost {
     host: SmallVec<[u8; 32]>,
+    port: u16,
 }
 
 impl ConHost {
-    pub fn new(uri: &[u8]) -> ConHost {
+    pub fn new(uri: &[u8], port: u16) -> ConHost {
         let mut sv = SmallVec::new();
         sv.extend_from_slice(uri);
-        ConHost { host: sv }
+        ConHost { host: sv, port }
     }
 }
 use std::hash::{Hash, Hasher};
@@ -540,6 +542,7 @@ impl Hash for ConHost {
         H: Hasher,
     {
         state.write(&self.host);
+        state.write_u16(self.port);
     }
 }
 impl ::std::convert::AsRef<str> for ConHost {
@@ -970,9 +973,9 @@ impl ConTable {
         Ok(())
     }
 
-    pub fn try_keepalive(&mut self, host: &[u8], poll: &Registry) -> Option<u16> {
+    pub fn try_keepalive(&mut self, host: &[u8], port: u16, poll: &Registry) -> Option<u16> {
         let con_to_close;
-        let nh = ConHost::new(host);
+        let nh = ConHost::new(host, port);
         if let Some(con) = self.keepalive.remove(&nh) {
             self.cons[con as usize].0.set_idle(false);
             if self.cons[con as usize].0.reuse(poll).is_ok() {
@@ -1026,7 +1029,7 @@ impl ConTable {
                 } else {
                     self.cons[con].0.first_use_done();
                 }
-                let nh = ConHost::new(host);
+                let nh = ConHost::new(host, builder.port);
                 if self.keepalive.contains_key(&nh) {
                     let mut doclose = false;
                     {

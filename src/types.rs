@@ -261,12 +261,6 @@ impl ChunkIndex {
             }
             if hdr != off {
                 let sl = src.len();
-                // unsafe {
-                //     let src_p: *const u8 = src.as_ptr().offset(off as isize);
-                //     let dst_p: *mut u8 = src.as_mut_ptr().offset(hdr as isize);
-                //     ::std::ptr::copy(src_p, dst_p, sl - off);
-                // }
-                // src.truncate(hdr + sl - off);
                 {
                     src.drain(hdr..off);
                 }
@@ -282,8 +276,11 @@ impl ChunkIndex {
         let mut num: usize = 0;
         let mut chunk_ext = false;
         for i in 0..blen {
-            if i + 1 <= blen && b[i] == b'\r' && b[i + 1] == b'\n' {
+            if i + 1 < blen && b[i] == b'\r' && b[i + 1] == b'\n' {
                 return Ok(Some((num, i + 2)));
+            }
+            if i + 1 == blen {
+                return Ok(None);
             }
             if chunk_ext {
                 continue;
@@ -457,7 +454,7 @@ impl CallBuilderImpl {
     pub fn new() -> CallBuilderImpl {
         CallBuilderImpl {
             max_response: 1024 * 1024 * 10,
-            max_chunk: 32 * 1024,
+            max_chunk: 128 * 1024,
             chunked_parse: true,
             need_chunk_parse: false,
             gzip: true,
