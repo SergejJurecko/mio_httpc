@@ -15,6 +15,9 @@ of buffers that get reused on new calls.
 
 [Documentation](https://docs.rs/mio_httpc/)
 
+## Chunk transfer decoding
+
+mio_httpc uses a default max chunk size of 128k. If you are writing a web scraper or something similar, this might trip you up since some websites have pretty large chunks. I will not increase (or remove) this default size limitation because I do not like unchecked memory growth from a third party. You can easily increase this with CallBuilder::chunked_max_chunk call.
 
 ## TODO/FEATURE LIST
 
