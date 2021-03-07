@@ -308,7 +308,8 @@ impl CallBuilder {
 
     /// Default true.
     ///
-    /// Tell server to gzip response and unzip transparently before returning body to client.
+    /// Sets Accept-Encoding: gzip, deflate
+    /// Will decompress response.
     pub fn gzip(&mut self, b: bool) -> &mut Self {
         self.cb.as_mut().unwrap().gzip(b);
         self

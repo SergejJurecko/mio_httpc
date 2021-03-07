@@ -3,8 +3,8 @@ use crate::tls_api::TlsConnector;
 use crate::types::*;
 use byteorder::{ByteOrder, LittleEndian};
 use data_encoding::{BASE64, HEXLOWER};
+use flate2::read::{DeflateDecoder, GzDecoder};
 use httparse::{self, Response as ParseResp};
-use libflate::gzip::Decoder;
 use md5;
 use mio::Interest;
 use std::io::ErrorKind as IoErrorKind;
@@ -22,6 +22,11 @@ enum Dir {
     Done,
 }
 
+enum ComprAlgo {
+    Deflate,
+    Gzip,
+}
+
 pub(crate) struct CallImpl {
     call_id: u64,
     b: CallBuilderImpl,
@@ -33,6 +38,7 @@ pub(crate) struct CallImpl {
     dir: Dir,
     chunked: ChunkIndex,
     send_encoding: TransferEncoding,
+    recv_cont_encoding: Option<ComprAlgo>,
 }
 
 impl CallImpl {
@@ -55,6 +61,7 @@ impl CallImpl {
             body_sz: 0,
             chunked: ChunkIndex::new(),
             send_encoding: TransferEncoding::Identity,
+            recv_cont_encoding: None,
         }
     }
 
@@ -207,8 +214,7 @@ impl CallImpl {
             buf.extend(b"\r\n");
         }
         if self.b.gzip && !self.b.ws {
-            // buf.extend(ACCEPT_ENCODING.as_str().as_bytes());
-            buf.extend(b"Accept-Encoding: gzip\r\n");
+            buf.extend(b"Accept-Encoding: gzip, deflate\r\n");
         }
         if self.b.ws {
             buf.extend(b"Connection: upgrade\r\n");
@@ -366,7 +372,6 @@ impl CallImpl {
                 let hdr_sz = self.hdr_sz;
 
                 let ret = self.event_send_do::<C>(con, cp, 0, &buf[pos..hdr_sz]);
-                // println!("TrySent ({:?}): {}", ret, String::from_utf8(buf.clone())?);
                 self.buf_hdr = buf;
                 if let Dir::SendingBody(_) = self.dir {
                     self.buf_hdr.truncate(0);
@@ -389,18 +394,35 @@ impl CallImpl {
     }
 
     fn maybe_gunzip(&self, inbuf: Vec<u8>, extbuf: Option<&mut Vec<u8>>) -> crate::Result<Vec<u8>> {
-        if self.b.gzip {
-            let mut out = Vec::new();
-            let mut d = Decoder::new(&inbuf[..])?;
-            if let Some(ext) = extbuf {
-                d.read_to_end(ext)?;
-                return Ok(out);
-            } else {
-                d.read_to_end(&mut out)?;
-                return Ok(out);
+        match self.recv_cont_encoding {
+            Some(ComprAlgo::Gzip) => {
+                let mut out = Vec::new();
+                let mut d = GzDecoder::new(&inbuf[..]);
+                if let Some(ext) = extbuf {
+                    d.read_to_end(ext)
+                        .map_err(|_| crate::Error::DecompressionFailure)?;
+                    Ok(out)
+                } else {
+                    d.read_to_end(&mut out)
+                        .map_err(|_| crate::Error::DecompressionFailure)?;
+                    Ok(out)
+                }
             }
+            Some(ComprAlgo::Deflate) => {
+                let mut out = Vec::new();
+                let mut d = DeflateDecoder::new(&inbuf[..]);
+                if let Some(ext) = extbuf {
+                    d.read_to_end(ext)
+                        .map_err(|_| crate::Error::DecompressionFailure)?;
+                    Ok(out)
+                } else {
+                    d.read_to_end(&mut out)
+                        .map_err(|_| crate::Error::DecompressionFailure)?;
+                    Ok(out)
+                }
+            }
+            _ => Ok(inbuf),
         }
-        Ok(inbuf)
     }
 
     pub(crate) fn event_recv<C: TlsConnector>(
@@ -427,6 +449,7 @@ impl CallImpl {
                     } else {
                         (::std::mem::replace(&mut self.buf_body, Vec::new()), false)
                     };
+
                     // Have we already received everything?
                     // Move body data to beginning of buffer
                     // and return with body.
@@ -649,19 +672,17 @@ impl CallImpl {
         }
         match io_ret {
             Ok(0) => {
+                if orig_len > 0 {
+                    self.dir = Dir::Done;
+                    self.body_sz = orig_len;
+                    return Ok(RecvStateInt::ReceivedBody(0));
+                }
                 return Err(crate::Error::Closed);
             }
             Ok(bytes_rec) => {
-                // if let Ok(sx) = String::from_utf8(Vec::from(&buf[..entire_sz])) {
-                //     println!("Got: {}", sx);
-                // }
-                // println!("Got: {:?}", &buf[..bytes_rec]);
                 if self.hdr_sz == 0 {
                     let mut auth_info = None;
                     let mut resp = crate::Response::new();
-                    // if let Ok(sx) = String::from_utf8(Vec::from(&buf[0..60])) {
-                    //     println!("Got: {}", sx);
-                    // }
                     match self.read_hdr(con, buf, &mut resp, &mut auth_info) {
                         Ok(()) => {
                             if self.hdr_sz == 0 {
@@ -751,6 +772,7 @@ impl CallImpl {
         let mut headers = [httparse::EMPTY_HEADER; 64];
         let mut presp = ParseResp::new(&mut headers);
         let buflen = buf.len();
+        self.recv_cont_encoding = None;
         match presp.parse(buf) {
             Ok(httparse::Status::Complete(hdr_sz)) => {
                 self.hdr_sz = hdr_sz;
@@ -785,6 +807,10 @@ impl CallImpl {
                     } else if h.name.eq_ignore_ascii_case("content-encoding") {
                         if let Ok(val) = from_utf8(h.value) {
                             if val.eq_ignore_ascii_case("gzip") {
+                                self.recv_cont_encoding = Some(ComprAlgo::Gzip);
+                                gzip = true;
+                            } else if val.eq_ignore_ascii_case("deflate") {
+                                self.recv_cont_encoding = Some(ComprAlgo::Deflate);
                                 gzip = true;
                             }
                         }

@@ -75,20 +75,6 @@
 #![doc(html_root_url = "https://docs.rs/mio_httpc")]
 #![crate_name = "mio_httpc"]
 
-extern crate byteorder;
-extern crate data_encoding;
-extern crate fxhash;
-extern crate httparse;
-extern crate itoa;
-extern crate libflate;
-extern crate md5;
-extern crate mio;
-#[cfg(feature = "native")]
-extern crate native_tls;
-#[cfg(feature = "openssl")]
-extern crate openssl;
-extern crate pest;
-extern crate rand;
 #[macro_use]
 extern crate pest_derive;
 #[cfg(any(target_os = "ios", target_os = "macos"))]
@@ -96,12 +82,6 @@ extern crate pest_derive;
 extern crate core_foundation;
 #[cfg(any(target_os = "ios", target_os = "macos"))]
 extern crate core_foundation_sys;
-extern crate percent_encoding;
-#[cfg(feature = "rustls")]
-extern crate rustls;
-extern crate slab;
-extern crate smallvec;
-extern crate url;
 
 #[macro_use]
 extern crate failure;
@@ -172,6 +152,8 @@ pub enum Error {
     /// Response over max_response limit
     #[fail(display = "Response over max_response limit")]
     ResponseTooBig,
+    #[fail(display = "Redirects back to itself, missing or invalid location header")]
+    InvalidRedirect,
     /// Connection closed.
     #[fail(display = "Connection closed")]
     Closed,
@@ -217,6 +199,9 @@ pub enum Error {
 
     #[fail(display = "Pins were configured for domain and they did not match")]
     InvalidPin,
+
+    #[fail(display = "Can not decompress gzip/deflate response")]
+    DecompressionFailure,
 
     /// Chunk was larger than configured CallBuilder::chunked_max_chunk.
     #[fail(

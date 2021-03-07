@@ -5,9 +5,9 @@ use mio::Registry;
 use percent_encoding::{percent_encode, utf8_percent_encode, AsciiSet, CONTROLS};
 use pest::Parser;
 use smallvec::SmallVec;
-use std::ops::Deref;
 use std::str::FromStr;
 use std::time::Duration;
+use std::{hash::Hasher, ops::Deref};
 use url::Url;
 
 const FRAGMENT: &AsciiSet = &CONTROLS.add(b' ').add(b'"').add(b'<').add(b'>').add(b'`');
@@ -296,7 +296,7 @@ impl ChunkIndex {
                 } else {
                     return Err(crate::Error::ChunkedParse);
                 }
-            } else if b[i] == b';' {
+            } else if b[i] == b';' || b[i] == b' ' {
                 chunk_ext = true;
             } else {
                 return Err(crate::Error::ChunkedParse);
@@ -329,6 +329,16 @@ pub(crate) struct CallBytes {
     pub path: PathBuf,
     pub query: QueryBuf,
     pub headers: HeaderBuf,
+}
+impl CallBytes {
+    fn url_hash(&self, port: u16) -> u64 {
+        let mut h = fxhash::FxHasher64::default();
+        h.write(&self.host);
+        h.write(&self.path);
+        h.write(&self.query);
+        h.write_u16(port);
+        h.finish()
+    }
 }
 
 // impl CallBytes {
@@ -473,6 +483,9 @@ impl CallBuilderImpl {
         poll: &Registry,
     ) -> crate::Result<crate::Call> {
         httpc.call::<C>(self, poll)
+    }
+    pub fn url_hash(&self) -> u64 {
+        self.bytes.url_hash(self.port)
     }
     pub fn websocket(&mut self) -> &mut Self {
         self.ws = true;

@@ -438,7 +438,6 @@ impl Read for Con {
 
 impl Write for Con {
     fn write(&mut self, buf: &[u8]) -> ::std::io::Result<usize> {
-        // println!("write {}", std::str::from_utf8(buf).unwrap_or_default());
         self.readable_is_error = false;
         let res = if let Some(ref mut tcp) = self.sock {
             tcp.write(buf)

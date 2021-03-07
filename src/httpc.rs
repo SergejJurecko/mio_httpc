@@ -319,8 +319,8 @@ impl HttpcImpl {
                     b.max_redirects -= 1;
                 }
                 b.reused = true;
-                if Self::fix_location(&r, &mut b) {
-                    match self.call::<C>(b, poll) {
+                match Self::fix_location(&r, &mut b) {
+                    Ok(_) => match self.call::<C>(b, poll) {
                         Ok(nc) => {
                             *call = nc;
                             return RecvState::Sending;
@@ -328,9 +328,13 @@ impl HttpcImpl {
                         Err(e) => {
                             return RecvState::Error(e);
                         }
+                    },
+                    Err(e) => {
+                        self.call_close(call.clone(), false);
+                        call.invalidate();
+                        return RecvState::Error(e);
                     }
                 }
-                return RecvState::Response(r, crate::ResponseBody::Sized(0));
             }
             Ok(RecvStateInt::DigestAuth(r, d)) => {
                 let mut b = self.call_close_int(call.clone(), true);
@@ -387,14 +391,13 @@ impl HttpcImpl {
         }
     }
 
-    fn fix_location(r: &Response, b: &mut CallBuilderImpl) -> bool {
+    fn fix_location(r: &Response, b: &mut CallBuilderImpl) -> Result<()> {
         let hdrs = r.headers();
+        let url_hash = b.url_hash();
         for h in hdrs {
             if h.is("location") {
                 if h.value.starts_with("https://") || h.value.starts_with("http://") {
-                    if let Ok(_) = b.url(h.value) {
-                        return true;
-                    }
+                    if let Ok(_) = b.url(h.value) {}
                 } else if h.value.len() > 0 {
                     b.bytes.path.truncate(0);
                     b.bytes.query.truncate(0);
@@ -411,11 +414,14 @@ impl HttpcImpl {
                             b.bytes.query.extend_from_slice(query.as_bytes());
                         }
                     }
-                    return true;
                 }
                 break;
             }
         }
-        false
+        if url_hash != b.url_hash() {
+            return Ok(());
+        } else {
+            return Err(crate::Error::InvalidRedirect);
+        }
     }
 }
