@@ -281,7 +281,7 @@ impl CallBuilder {
         self
     }
 
-    /// Default 32K
+    /// Default 128K
     ///
     /// Max size of chunk in a chunked transfer.
     pub fn chunked_max_chunk(&mut self, v: usize) -> &mut Self {

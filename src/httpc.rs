@@ -1,13 +1,13 @@
 use crate::call::CallImpl;
 use crate::connection::{Con, ConTable};
-use mio::{Event, Poll, Token};
 use crate::resolve::DnsCache;
-use std::collections::VecDeque;
 use crate::tls_api::TlsConnector;
 use crate::types::*;
+use mio::{Event, Poll, Token};
+use std::collections::VecDeque;
 // use fnv::FnvHashMap as HashMap;
-use std::time::Instant;
 use crate::{Call, CallRef, RecvState, Response, Result, SendState};
+use std::time::Instant;
 
 pub(crate) struct HttpcImpl {
     cache: DnsCache,
@@ -70,7 +70,7 @@ impl HttpcImpl {
     pub fn call<C: TlsConnector>(&mut self, b: CallBuilderImpl, poll: &Poll) -> Result<Call> {
         let is_fixed = b.is_fixed();
         let con_id = if b.bytes.host.len() > 0 && !is_fixed {
-            if let Some(con_id) = self.cons.try_keepalive(&b.bytes.host, poll) {
+            if let Some(con_id) = self.cons.try_keepalive(&b.bytes.host, b.port, poll) {
                 Some(con_id)
             } else {
                 None

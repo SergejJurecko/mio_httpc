@@ -15,25 +15,26 @@ pub use self::cache::DnsCache;
 mod apple;
 
 pub(crate) fn dns_parse(buf: &[u8], vec: &mut SmallVec<[IpAddr; 2]>) {
-    let packet = Packet::parse(buf).unwrap();
-    let mut have_ip4 = false;
-    let mut have_ip6 = false;
-    for a in packet.answers {
-        match a.data {
-            RRData::A(ip) if !have_ip4 => {
-                have_ip4 = true;
-                // println!("GOT IP {}", ip);
-                vec.push(IpAddr::V4(ip));
+    if let Ok(packet) = Packet::parse(buf) {
+        let mut have_ip4 = false;
+        let mut have_ip6 = false;
+        for a in packet.answers {
+            match a.data {
+                RRData::A(ip) if !have_ip4 => {
+                    have_ip4 = true;
+                    // println!("GOT IP {}", ip);
+                    vec.push(IpAddr::V4(ip));
+                }
+                RRData::AAAA(ip) if !have_ip6 => {
+                    // println!("GOT IP6 {}", ip);
+                    have_ip6 = true;
+                    vec.push(IpAddr::V6(ip));
+                }
+                _ => {}
             }
-            RRData::AAAA(ip) if !have_ip6 => {
-                // println!("GOT IP6 {}", ip);
-                have_ip6 = true;
-                vec.push(IpAddr::V6(ip));
+            if vec.len() == vec.capacity() {
+                return;
             }
-            _ => {}
-        }
-        if vec.len() == vec.capacity() {
-            return;
         }
     }
 }
