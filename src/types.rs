@@ -296,7 +296,7 @@ impl ChunkIndex {
                 } else {
                     return Err(crate::Error::ChunkedParse);
                 }
-            } else if b[i] == b';' {
+            } else if b[i] == b';' || b[i] == b' ' {
                 chunk_ext = true;
             } else {
                 return Err(crate::Error::ChunkedParse);
