@@ -696,11 +696,13 @@ impl CallBuilderImpl {
         }
         s.extend_from_slice(&self.bytes.host);
         if !(self.tls && self.port == 443 || !self.tls && self.port == 80) {
-            let mut ar = [0u8; 15];
-            if let Ok(sz) = ::itoa::write(&mut ar[..], self.port) {
-                s.push(b':');
-                s.extend_from_slice(&ar[..sz]);
-            }
+            // let mut ar = [0u8; 15];
+            // if let Ok(sz) = ::itoa::write(&mut ar[..], self.port) {
+            let mut b = itoa::Buffer::new();
+            let ar = b.format(self.port);
+            s.push(b':');
+            s.extend_from_slice(ar.as_bytes());
+            // }
         }
         if self.bytes.path.len() == 0 {
             s.push(b'/');

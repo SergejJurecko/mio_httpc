@@ -3,47 +3,30 @@ use std::io;
 use std::result;
 
 // use super::tls_api;
+use crate::tls_api::{self, Error, HashType, Result};
 use openssl;
-use crate::tls_api::{Error, Result, self, HashType};
 use openssl::hash::{hash as hashf, MessageDigest};
 
 pub struct TlsConnectorBuilder(pub openssl::ssl::SslConnectorBuilder, bool);
 pub struct TlsConnector(pub openssl::ssl::SslConnector, bool);
 
-pub struct TlsAcceptorBuilder(pub openssl::ssl::SslAcceptorBuilder);
-pub struct TlsAcceptor(pub openssl::ssl::SslAcceptor);
-
+// pub struct TlsAcceptorBuilder(pub openssl::ssl::SslAcceptorBuilder);
+// pub struct TlsAcceptor(pub openssl::ssl::SslAcceptor);
 
 pub fn hash(algo: HashType, data: &[u8]) -> Vec<u8> {
     match algo {
-        HashType::MD5 => {
-            hashf(MessageDigest::md5(), data).map(|db| Vec::from(db.as_ref())).unwrap_or(Vec::new())
-        }
-        HashType::SHA256 => {
-            hashf(MessageDigest::sha256(), data).map(|db| Vec::from(db.as_ref())).unwrap_or(Vec::new())
-        }
-        HashType::SHA512 => {
-            hashf(MessageDigest::sha512(), data).map(|db| Vec::from(db.as_ref())).unwrap_or(Vec::new())
-        }
-        HashType::SHA1 => {
-            hashf(MessageDigest::sha1(), data).map(|db| Vec::from(db.as_ref())).unwrap_or(Vec::new())
-        }
-    }
-}
-
-// TODO: https://github.com/sfackler/rust-openssl/pull/646
-#[cfg(has_alpn)]
-pub const HAS_ALPN: bool = true;
-#[cfg(not(has_alpn))]
-pub const HAS_ALPN: bool = false;
-
-fn fill_alpn(protocols: &[&str], single: &mut [u8]) {
-    let mut pos = 0;
-    for p in protocols {
-        single[pos] = p.len() as u8;
-        pos += 1;
-        single[pos..pos + p.len()].copy_from_slice(p.as_bytes());
-        pos += p.len();
+        HashType::MD5 => hashf(MessageDigest::md5(), data)
+            .map(|db| Vec::from(db.as_ref()))
+            .unwrap_or(Vec::new()),
+        HashType::SHA256 => hashf(MessageDigest::sha256(), data)
+            .map(|db| Vec::from(db.as_ref()))
+            .unwrap_or(Vec::new()),
+        HashType::SHA512 => hashf(MessageDigest::sha512(), data)
+            .map(|db| Vec::from(db.as_ref()))
+            .unwrap_or(Vec::new()),
+        HashType::SHA1 => hashf(MessageDigest::sha1(), data)
+            .map(|db| Vec::from(db.as_ref()))
+            .unwrap_or(Vec::new()),
     }
 }
 
@@ -55,37 +38,6 @@ impl tls_api::TlsConnectorBuilder for TlsConnectorBuilder {
     // fn underlying_mut(&mut self) -> &mut openssl::ssl::SslConnectorBuilder {
     //     &mut self.0
     // }
-
-    fn supports_alpn() -> bool {
-        HAS_ALPN
-    }
-
-    #[cfg(has_alpn)]
-    fn set_alpn_protocols(&mut self, protocols: &[&str]) -> Result<()> {
-        let mut sz = 0;
-        for p in protocols {
-            sz += p.len() + 1;
-        }
-        if sz <= 64 {
-            let mut single = [0u8; 64];
-            fill_alpn(protocols, &mut single);
-            self.0.set_alpn_protos(&single[..sz])
-        } else if sz <= 128 {
-            let mut single = [0u8; 128];
-            fill_alpn(protocols, &mut single);
-            self.0.set_alpn_protos(&single[..sz])
-        } else {
-            let mut single = Vec::with_capacity(sz);
-            single.resize(sz, 0);
-            fill_alpn(protocols, &mut single);
-            self.0.set_alpn_protos(&single[..sz])
-        }
-    }
-
-    #[cfg(not(has_alpn))]
-    fn set_alpn_protocols(&mut self, _protocols: &[&str]) -> Result<()> {
-        Err(Error::Other("openssl is compiled without alpn"))
-    }
 
     fn add_der_certificate(&mut self, cert: &[u8]) -> Result<&mut Self> {
         let cert = openssl::x509::X509::from_der(cert)?;
@@ -157,16 +109,6 @@ impl<S: io::Read + io::Write + fmt::Debug + Send + Sync + 'static> tls_api::TlsS
 
     fn get_ref(&self) -> &S {
         self.0.get_ref()
-    }
-
-    #[cfg(has_alpn)]
-    fn get_alpn_protocol(&self) -> Option<Vec<u8>> {
-        self.0.ssl().selected_alpn_protocol().map(Vec::from)
-    }
-
-    #[cfg(not(has_alpn))]
-    fn get_alpn_protocol(&self) -> Option<Vec<u8>> {
-        None
     }
 
     fn peer_certificate(&self) -> Vec<u8> {
@@ -273,95 +215,95 @@ impl tls_api::TlsConnector for TlsConnector {
 
 // TlsAcceptor and TlsAcceptorBuilder
 
-impl TlsAcceptorBuilder {
-    pub fn from_pkcs12(pkcs12: &[u8], password: &str) -> Result<TlsAcceptorBuilder> {
-        let pkcs12 = openssl::pkcs12::Pkcs12::from_der(pkcs12)?;
-        let pkcs12 = pkcs12.parse(password)?;
+// impl TlsAcceptorBuilder {
+//     pub fn from_pkcs12(pkcs12: &[u8], password: &str) -> Result<TlsAcceptorBuilder> {
+//         let pkcs12 = openssl::pkcs12::Pkcs12::from_der(pkcs12)?;
+//         let pkcs12 = pkcs12.parse(password)?;
 
-        let abr = openssl::ssl::SslAcceptor::mozilla_intermediate(openssl::ssl::SslMethod::tls());
-        match abr {
-            Ok(mut ab) => {
-                ab.set_private_key(&pkcs12.pkey)?;
-                ab.set_certificate(&pkcs12.cert)?;
-                ab.check_private_key()?;
-                if let Some(chain) = pkcs12.chain {
-                    for cert in chain.into_iter() {
-                        ab.add_extra_chain_cert(cert)?;
-                    }
-                }
-                Ok(TlsAcceptorBuilder(ab))
-            }
-            Err(e) => {
-                return Err(From::from(e));
-            }
-        }
-    }
-}
+//         let abr = openssl::ssl::SslAcceptor::mozilla_intermediate(openssl::ssl::SslMethod::tls());
+//         match abr {
+//             Ok(mut ab) => {
+//                 ab.set_private_key(&pkcs12.pkey)?;
+//                 ab.set_certificate(&pkcs12.cert)?;
+//                 ab.check_private_key()?;
+//                 if let Some(chain) = pkcs12.chain {
+//                     for cert in chain.into_iter() {
+//                         ab.add_extra_chain_cert(cert)?;
+//                     }
+//                 }
+//                 Ok(TlsAcceptorBuilder(ab))
+//             }
+//             Err(e) => {
+//                 return Err(From::from(e));
+//             }
+//         }
+//     }
+// }
 
-impl tls_api::TlsAcceptorBuilder for TlsAcceptorBuilder {
-    type Acceptor = TlsAcceptor;
+// impl tls_api::TlsAcceptorBuilder for TlsAcceptorBuilder {
+//     type Acceptor = TlsAcceptor;
 
-    type Underlying = openssl::ssl::SslAcceptorBuilder;
+//     type Underlying = openssl::ssl::SslAcceptorBuilder;
 
-    // fn underlying_mut(&mut self) -> &mut openssl::ssl::SslAcceptorBuilder {
-    //     &mut self.0
-    // }
+//     // fn underlying_mut(&mut self) -> &mut openssl::ssl::SslAcceptorBuilder {
+//     //     &mut self.0
+//     // }
 
-    fn supports_alpn() -> bool {
-        HAS_ALPN
-    }
+//     fn supports_alpn() -> bool {
+//         HAS_ALPN
+//     }
 
-    #[cfg(has_alpn)]
-    fn set_alpn_protocols(&mut self, protocols: &[&str]) -> Result<()> {
-        let mut sz = 0;
-        for p in protocols {
-            sz += p.len() + 1;
-        }
-        if sz <= 64 {
-            let mut single = [0u8; 64];
-            fill_alpn(protocols, &mut single);
-            self.0.set_alpn_protos(&single[..sz]).map_err(Error::new)
-        } else if sz <= 128 {
-            let mut single = [0u8; 128];
-            fill_alpn(protocols, &mut single);
-            self.0.set_alpn_protos(&single[..sz]).map_err(Error::new)
-        } else {
-            let mut single = Vec::with_capacity(sz);
-            single.resize(sz, 0);
-            fill_alpn(protocols, &mut single);
-            self.0.set_alpn_protos(&single[..sz]).map_err(Error::new)
-        }
-    }
+//     #[cfg(has_alpn)]
+//     fn set_alpn_protocols(&mut self, protocols: &[&str]) -> Result<()> {
+//         let mut sz = 0;
+//         for p in protocols {
+//             sz += p.len() + 1;
+//         }
+//         if sz <= 64 {
+//             let mut single = [0u8; 64];
+//             fill_alpn(protocols, &mut single);
+//             self.0.set_alpn_protos(&single[..sz]).map_err(Error::new)
+//         } else if sz <= 128 {
+//             let mut single = [0u8; 128];
+//             fill_alpn(protocols, &mut single);
+//             self.0.set_alpn_protos(&single[..sz]).map_err(Error::new)
+//         } else {
+//             let mut single = Vec::with_capacity(sz);
+//             single.resize(sz, 0);
+//             fill_alpn(protocols, &mut single);
+//             self.0.set_alpn_protos(&single[..sz]).map_err(Error::new)
+//         }
+//     }
 
-    #[cfg(not(has_alpn))]
-    fn set_alpn_protocols(&mut self, _protocols: &[&str]) -> Result<()> {
-        Err(Error::Other("openssl is compiled without alpn"))
-    }
+//     #[cfg(not(has_alpn))]
+//     fn set_alpn_protocols(&mut self, _protocols: &[&str]) -> Result<()> {
+//         Err(Error::Other("openssl is compiled without alpn"))
+//     }
 
-    fn build(self) -> Result<TlsAcceptor> {
-        Ok(TlsAcceptor(self.0.build()))
-    }
-}
+//     fn build(self) -> Result<TlsAcceptor> {
+//         Ok(TlsAcceptor(self.0.build()))
+//     }
+// }
 
-impl TlsAcceptorBuilder {
-    pub fn builder_mut(&mut self) -> &mut openssl::ssl::SslAcceptorBuilder {
-        &mut self.0
-    }
-}
+// impl TlsAcceptorBuilder {
+//     pub fn builder_mut(&mut self) -> &mut openssl::ssl::SslAcceptorBuilder {
+//         &mut self.0
+//     }
+// }
 
-impl tls_api::TlsAcceptor for TlsAcceptor {
-    type Builder = TlsAcceptorBuilder;
+// impl tls_api::TlsAcceptor for TlsAcceptor {
+//     type Builder = TlsAcceptorBuilder;
 
-    fn accept<S>(
-        &self,
-        stream: S,
-    ) -> result::Result<tls_api::TlsStream<S>, tls_api::HandshakeError<S>>
-    where
-        S: io::Read + io::Write + fmt::Debug + Send + Sync + 'static,
-    {
-        self.0
-            .accept(stream)
-            .map(|s| tls_api::TlsStream::new(TlsStream(s)))
-            .map_err(map_handshake_error)
-    }
-}
+//     fn accept<S>(
+//         &self,
+//         stream: S,
+//     ) -> result::Result<tls_api::TlsStream<S>, tls_api::HandshakeError<S>>
+//     where
+//         S: io::Read + io::Write + fmt::Debug + Send + Sync + 'static,
+//     {
+//         self.0
+//             .accept(stream)
+//             .map(|s| tls_api::TlsStream::new(TlsStream(s)))
+//             .map_err(map_handshake_error)
+//     }
+// }

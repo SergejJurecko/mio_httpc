@@ -8,8 +8,8 @@ use crate::tls_api::{Error, Result};
 pub struct TlsConnectorBuilder;
 pub struct TlsConnector;
 
-pub struct TlsAcceptorBuilder;
-pub struct TlsAcceptor;
+// pub struct TlsAcceptorBuilder;
+// pub struct TlsAcceptor;
 
 /// Make use of the TLS implementation's crypto hashing functions.
 /// Not picking any TLS implementation as a feature means hash will not work also
@@ -26,14 +26,6 @@ impl tls_api::TlsConnectorBuilder for TlsConnectorBuilder {
     // fn underlying_mut(&mut self) -> &mut native_tls::TlsConnectorBuilder {
     //     &mut self.0
     // }
-
-    fn supports_alpn() -> bool {
-        false
-    }
-
-    fn set_alpn_protocols(&mut self, _protocols: &[&str]) -> Result<()> {
-        Err(Error::Other("No TLS"))
-    }
 
     fn add_der_certificate(&mut self, _cert: &[u8]) -> Result<&mut Self> {
         Err(Error::Other("No TLS"))
@@ -85,44 +77,44 @@ impl tls_api::TlsConnector for TlsConnector {
 
 // TlsAcceptor and TlsAcceptorBuilder
 
-impl TlsAcceptorBuilder {
-    // pub fn from_pkcs12(_pkcs12: &[u8], _password: &str) -> Result<TlsAcceptorBuilder> {
-    //     Err(Error::Other("No TLS"))
-    // }
-}
+// impl TlsAcceptorBuilder {
+// pub fn from_pkcs12(_pkcs12: &[u8], _password: &str) -> Result<TlsAcceptorBuilder> {
+//     Err(Error::Other("No TLS"))
+// }
+// }
 
-impl tls_api::TlsAcceptorBuilder for TlsAcceptorBuilder {
-    type Acceptor = TlsAcceptor;
+// impl tls_api::TlsAcceptorBuilder for TlsAcceptorBuilder {
+//     type Acceptor = TlsAcceptor;
 
-    type Underlying = ();
+//     type Underlying = ();
 
-    fn supports_alpn() -> bool {
-        false
-    }
+//     fn supports_alpn() -> bool {
+//         false
+//     }
 
-    fn set_alpn_protocols(&mut self, _protocols: &[&str]) -> Result<()> {
-        Err(Error::Other("ALPN is not implemented in rust-native-tls"))
-    }
+//     fn set_alpn_protocols(&mut self, _protocols: &[&str]) -> Result<()> {
+//         Err(Error::Other("ALPN is not implemented in rust-native-tls"))
+//     }
 
-    // fn underlying_mut(&mut self) -> &mut native_tls::TlsAcceptorBuilder {
-    //     &mut self.0
-    // }
+//     // fn underlying_mut(&mut self) -> &mut native_tls::TlsAcceptorBuilder {
+//     //     &mut self.0
+//     // }
 
-    fn build(self) -> Result<TlsAcceptor> {
-        Err(Error::Other("No TLS"))
-    }
-}
+//     fn build(self) -> Result<TlsAcceptor> {
+//         Err(Error::Other("No TLS"))
+//     }
+// }
 
-impl tls_api::TlsAcceptor for TlsAcceptor {
-    type Builder = TlsAcceptorBuilder;
+// impl tls_api::TlsAcceptor for TlsAcceptor {
+//     type Builder = TlsAcceptorBuilder;
 
-    fn accept<S>(
-        &self,
-        _stream: S,
-    ) -> result::Result<tls_api::TlsStream<S>, tls_api::HandshakeError<S>>
-    where
-        S: io::Read + io::Write + fmt::Debug + Send + Sync + 'static,
-    {
-        Err(tls_api::HandshakeError::Failure(Error::Other("No TLS")))
-    }
-}
+//     fn accept<S>(
+//         &self,
+//         _stream: S,
+//     ) -> result::Result<tls_api::TlsStream<S>, tls_api::HandshakeError<S>>
+//     where
+//         S: io::Read + io::Write + fmt::Debug + Send + Sync + 'static,
+//     {
+//         Err(tls_api::HandshakeError::Failure(Error::Other("No TLS")))
+//     }
+// }

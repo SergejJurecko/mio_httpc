@@ -11,8 +11,8 @@ use std::time::{Duration, Instant};
 
 mod cache;
 pub use self::cache::DnsCache;
-#[cfg(any(target_os = "ios", target_os = "macos"))]
-mod apple;
+// #[cfg(any(target_os = "ios", target_os = "macos"))]
+// mod apple;
 
 pub(crate) fn dns_parse(buf: &[u8], vec: &mut SmallVec<[IpAddr; 2]>) {
     let r = Packet::parse(buf);
@@ -209,43 +209,43 @@ impl Dns {
 //         get_google(srvs)
 //     }
 // }
-#[cfg(any(target_os = "ios", target_os = "macos"))]
-pub fn get_dns_servers(ipv4: bool, srvs: &mut SmallVec<[SocketAddr; 4]>) {
-    unsafe {
-        let mut sockaddr = ::std::mem::zeroed::<[apple::res_9_sockaddr_union; 4]>();
-        let mut state = ::std::mem::zeroed::<apple::__res_9_state>();
-        if apple::res_9_ninit(&mut state) >= 0 {
-            let n = apple::res_9_getservers(&mut state, &mut sockaddr[0] as _, sockaddr.len() as _);
-            if n > 0 {
-                for i in 0..(n as usize) {
-                    if sockaddr[i].sin.sin_len > 0 {
-                        let ip4 = Ipv4Addr::from(u32::from_be(sockaddr[i].sin.sin_addr.s_addr));
-                        if ip4.is_unspecified()
-                            || ip4.is_broadcast()
-                            || ip4.is_multicast()
-                            || ip4.is_documentation()
-                        {
-                            continue;
-                        }
-                        srvs.push(SocketAddr::new(IpAddr::V4(ip4), 53));
-                    }
-                    if sockaddr[i].sin6.sin6_len > 0 {
-                        let s = sockaddr[i].sin6.sin6_addr.__u6_addr.__u6_addr16;
-                        let ip6 = IpAddr::V6(Ipv6Addr::new(
-                            s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7],
-                        ));
-                        if ip6.is_unspecified() || ip6.is_multicast() || ipv4 {
-                            continue;
-                        }
-                        srvs.push(SocketAddr::new(ip6, 53));
-                    }
-                }
-            }
-        }
-    }
-}
+// #[cfg(any(target_os = "ios", target_os = "macos"))]
+// pub fn get_dns_servers(ipv4: bool, srvs: &mut SmallVec<[SocketAddr; 4]>) {
+//     unsafe {
+//         let mut sockaddr = ::std::mem::zeroed::<[apple::res_9_sockaddr_union; 4]>();
+//         let mut state = ::std::mem::zeroed::<apple::__res_9_state>();
+//         if apple::res_9_ninit(&mut state) >= 0 {
+//             let n = apple::res_9_getservers(&mut state, &mut sockaddr[0] as _, sockaddr.len() as _);
+//             if n > 0 {
+//                 for i in 0..(n as usize) {
+//                     if sockaddr[i].sin.sin_len > 0 {
+//                         let ip4 = Ipv4Addr::from(u32::from_be(sockaddr[i].sin.sin_addr.s_addr));
+//                         if ip4.is_unspecified()
+//                             || ip4.is_broadcast()
+//                             || ip4.is_multicast()
+//                             || ip4.is_documentation()
+//                         {
+//                             continue;
+//                         }
+//                         srvs.push(SocketAddr::new(IpAddr::V4(ip4), 53));
+//                     }
+//                     if sockaddr[i].sin6.sin6_len > 0 {
+//                         let s = sockaddr[i].sin6.sin6_addr.__u6_addr.__u6_addr16;
+//                         let ip6 = IpAddr::V6(Ipv6Addr::new(
+//                             s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7],
+//                         ));
+//                         if ip6.is_unspecified() || ip6.is_multicast() || ipv4 {
+//                             continue;
+//                         }
+//                         srvs.push(SocketAddr::new(ip6, 53));
+//                     }
+//                 }
+//             }
+//         }
+//     }
+// }
 
-#[cfg(all(unix, not(target_os = "macos"), not(target_os = "ios")))]
+#[cfg(all(unix))]
 pub fn get_dns_servers(_ipv4: bool, srvs: &mut SmallVec<[SocketAddr; 4]>) {
     if let Ok(mut file) = ::std::fs::File::open("/etc/resolv.conf") {
         let mut contents = String::new();
@@ -253,6 +253,8 @@ pub fn get_dns_servers(_ipv4: bool, srvs: &mut SmallVec<[SocketAddr; 4]>) {
         if file.read_to_string(&mut contents).is_ok() {
             resolv_parse(srvs, contents);
         }
+    } else {
+        get_google(srvs);
     }
 }
 

@@ -193,12 +193,12 @@ impl CallImpl {
             self.body_sz = self.b.content_len;
         }
         if self.body_sz > 0 {
-            let mut ar = [0u8; 15];
-            if let Ok(sz) = ::itoa::write(&mut ar[..], self.body_sz) {
-                buf.extend(b"Content-Length: ");
-                buf.extend(&ar[..sz]);
-                buf.extend(b"\r\n");
-            }
+            // let mut ar = [0u8; 15];
+            let mut sz = itoa::Buffer::new();
+            let szs = sz.format(self.b.port);
+            buf.extend(b"Content-Length: ");
+            buf.extend(szs.as_bytes());
+            buf.extend(b"\r\n");
         }
         if self.b.transfer_encoding == TransferEncoding::Chunked {
             self.send_encoding = TransferEncoding::Chunked;

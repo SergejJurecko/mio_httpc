@@ -36,9 +36,6 @@ pub enum HashType {
 }
 
 pub trait TlsStreamImpl<S>: io::Read + io::Write + fmt::Debug + Send + Sync + 'static {
-    /// Get negotiated ALPN protocol.
-    fn get_alpn_protocol(&self) -> Option<Vec<u8>>;
-
     fn shutdown(&mut self) -> io::Result<()>;
 
     fn get_mut(&mut self) -> &mut S;
@@ -77,10 +74,6 @@ impl<S: 'static> TlsStream<S> {
 
     pub fn get_ref(&self) -> &S {
         self.0.get_ref()
-    }
-
-    pub fn get_alpn_protocol(&self) -> Option<Vec<u8>> {
-        self.0.get_alpn_protocol()
     }
 
     pub fn peer_pubkey(&self) -> Vec<u8> {
@@ -167,10 +160,6 @@ pub trait TlsConnectorBuilder: Sized + Sync + Send + 'static {
 
     // fn underlying_mut(&mut self) -> &mut Self::Underlying;
 
-    fn supports_alpn() -> bool;
-
-    fn set_alpn_protocols(&mut self, protocols: &[&str]) -> Result<()>;
-
     fn add_der_certificate(&mut self, cert: &[u8]) -> Result<&mut Self>;
     fn add_pem_certificate(&mut self, cert: &[u8]) -> Result<&mut Self>;
 
@@ -182,10 +171,6 @@ pub trait TlsConnectorBuilder: Sized + Sync + Send + 'static {
 /// A builder for client-side TLS connections.
 pub trait TlsConnector: Sized + Sync + Send + 'static {
     type Builder: TlsConnectorBuilder<Connector = Self>;
-
-    fn supports_alpn() -> bool {
-        <Self::Builder as TlsConnectorBuilder>::supports_alpn()
-    }
 
     fn builder() -> Result<Self::Builder>;
 
@@ -207,34 +192,34 @@ pub trait TlsConnector: Sized + Sync + Send + 'static {
     //     S: io::Read + io::Write + fmt::Debug + Send + Sync + 'static;
 }
 
-/// A builder for `TlsAcceptor`s.
-pub trait TlsAcceptorBuilder: Sized + Sync + Send + 'static {
-    type Acceptor: TlsAcceptor;
+// /// A builder for `TlsAcceptor`s.
+// pub trait TlsAcceptorBuilder: Sized + Sync + Send + 'static {
+//     type Acceptor: TlsAcceptor;
 
-    // Type of underlying builder
-    type Underlying;
+//     // Type of underlying builder
+//     type Underlying;
 
-    fn supports_alpn() -> bool;
+//     fn supports_alpn() -> bool;
 
-    fn set_alpn_protocols(&mut self, protocols: &[&str]) -> Result<()>;
+//     fn set_alpn_protocols(&mut self, protocols: &[&str]) -> Result<()>;
 
-    // fn underlying_mut(&mut self) -> &mut Self::Underlying;
+//     // fn underlying_mut(&mut self) -> &mut Self::Underlying;
 
-    fn build(self) -> Result<Self::Acceptor>;
-}
+//     fn build(self) -> Result<Self::Acceptor>;
+// }
 
-/// A builder for server-side TLS connections.
-pub trait TlsAcceptor: Sized + Sync + Send + 'static {
-    type Builder: TlsAcceptorBuilder<Acceptor = Self>;
+// /// A builder for server-side TLS connections.
+// pub trait TlsAcceptor: Sized + Sync + Send + 'static {
+//     type Builder: TlsAcceptorBuilder<Acceptor = Self>;
 
-    fn supports_alpn() -> bool {
-        <Self::Builder as TlsAcceptorBuilder>::supports_alpn()
-    }
+//     fn supports_alpn() -> bool {
+//         <Self::Builder as TlsAcceptorBuilder>::supports_alpn()
+//     }
 
-    fn accept<S>(&self, stream: S) -> result::Result<TlsStream<S>, HandshakeError<S>>
-    where
-        S: io::Read + io::Write + fmt::Debug + Send + Sync + 'static;
-}
+//     fn accept<S>(&self, stream: S) -> result::Result<TlsStream<S>, HandshakeError<S>>
+//     where
+//         S: io::Read + io::Write + fmt::Debug + Send + Sync + 'static;
+// }
 
 fn _check_kinds() {
     use std::net::TcpStream;

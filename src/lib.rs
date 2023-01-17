@@ -110,7 +110,7 @@ pub use openssl::error::ErrorStack as OpenSSLErrorStack;
 #[cfg(feature = "openssl")]
 pub use openssl::ssl::Error as TLSError;
 #[cfg(feature = "rustls")]
-pub use rustls::TLSError;
+pub use rustls::Error as TLSError;
 
 #[cfg(not(any(feature = "rustls", feature = "native", feature = "openssl")))]
 pub use crate::tls_api::{dummy::hash, HashType};

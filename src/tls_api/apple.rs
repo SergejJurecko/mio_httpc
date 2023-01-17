@@ -157,6 +157,7 @@ pub type SecTrustResultType = u32;
 pub type CFStringCompareFlags = u32;
 pub type CFComparisonResult = i32;
 
+#[link(name = "Security", kind = "framework")]
 extern "C" {
     pub static kSecAttrKeyType: CFStringRef;
     pub static kSecAttrKeySizeInBits: CFStringRef;

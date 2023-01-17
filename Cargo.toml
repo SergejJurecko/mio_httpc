@@ -1,50 +1,53 @@
 [package]
-name = "mio_httpc"
-version = "0.9.5"
 authors = ["sergej jurecko <sergej.jurecko@gmail.com>"]
-description = "mio_httpc is a fully async and sync http client running on top of mio only. "
-repository = "https://github.com/SergejJurecko/mio_httpc"
-readme = "README.md"
-keywords = ["mio", "http", "client", "async", "websocket"]
-categories = ["web-programming::http-client"]
-license = "MIT/Apache-2.0"
-documentation = "http://docs.rs/mio_httpc"
-homepage = "https://github.com/SergejJurecko/mio_httpc"
 build = "build.rs"
+categories = ["web-programming::http-client"]
+description = "mio_httpc is a fully async and sync http client running on top of mio only. "
+documentation = "http://docs.rs/mio_httpc"
 edition = "2018"
+homepage = "https://github.com/SergejJurecko/mio_httpc"
+keywords = ["mio", "http", "client", "async", "websocket"]
+license = "MIT/Apache-2.0"
+name = "mio_httpc"
+readme = "README.md"
+repository = "https://github.com/SergejJurecko/mio_httpc"
+version = "0.10.0"
 
 [features]
 # Default does not work for https.
 default = []
-native = ["native-tls","crypto-hash"]
-rtls = ["webpki-roots", "webpki", "ring","rustls"]
+native = ["native-tls", "crypto-hash"]
+rtls = ["webpki-roots", "webpki", "ring", "rustls", "rustls-pemfile"]
 
 
 [dependencies]
-mio = {version = "0.7", features = ["os-poll","net"]}
-httparse = "1"
 byteorder = "1"
-fxhash = "0.2"
-rand = "0.8"
-itoa = "0.4"
+crypto-hash = { version = "0.3.4", optional = true }
 data-encoding = "2"
 failure = "0.1"
-smallvec = "1"
+flate2 = "1"
+fxhash = "0.2"
+httparse = "1"
+itoa = "1"
+md5 = "0.7"
+mio = { version = "0.8", features = ["os-poll", "net"] }
+openssl = { version = "0.10.*", optional = true, features = ["v102", "v110"] }
+percent-encoding = "2"
 pest = "2"
 pest_derive = "2"
-flate2 = "1"
+rand = "0.8"
+ring = { version = "0.16", optional = true }
+rustls = { version = "0.20.0", features = [
+    "dangerous_configuration",
+], optional = true }
+rustls-pemfile = { version = "1", optional = true }
 slab = "0.4"
-percent-encoding = "2"
+smallvec = "1"
 url = "2"
-md5 = "0.6"
-crypto-hash = {version = "0.3.4", optional = true}
-ring = {version = "0.16", optional = true}
-webpki = {version = "0.21", optional = true}
-webpki-roots = {version = "0.21", optional = true}
-rustls = { version = "0.19.0", features = ["dangerous_configuration"], optional = true}
-openssl      = { version = "0.10.*", optional = true, features = ["v102", "v110"] }
+webpki = { version = "0.22", optional = true }
+webpki-roots = { version = "0.22", optional = true }
 # native-tls   = { version = "0.2", optional = true}
-native-tls   = { version = "0.2", optional = true}
+native-tls = { version = "0.2", optional = true }
 
 
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
@@ -52,7 +55,7 @@ core-foundation = "0.9"
 core-foundation-sys = "0.8"
 
 [target.'cfg(target_os = "windows")'.dependencies]
-ipconfig = "0.1"
+ipconfig = "0.3"
 
 [dev-dependencies]
 matches = "0.1"
