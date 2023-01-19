@@ -633,7 +633,8 @@ impl CallImpl {
         if !con.is_signalled_rd() {
             return Ok(RecvStateInt::Wait);
         }
-        let mut orig_len = self.reserve_space(internal, buf)?;
+        let inlen = buf.len();
+
         let mut io_ret;
         let mut entire_sz = 0;
         con.signalled::<C, Vec<u8>>(cp).map_err(|e| {
@@ -641,6 +642,7 @@ impl CallImpl {
             e
         })?;
         loop {
+            let orig_len = self.reserve_space(internal, buf)?;
             io_ret = con.read(&mut buf[orig_len..]);
             match &io_ret {
                 &Err(ref ie) => {
@@ -652,29 +654,25 @@ impl CallImpl {
                         if entire_sz == 0 {
                             return Ok(RecvStateInt::Wait);
                         }
-                        break;
                     }
+                    break;
                 }
                 &Ok(sz) if sz > 0 => {
                     entire_sz += sz;
-                    if buf.len() == orig_len + sz {
-                        orig_len = self.reserve_space(internal, buf)?;
-                        continue;
-                    }
                     buf.truncate(orig_len + sz);
+                    // eprintln!("{}", std::str::from_utf8(&buf).unwrap_or_default());
                 }
                 _ => {}
             }
-            break;
         }
         if entire_sz > 0 {
             io_ret = Ok(entire_sz);
         }
         match io_ret {
             Ok(0) => {
-                if orig_len > 0 {
+                if inlen > 0 {
                     self.dir = Dir::Done;
-                    self.body_sz = orig_len;
+                    self.body_sz = inlen;
                     return Ok(RecvStateInt::ReceivedBody(0));
                 }
                 return Err(crate::Error::Closed);

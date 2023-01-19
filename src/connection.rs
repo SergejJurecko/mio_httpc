@@ -258,7 +258,7 @@ impl Con {
     }
 
     pub fn reg(&mut self, poll: &Registry, rdy: Interest) -> ::std::io::Result<()> {
-        if self.reg_for.eq(&rdy) {
+        if (self.reg_for | rdy) == self.reg_for {
             return Ok(());
         }
 
