@@ -160,10 +160,7 @@ impl CallImpl {
         if internal && self.b.max_response <= orig_len {
             return Err(crate::Error::ResponseTooBig);
         }
-        // Vec will actually reserve on an exponential scale.
-        buf.reserve(4096 * 2);
-        let cap = buf.capacity();
-        buf.resize(cap, 0);
+        buf.resize(orig_len * 1024 * 8, 0);
         Ok(orig_len)
     }
 
@@ -646,10 +643,10 @@ impl CallImpl {
             io_ret = con.read(&mut buf[orig_len..]);
             match &io_ret {
                 &Err(ref ie) => {
+                    buf.truncate(orig_len);
                     if ie.kind() == IoErrorKind::Interrupted {
                         continue;
                     } else if ie.kind() == IoErrorKind::WouldBlock {
-                        buf.truncate(orig_len);
                         con.reg(cp.poll, Interest::READABLE)?;
                         if entire_sz == 0 {
                             return Ok(RecvStateInt::Wait);
@@ -662,7 +659,10 @@ impl CallImpl {
                     buf.truncate(orig_len + sz);
                     // eprintln!("{}", std::str::from_utf8(&buf).unwrap_or_default());
                 }
-                _ => {}
+                _ => {
+                    buf.truncate(orig_len);
+                    break;
+                }
             }
         }
         if entire_sz > 0 {

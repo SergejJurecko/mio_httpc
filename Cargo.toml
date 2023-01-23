@@ -11,7 +11,7 @@ license = "MIT/Apache-2.0"
 name = "mio_httpc"
 readme = "README.md"
 repository = "https://github.com/SergejJurecko/mio_httpc"
-version = "0.10.0"
+version = "0.10.1"
 
 [features]
 # Default does not work for https.
