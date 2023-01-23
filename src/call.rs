@@ -160,7 +160,7 @@ impl CallImpl {
         if internal && self.b.max_response <= orig_len {
             return Err(crate::Error::ResponseTooBig);
         }
-        buf.resize(orig_len * 1024 * 8, 0);
+        buf.resize(orig_len + 1024 * 8, 0);
         Ok(orig_len)
     }
 
