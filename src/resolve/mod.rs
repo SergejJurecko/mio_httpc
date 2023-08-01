@@ -179,6 +179,7 @@ impl Dns {
 
                 builder.finish()
             };
+            eprintln!("DNS Send {:?}", &buf_send[..nsend]);
             let res = sock.send_to(&buf_send[..nsend], sockaddr);
             if let Ok(_) = res {
                 return Ok(true);
