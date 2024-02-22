@@ -317,6 +317,8 @@ impl HttpcImpl {
                 call.invalidate();
                 if b.max_redirects > 0 {
                     b.max_redirects -= 1;
+                } else {
+                    return RecvState::Error(crate::Error::InvalidRedirect);
                 }
                 b.reused = true;
                 match Self::fix_location(&r, &mut b) {
