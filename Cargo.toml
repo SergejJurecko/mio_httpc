@@ -22,7 +22,7 @@ rtls = ["webpki-roots", "webpki", "ring", "rustls", "rustls-pemfile"]
 
 [dependencies]
 byteorder = "1"
-crypto-hash = { version = "0.3.4", optional = true }
+crypto-hash = { version = "0.3", optional = true }
 data-encoding = "2"
 failure = "0.1"
 flate2 = "1"
@@ -30,28 +30,31 @@ fxhash = "0.2"
 httparse = "1"
 itoa = "1"
 md5 = "0.7"
-mio = { version = "0.8", features = ["os-poll", "net"] }
-openssl = { version = "0.10.*", optional = true, features = ["v102", "v110"] }
+mio = { version = "1", features = ["os-poll", "net"] }
+openssl = { version = "0.10", optional = true, features = ["v102", "v110"] }
 percent-encoding = "2"
 pest = "2"
 pest_derive = "2"
 rand = "0.8"
-ring = { version = "0.16", optional = true }
-rustls = { version = "0.20.0", features = [
-    "dangerous_configuration",
+ring = { version = "0.17", optional = true }
+rustls = { version = "0.23", default-features = false, features = [
+    "ring",
+    "logging",
+    "std",
+    "tls12",
 ], optional = true }
-rustls-pemfile = { version = "1", optional = true }
+rustls-pemfile = { version = "2", optional = true }
 slab = "0.4"
 smallvec = "1"
 url = "2"
 webpki = { version = "0.22", optional = true }
-webpki-roots = { version = "0.22", optional = true }
+webpki-roots = { version = "0.26", optional = true }
 # native-tls   = { version = "0.2", optional = true}
 native-tls = { version = "0.2", optional = true }
 
 
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
-core-foundation = "0.9"
+core-foundation = "0.10"
 core-foundation-sys = "0.8"
 
 [target.'cfg(target_os = "windows")'.dependencies]

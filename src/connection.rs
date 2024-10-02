@@ -560,7 +560,7 @@ impl PartialEq for ConHost {
 impl Eq for ConHost {}
 
 enum CallVariant {
-    Other(usize),
+    Other,
     Call(CallImpl),
     None,
 }
@@ -866,10 +866,10 @@ impl ConTable {
             .unwrap()
             .0
             .clone_other(orig, con_offset);
-        let key = self.cons.insert((con1, CallVariant::Other(orig)));
+        let key = self.cons.insert((con1, CallVariant::Other));
         let mut ok = false;
         if let Some(tuple) = self.cons.get_mut(key) {
-            tuple.1 = CallVariant::Other(orig);
+            tuple.1 = CallVariant::Other;
             match tuple.0.create_sock(&mut DnsCache::new()) {
                 Ok(Some(())) => {
                     if let Ok(()) = tuple.0.update_token(poll, key, false) {
@@ -956,7 +956,7 @@ impl ConTable {
             }
             if ok {
                 c.set_other(Some(id1));
-                self.cons_fixed.insert(id1, (c1, CallVariant::Other(id)));
+                self.cons_fixed.insert(id1, (c1, CallVariant::Other));
             } else {
                 id1 = usize::max_value();
             }

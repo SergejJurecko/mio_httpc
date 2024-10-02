@@ -1,12 +1,10 @@
 use ring::digest;
-use rustls::{self, Certificate};
-use std::cell::RefCell;
+use rustls::{self, SignatureScheme};
 use std::fmt;
 use std::io;
 use std::result;
 use std::str;
 use std::sync::Arc;
-use webpki;
 use webpki_roots;
 
 use crate::tls_api::{self, Error, HashType, Result};
@@ -27,13 +25,7 @@ pub fn hash(algo: HashType, data: &[u8]) -> Vec<u8> {
     Vec::from(hasher.finish().as_ref())
 }
 
-// thread_local!(static CLIENT_CFG: RefCell<Arc<rustls::ClientConfig>> = RefCell::new(Arc::new(rustls::ClientConfig::new())));
-// thread_local!(static CLIENT_CFG_SEALED: RefCell<bool> = RefCell::new(false));
-
 pub struct TlsConnector(Arc<rustls::ClientConfig>);
-
-// pub struct TlsAcceptorBuilder(rustls::ServerConfig);
-// pub struct TlsAcceptor(Arc<rustls::ServerConfig>);
 
 pub struct TlsStream<S>
 where
@@ -42,10 +34,9 @@ where
     stream: S,
     session: rustls::ClientConnection,
     // Amount of data buffered in session
-    write_skip: usize,
+    // write_skip: usize,
 }
 
-// TODO: do not require Sync from TlsStream
 unsafe impl<S> Sync for TlsStream<S> where S: io::Read + io::Write + fmt::Debug + Send + 'static {}
 
 enum IntermediateError {
@@ -82,7 +73,6 @@ where
 {
     fn complete_handshake(&mut self) -> result::Result<(), IntermediateError> {
         while self.session.is_handshaking() {
-            // TODO: https://github.com/ctz/rustls/issues/77
             while self.session.is_handshaking() && self.session.wants_write() {
                 self.session.write_tls(&mut self.stream)?;
             }
@@ -198,7 +188,6 @@ where
     S: io::Read + io::Write + fmt::Debug + Send + 'static,
 {
     fn shutdown(&mut self) -> io::Result<()> {
-        // TODO: do something
         Ok(())
     }
 
@@ -273,12 +262,14 @@ impl tls_api::TlsConnectorBuilder for TlsConnectorBuilder {
 
     fn add_pem_certificate(&mut self, cert: &[u8]) -> Result<&mut Self> {
         let mut rd = std::io::BufReader::new(cert);
-        let certs = rustls_pemfile::certs(&mut rd).unwrap_or_default();
-        for cert in certs.into_iter() {
-            if cert.len() > 0 {
-                self.add_der_certificate(&cert)?;
+        for cert in rustls_pemfile::certs(&mut rd) {
+            if let Ok(cert) = cert {
+                if cert.len() > 0 {
+                    self.add_der_certificate(&cert)?;
+                }
             }
         }
+
         Ok(self)
     }
 
@@ -288,38 +279,79 @@ impl tls_api::TlsConnectorBuilder for TlsConnectorBuilder {
         Ok(self)
     }
 
-    fn build(mut self) -> Result<TlsConnector> {
-        let mut root_store = rustls::RootCertStore::empty();
-        if self.ders.len() > 0 {
-            root_store.add_parsable_certificates(&self.ders);
-        }
-        root_store.add_server_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.0.iter().map(|ta| {
-            rustls::OwnedTrustAnchor::from_subject_spki_name_constraints(
-                ta.subject,
-                ta.spki,
-                ta.name_constraints,
-            )
-        }));
+    fn build(self) -> Result<TlsConnector> {
+        let mut root_store;
+
+        root_store = rustls::RootCertStore {
+            roots: webpki_roots::TLS_SERVER_ROOTS.into(),
+        };
+
+        let (_added, _ignored) = root_store.add_parsable_certificates(
+            self.ders
+                .into_iter()
+                .map(|f| rustls::pki_types::CertificateDer::from(f.to_owned())),
+        );
 
         let mut cfg = rustls::ClientConfig::builder()
-            .with_safe_defaults()
             .with_root_certificates(root_store)
             .with_no_client_auth();
         if self.accept_invalid {
+            #[derive(Debug)]
             struct NoCertificateVerifier;
 
-            impl rustls::client::ServerCertVerifier for NoCertificateVerifier {
+            impl rustls::client::danger::ServerCertVerifier for NoCertificateVerifier {
                 fn verify_server_cert(
                     &self,
-                    end_entity: &Certificate,
-                    intermediates: &[Certificate],
-                    server_name: &rustls::client::ServerName,
-                    scts: &mut dyn Iterator<Item = &[u8]>,
-                    ocsp_response: &[u8],
-                    now: std::time::SystemTime,
-                ) -> result::Result<rustls::client::ServerCertVerified, rustls::Error>
+                    end_entity: &rustls::pki_types::CertificateDer<'_>,
+                    intermediates: &[rustls::pki_types::CertificateDer<'_>],
+                    server_name: &rustls::pki_types::ServerName<'_>,
+                    _ocsp_response: &[u8],
+                    now: rustls::pki_types::UnixTime,
+                ) -> result::Result<rustls::client::danger::ServerCertVerified, rustls::Error>
                 {
-                    Ok(rustls::client::ServerCertVerified::assertion())
+                    Ok(rustls::client::danger::ServerCertVerified::assertion())
+                }
+
+                fn verify_tls12_signature(
+                    &self,
+                    _message: &[u8],
+                    _cert: &rustls::pki_types::CertificateDer,
+                    _dss: &rustls::DigitallySignedStruct,
+                ) -> std::result::Result<
+                    rustls::client::danger::HandshakeSignatureValid,
+                    rustls::Error,
+                > {
+                    Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+                }
+
+                fn verify_tls13_signature(
+                    &self,
+                    _message: &[u8],
+                    _cert: &rustls::pki_types::CertificateDer,
+                    _dss: &rustls::DigitallySignedStruct,
+                ) -> std::result::Result<
+                    rustls::client::danger::HandshakeSignatureValid,
+                    rustls::Error,
+                > {
+                    Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+                }
+
+                fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+                    vec![
+                        SignatureScheme::RSA_PKCS1_SHA1,
+                        SignatureScheme::ECDSA_SHA1_Legacy,
+                        SignatureScheme::RSA_PKCS1_SHA256,
+                        SignatureScheme::ECDSA_NISTP256_SHA256,
+                        SignatureScheme::RSA_PKCS1_SHA384,
+                        SignatureScheme::ECDSA_NISTP384_SHA384,
+                        SignatureScheme::RSA_PKCS1_SHA512,
+                        SignatureScheme::ECDSA_NISTP521_SHA512,
+                        SignatureScheme::RSA_PSS_SHA256,
+                        SignatureScheme::RSA_PSS_SHA384,
+                        SignatureScheme::RSA_PSS_SHA512,
+                        SignatureScheme::ED25519,
+                        SignatureScheme::ED448,
+                    ]
                 }
             }
 
@@ -348,81 +380,16 @@ impl tls_api::TlsConnector for TlsConnector {
         S: io::Read + io::Write + fmt::Debug + Send + 'static,
     {
         use std::convert::TryInto;
-        // let cfg = CLIENT_CFG.with(|cfg| (*cfg.borrow()).clone());
-        // if let Ok(domain) = webpki::DnsNameRef::try_from_ascii_str(domain) {
-        let domain = domain
-            .try_into()
-            .map_err(|_e| tls_api::HandshakeError::Failure(Error::Other("invalid domain")))?;
+        let domain = domain.to_string().try_into().map_err(|_e| {
+            tls_api::HandshakeError::Failure(crate::Error::Other("invalid domain"))
+        })?;
         let tls_stream = TlsStream {
             stream,
-            session: rustls::ClientConnection::new(self.0.clone(), domain)
-                .map_err(|e| tls_api::HandshakeError::Failure(Error::Other("invalid domain")))?,
-            write_skip: 0,
+            session: rustls::ClientConnection::new(self.0.clone(), domain).map_err(|_e| {
+                tls_api::HandshakeError::Failure(crate::Error::Other("invalid domain"))
+            })?,
         };
-        // tls_stream.session.set_buffer_limit(16 * 1024);
+
         tls_stream.complete_handleshake_mid()
     }
 }
-
-// TlsAcceptor and TlsAcceptorBuilder
-
-// impl TlsAcceptorBuilder {
-//     pub fn from_certs_and_key(certs: &[&[u8]], key: &[u8]) -> Result<TlsAcceptorBuilder> {
-//         let mut config = rustls::ServerConfig::new(rustls::NoClientAuth::new());
-//         let certs = certs
-//             .into_iter()
-//             .map(|c| rustls::Certificate(c.to_vec()))
-//             .collect();
-//         config.set_single_cert(certs, rustls::PrivateKey(key.to_vec()))?;
-//         Ok(TlsAcceptorBuilder(config))
-//     }
-// }
-
-// impl tls_api::TlsAcceptorBuilder for TlsAcceptorBuilder {
-//     type Acceptor = TlsAcceptor;
-
-//     type Underlying = rustls::ServerConfig;
-
-//     // fn underlying_mut(&mut self) -> &mut Arc<rustls::ServerConfig> {
-//     //     &mut self.0
-//     // }
-
-//     fn supports_alpn() -> bool {
-//         // TODO: https://github.com/sfackler/rust-openssl/pull/646
-//         true
-//     }
-
-//     fn set_alpn_protocols(&mut self, protocols: &[&str]) -> Result<()> {
-//         let mut v = Vec::new();
-//         for p in protocols {
-//             v.push(Vec::from(p.as_bytes()));
-//         }
-//         self.0.alpn_protocols = v;
-//         Ok(())
-//     }
-
-//     fn build(self) -> Result<TlsAcceptor> {
-//         Ok(TlsAcceptor(Arc::new(self.0)))
-//     }
-// }
-
-// impl tls_api::TlsAcceptor for TlsAcceptor {
-//     type Builder = TlsAcceptorBuilder;
-
-//     fn accept<S>(
-//         &self,
-//         stream: S,
-//     ) -> result::Result<tls_api::TlsStream<S>, tls_api::HandshakeError<S>>
-//     where
-//         S: io::Read + io::Write + fmt::Debug + Send + 'static,
-//     {
-//         let mut tls_stream = TlsStream {
-//             stream: stream,
-//             session: rustls::ServerSession::new(&self.0),
-//             write_skip: 0,
-//         };
-//         tls_stream.session.set_buffer_limit(16 * 1024);
-
-//         tls_stream.complete_handleshake_mid()
-//     }
-// }
