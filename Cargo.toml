@@ -11,7 +11,7 @@ license = "MIT/Apache-2.0"
 name = "mio_httpc"
 readme = "README.md"
 repository = "https://github.com/SergejJurecko/mio_httpc"
-version = "0.10.5"
+version = "0.10.6"
 
 [features]
 # Default does not work for https.
@@ -31,6 +31,7 @@ httparse = "1"
 itoa = "1"
 md5 = "0.7"
 mio = { version = "1", features = ["os-poll", "net"] }
+native-tls = { version = "0.2", optional = true }
 openssl = { version = "0.10", optional = true, features = ["v102", "v110"] }
 percent-encoding = "2"
 pest = "2"
@@ -49,8 +50,6 @@ smallvec = "1"
 url = "2"
 webpki = { version = "0.22", optional = true }
 webpki-roots = { version = "0.26", optional = true }
-# native-tls   = { version = "0.2", optional = true}
-native-tls = { version = "0.2", optional = true }
 
 
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
